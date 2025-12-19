@@ -44,10 +44,34 @@ Puedes alojar en cualquier servicio estático:
 
 ## ⚙️ Configuración
 
-Edita el archivo `index.js` y agrega tus páginas de Notion en el array `NOTION_PAGES`:
+### 1. Configurar el token de la API de Notion
+
+**⚠️ IMPORTANTE: Seguridad del Token**
+
+El token de la API de Notion es sensible. Para desarrollo local, usa el archivo `config.js` que está en `.gitignore`.
+
+1. **Copia el archivo de ejemplo:**
+   ```bash
+   cp config.example.js config.js
+   ```
+
+2. **Edita `config.js`** y agrega tu token de Notion:
+   ```javascript
+   export const NOTION_API_TOKEN = "tu_token_de_notion_aqui";
+   ```
+
+3. **Obtén tu token de Notion:**
+   - Ve a https://www.notion.so/my-integrations
+   - Crea una nueva integración o usa una existente
+   - Copia el "Internal Integration Token"
+   - Asegúrate de darle acceso a las páginas/bases de datos que quieres usar
+
+### 2. Configurar páginas de Notion
+
+Edita el archivo `config.js` y agrega tus páginas en el array `NOTION_PAGES`:
 
 ```javascript
-const NOTION_PAGES = [
+export const NOTION_PAGES = [
   {
     name: "Ganar Tiempo",
     url: "https://solid-jingle-6ee.notion.site/Ganar-Tiempo-..."
@@ -58,6 +82,39 @@ const NOTION_PAGES = [
   }
 ];
 ```
+
+### 3. Configurar para producción
+
+#### Para Netlify (Recomendado)
+
+1. **Configura la variable de entorno:**
+   - Ve a tu proyecto en Netlify Dashboard
+   - Settings → Environment variables
+   - Agrega: `NOTION_API_TOKEN` con tu token de Notion
+   - Guarda los cambios
+
+2. **El build automático:**
+   - Netlify ejecutará `node build-config.js` automáticamente
+   - Esto generará `config.js` desde la variable de entorno
+   - El token nunca estará en tu código fuente
+
+3. **Verifica el deploy:**
+   - Revisa los logs de build en Netlify
+   - Deberías ver: "✅ config.js generado exitosamente"
+
+#### Para GitHub Pages
+
+GitHub Pages solo sirve archivos estáticos, por lo que no puedes usar variables de entorno directamente. Opciones:
+
+- **Opción A (Simple - Solo desarrollo):** 
+  - Mantén `config.js` local y no lo subas a GitHub (ya está en `.gitignore`)
+  - ⚠️ **Advertencia:** Si alguien accede a tu sitio, el token estará visible en el código del cliente
+
+- **Opción B (Segura - Requiere GitHub Actions):**
+  - Crea un workflow de GitHub Actions
+  - Usa GitHub Secrets para almacenar el token
+  - El workflow genera `config.js` en build time
+  - Ver ejemplo en `.github/workflows/deploy.yml` (crear si es necesario)
 
 ### 🔓 Hacer una página de Notion pública
 
@@ -71,11 +128,14 @@ const NOTION_PAGES = [
 
 ```
 owlbear-notion-embed/
-├── manifest.json      # Configuración de la extensión
-├── index.html         # Interfaz de usuario
-├── index.js           # Lógica y configuración de páginas
-├── icon.svg           # Icono de la extensión (opcional)
-└── README.md          # Esta documentación
+├── manifest.json          # Configuración de la extensión
+├── index.html             # Interfaz de usuario
+├── index.js               # Lógica principal
+├── config.js              # ⚠️ Configuración con token (NO subir a GitHub)
+├── config.example.js      # Plantilla de configuración
+├── notion-markdown.css    # Estilos para renderizar contenido
+├── icon.svg               # Icono de la extensión (opcional)
+└── README.md              # Esta documentación
 ```
 
 ## 🎮 Uso
@@ -104,6 +164,16 @@ Esta extensión usa el SDK oficial de Owlbear Rodeo:
 - El modal se abre con un tamaño responsive
 - Puedes tener múltiples páginas configuradas
 - La extensión es completamente privada si no la compartes públicamente
+- **⚠️ Seguridad:** El token de la API está en `config.js` que NO se sube a GitHub (está en `.gitignore`)
+
+## 🔐 Seguridad
+
+**IMPORTANTE:** El token de la API de Notion es sensible. 
+
+- ✅ `config.js` está en `.gitignore` y NO se sube a GitHub
+- ✅ Usa `config.example.js` como plantilla
+- ⚠️ Si usas GitHub Pages, el token estará visible en el código del cliente
+- 🔒 Para producción, considera usar un proxy/backend para ocultar el token
 
 ## 🐛 Solución de Problemas
 

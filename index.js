@@ -1,18 +1,12 @@
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
 
-// Configuración de páginas de Notion
-// Agrega aquí tus páginas públicas de Notion
-const NOTION_PAGES = [
-  {
-    name: "Ganar Tiempo",
-    url: "https://solid-jingle-6ee.notion.site/ebd//2ccd4856c90e80febdfcd5fdfc08d0fd"
-  }
-  // Agrega más páginas aquí:
-  // {
-  //   name: "Otra Aventura",
-  //   url: "https://tu-notion.notion.site/ebd//tu-id-de-notion"
-  // }
-];
+// Importar configuración
+// Si config.js no existe, copia config.example.js a config.js y completa los datos
+import { 
+  NOTION_API_TOKEN, 
+  NOTION_API_BASE, 
+  NOTION_PAGES 
+} from "./config.js";
 
 // Manejo de errores global para capturar problemas de carga
 window.addEventListener('error', (event) => {
@@ -29,6 +23,251 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('Error de fetch en promesa rechazada:', event.reason);
   }
 });
+
+// Función para extraer el ID de página desde una URL de Notion
+function extractNotionPageId(url) {
+  try {
+    // Formato: https://workspace.notion.site/Title-{32-char-id}?params
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('-');
+    if (pathParts.length > 0) {
+      const lastPart = pathParts[pathParts.length - 1];
+      // El ID tiene 32 caracteres hexadecimales
+      if (lastPart && lastPart.length >= 32) {
+        const pageId = lastPart.substring(0, 32);
+        // Convertir a formato UUID con guiones
+        return `${pageId.substring(0, 8)}-${pageId.substring(8, 12)}-${pageId.substring(12, 16)}-${pageId.substring(16, 20)}-${pageId.substring(20, 32)}`;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error('Error al extraer ID de Notion:', e);
+    return null;
+  }
+}
+
+// Función para obtener bloques de una página de Notion
+async function fetchNotionBlocks(pageId) {
+  try {
+    const response = await fetch(`${NOTION_API_BASE}/blocks/${pageId}/children`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_TOKEN}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error de API: ${response.status} - ${errorData.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.results || [];
+  } catch (error) {
+    console.error('Error al obtener bloques de Notion:', error);
+    throw error;
+  }
+}
+
+// Función para renderizar texto con formato
+function renderRichText(richTextArray) {
+  if (!richTextArray || richTextArray.length === 0) return '';
+  
+  return richTextArray.map(text => {
+    let content = text.plain_text || '';
+    
+    if (text.annotations) {
+      if (text.annotations.bold) content = `<strong class="notion-text-bold">${content}</strong>`;
+      if (text.annotations.italic) content = `<em class="notion-text-italic">${content}</em>`;
+      if (text.annotations.underline) content = `<u class="notion-text-underline">${content}</u>`;
+      if (text.annotations.strikethrough) content = `<s class="notion-text-strikethrough">${content}</s>`;
+      if (text.annotations.code) content = `<code class="notion-text-code">${content}</code>`;
+      
+      if (text.href) {
+        content = `<a href="${text.href}" class="notion-text-link" target="_blank" rel="noopener noreferrer">${content}</a>`;
+      }
+    }
+    
+    return content;
+  }).join('');
+}
+
+// Función para renderizar un bloque individual
+function renderBlock(block) {
+  const type = block.type;
+  
+  switch (type) {
+    case 'paragraph':
+      const paragraphText = renderRichText(block.paragraph?.rich_text);
+      return `<p class="notion-paragraph">${paragraphText || '<br>'}</p>`;
+    
+    case 'heading_1':
+      return `<h1>${renderRichText(block.heading_1?.rich_text)}</h1>`;
+    
+    case 'heading_2':
+      return `<h2>${renderRichText(block.heading_2?.rich_text)}</h2>`;
+    
+    case 'heading_3':
+      return `<h3>${renderRichText(block.heading_3?.rich_text)}</h3>`;
+    
+    case 'bulleted_list_item':
+      return `<li class="notion-bulleted-list-item">${renderRichText(block.bulleted_list_item?.rich_text)}</li>`;
+    
+    case 'numbered_list_item':
+      return `<li class="notion-numbered-list-item">${renderRichText(block.numbered_list_item?.rich_text)}</li>`;
+    
+    case 'image':
+      const image = block.image;
+      const imageUrl = image?.external?.url || image?.file?.url;
+      const caption = image?.caption ? renderRichText(image.caption) : '';
+      
+      if (imageUrl) {
+        return `
+          <div class="notion-image">
+            <img src="${imageUrl}" alt="${caption || ''}" />
+            ${caption ? `<div class="notion-image-caption">${caption}</div>` : ''}
+          </div>
+        `;
+      }
+      return '';
+    
+    case 'divider':
+      return '<div class="notion-divider"></div>';
+    
+    case 'code':
+      const codeText = renderRichText(block.code?.rich_text);
+      const language = block.code?.language || '';
+      return `<pre class="notion-code"><code>${codeText}</code></pre>`;
+    
+    case 'quote':
+      return `<div class="notion-quote">${renderRichText(block.quote?.rich_text)}</div>`;
+    
+    case 'callout':
+      const callout = block.callout;
+      const icon = callout?.icon?.emoji || '💡';
+      const calloutText = renderRichText(callout?.rich_text);
+      return `
+        <div class="notion-callout">
+          <div class="notion-callout-icon">${icon}</div>
+          <div class="notion-callout-content">${calloutText}</div>
+        </div>
+      `;
+    
+    case 'table':
+      // Las tablas requieren una llamada adicional para obtener las filas
+      return '<div class="notion-table-placeholder">[Tabla - Requiere implementación adicional]</div>';
+    
+    case 'child_database':
+      return '<div class="notion-database-placeholder">[Base de datos - Requiere implementación adicional]</div>';
+    
+    default:
+      console.log('Tipo de bloque no soportado:', type, block);
+      return '';
+  }
+}
+
+// Función para renderizar todos los bloques
+function renderBlocks(blocks) {
+  let html = '';
+  let inList = false;
+  let listType = null;
+  let listItems = [];
+  
+  blocks.forEach((block, index) => {
+    const type = block.type;
+    
+    // Manejar listas agrupadas
+    if (type === 'bulleted_list_item' || type === 'numbered_list_item') {
+      const currentListType = type === 'bulleted_list_item' ? 'ul' : 'ol';
+      
+      if (!inList || listType !== currentListType) {
+        // Cerrar lista anterior si existe
+        if (inList && listItems.length > 0) {
+          html += `<${listType === 'ul' ? 'ul' : 'ol'} class="notion-${listType === 'ul' ? 'bulleted' : 'numbered'}-list">${listItems.join('')}</${listType === 'ul' ? 'ul' : 'ol'}>`;
+          listItems = [];
+        }
+        inList = true;
+        listType = currentListType;
+      }
+      
+      listItems.push(renderBlock(block));
+    } else {
+      // Cerrar lista si estábamos en una
+      if (inList && listItems.length > 0) {
+        html += `<${listType === 'ul' ? 'ul' : 'ol'} class="notion-${listType === 'ul' ? 'bulleted' : 'numbered'}-list">${listItems.join('')}</${listType === 'ul' ? 'ul' : 'ol'}>`;
+        listItems = [];
+        inList = false;
+        listType = null;
+      }
+      
+      html += renderBlock(block);
+    }
+  });
+  
+  // Cerrar lista si queda abierta
+  if (inList && listItems.length > 0) {
+    html += `<${listType === 'ul' ? 'ul' : 'ol'} class="notion-${listType === 'ul' ? 'bulleted' : 'numbered'}-list">${listItems.join('')}</${listType === 'ul' ? 'ul' : 'ol'}>`;
+  }
+  
+  return html;
+}
+
+// Función para cargar y renderizar contenido de Notion desde la API
+async function loadNotionContent(url, container) {
+  const contentDiv = container.querySelector('#notion-content');
+  const iframe = container.querySelector('#notion-iframe');
+  
+  if (!contentDiv) {
+    console.error('No se encontró el contenedor de contenido');
+    return;
+  }
+  
+  // Mostrar loading
+  contentDiv.innerHTML = '<div class="notion-loading">Cargando contenido...</div>';
+  container.classList.add('show-content');
+  
+  try {
+    // Extraer ID de la página
+    const pageId = extractNotionPageId(url);
+    if (!pageId) {
+      throw new Error('No se pudo extraer el ID de la página desde la URL');
+    }
+    
+    console.log('Obteniendo bloques para página:', pageId);
+    
+    // Obtener bloques
+    const blocks = await fetchNotionBlocks(pageId);
+    console.log('Bloques obtenidos:', blocks.length);
+    
+    if (blocks.length === 0) {
+      contentDiv.innerHTML = '<div class="notion-loading">No se encontró contenido en esta página.</div>';
+      return;
+    }
+    
+    // Renderizar bloques
+    const html = renderBlocks(blocks);
+    contentDiv.innerHTML = html;
+    
+  } catch (error) {
+    console.error('Error al cargar contenido de Notion:', error);
+    contentDiv.innerHTML = `
+      <div class="notion-error">
+        <strong>Error al cargar el contenido:</strong><br>
+        ${error.message}<br><br>
+        <button onclick="window.open('${url}', '_blank')" style="
+          background: #4a9eff;
+          border: none;
+          border-radius: 4px;
+          padding: 8px 16px;
+          color: #fff;
+          cursor: pointer;
+        ">Abrir en Notion</button>
+      </div>
+    `;
+  }
+}
 
 // Función para mostrar mensaje cuando Notion bloquea el iframe
 function showNotionBlockedMessage(container, url) {
@@ -101,7 +340,7 @@ try {
         <div class="page-url">${page.url}</div>
       `;
       
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         console.log("Cargando Notion en el popover:", page.url);
         
         // Obtener elementos
@@ -109,33 +348,17 @@ try {
         const notionContainer = document.getElementById("notion-container");
         const backButton = document.getElementById("back-button");
         const pageTitle = document.getElementById("page-title");
-        const notionIframe = document.getElementById("notion-iframe");
+        const notionContent = document.getElementById("notion-content");
         
-        if (pageList && notionContainer && backButton && pageTitle && notionIframe) {
+        if (pageList && notionContainer && backButton && pageTitle && notionContent) {
           // Ocultar lista y mostrar contenedor de Notion
           pageList.classList.add("hidden");
           notionContainer.classList.remove("hidden");
           backButton.classList.remove("hidden");
           pageTitle.textContent = page.name;
           
-          // Intentar cargar el iframe
-          notionIframe.src = page.url;
-          
-          // Detectar si el iframe fue bloqueado (después de un breve delay)
-          setTimeout(() => {
-            try {
-              // Intentar acceder al contenido del iframe
-              const iframeDoc = notionIframe.contentDocument || notionIframe.contentWindow?.document;
-              if (!iframeDoc || iframeDoc.body === null) {
-                // El iframe probablemente fue bloqueado
-                showNotionBlockedMessage(notionContainer, page.url);
-              }
-            } catch (e) {
-              // Error de CORS significa que el iframe fue bloqueado
-              console.warn("Notion bloqueó el iframe por CSP:", e);
-              showNotionBlockedMessage(notionContainer, page.url);
-            }
-          }, 1000);
+          // Cargar contenido desde la API
+          await loadNotionContent(page.url, notionContainer);
           
           // Configurar el botón de volver (solo una vez)
           if (!backButton.dataset.listenerAdded) {
@@ -145,7 +368,10 @@ try {
               notionContainer.classList.add("hidden");
               backButton.classList.add("hidden");
               pageTitle.textContent = "📚 Páginas de Notion";
-              notionIframe.src = "";
+              notionContainer.classList.remove("show-content");
+              if (notionContent) {
+                notionContent.innerHTML = "";
+              }
             });
             backButton.dataset.listenerAdded = "true";
           }

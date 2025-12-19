@@ -1,7 +1,13 @@
-// Ejemplo de configuración de páginas de Notion
-// Copia este contenido a index.js y personaliza con tus páginas
+// Ejemplo de configuración
+// Copia este archivo a config.js y completa con tus datos
+// ⚠️ NO subas config.js a GitHub (está en .gitignore)
 
-const NOTION_PAGES = [
+// Configuración de la API de Notion
+export const NOTION_API_TOKEN = "tu_token_de_notion_aqui";
+export const NOTION_API_BASE = "https://api.notion.com/v1";
+
+// Configuración de páginas de Notion
+export const NOTION_PAGES = [
   {
     name: "Ganar Tiempo",
     url: "https://solid-jingle-6ee.notion.site/Ganar-Tiempo-2ccd4856c90e80febdfcd5fdfc08d0fd"
@@ -15,4 +21,3 @@ const NOTION_PAGES = [
     url: "https://tu-notion.notion.site/Encuentros-..."
   }
 ];
-

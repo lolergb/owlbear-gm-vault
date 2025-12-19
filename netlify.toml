@@ -40,3 +40,11 @@
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
 
+# Configuración de build
+[build]
+  command = "node build-config.js"
+  publish = "."
+
+# Variables de entorno (configúralas en Netlify Dashboard)
+# NOTION_API_TOKEN debe estar configurada en: Site settings → Environment variables
+
