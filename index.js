@@ -210,9 +210,11 @@ function renderBlock(block) {
       const caption = image?.caption ? renderRichText(image.caption) : '';
       
       if (imageUrl) {
+        // Generar ID único para la imagen
+        const imageId = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         return `
           <div class="notion-image">
-            <img src="${imageUrl}" alt="${caption || ''}" />
+            <img src="${imageUrl}" alt="${caption || ''}" class="notion-image-clickable" data-image-id="${imageId}" data-image-url="${imageUrl}" data-image-caption="${caption.replace(/"/g, '&quot;')}" style="cursor: pointer;" />
             ${caption ? `<div class="notion-image-caption">${caption}</div>` : ''}
           </div>
         `;
@@ -395,6 +397,9 @@ async function loadNotionContent(url, container) {
     // Renderizar bloques (ahora es async)
     const html = await renderBlocks(blocks);
     contentDiv.innerHTML = html;
+    
+    // Agregar event listeners a las imágenes para abrirlas en modal
+    attachImageClickHandlers();
     
   } catch (error) {
     console.error('Error al cargar contenido de Notion:', error);

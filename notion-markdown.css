@@ -98,6 +98,15 @@
   width: 100%;
   height: auto;
   border-radius: 3px;
+  transition: opacity 0.2s;
+}
+
+.notion-content .notion-image-clickable {
+  cursor: pointer;
+}
+
+.notion-content .notion-image-clickable:hover {
+  opacity: 0.9;
 }
 
 .notion-content .notion-image-caption {
