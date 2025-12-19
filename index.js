@@ -11,12 +11,41 @@ import {
   NOTION_PAGES 
 } from "./config.js";
 
-// Importar sistema de gestión de páginas
-import {
-  getPagesConfig,
-  initializeDefaultPages,
-  getAllPagesFlat
-} from "./pages-manager.js";
+// Sistema simple de gestión con JSON
+const STORAGE_KEY = 'notion-pages-json';
+
+function getPagesJSON() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Error al leer JSON:', e);
+  }
+  return null;
+}
+
+function savePagesJSON(json) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(json, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Error al guardar JSON:', e);
+    return false;
+  }
+}
+
+function getDefaultJSON() {
+  return {
+    categories: [
+      {
+        name: "General",
+        pages: NOTION_PAGES.filter(p => p.url && !p.url.includes('...') && p.url.startsWith('http'))
+      }
+    ]
+  };
+}
 
 // El token ya no se importa directamente - se usa Netlify Function como proxy en producción
 // En desarrollo local, config.js puede tener el token, pero en producción no es necesario
@@ -434,21 +463,14 @@ try {
       console.log('🌐 URL actual:', window.location.href);
       console.log('🔗 Origen:', window.location.origin);
       
-      // Inicializar sistema de gestión de páginas
-      const pagesConfig = initializeDefaultPages(NOTION_PAGES);
-      
-      // Obtener todas las páginas (desde localStorage o por defecto)
-      const allPages = getAllPagesFlat();
-      
-      // Filtrar páginas válidas
-      const validPages = allPages.filter(page => 
-        page.url && 
-        !page.url.includes('...') && 
-        page.url.startsWith('http')
-      );
+      // Cargar configuración desde JSON
+      let pagesConfig = getPagesJSON();
+      if (!pagesConfig) {
+        pagesConfig = getDefaultJSON();
+        savePagesJSON(pagesConfig);
+      }
 
-      console.log('📊 Total de páginas:', validPages.length);
-      console.log('📁 Categorías:', pagesConfig.categories.length);
+      console.log('📊 Configuración cargada:', pagesConfig);
       
       const pageList = document.getElementById("page-list");
       const header = document.getElementById("header");
@@ -458,11 +480,11 @@ try {
         return;
       }
 
-      // Agregar botón de administración
+      // Agregar botón de administración (editor JSON)
       const adminButton = document.createElement("button");
       adminButton.className = "admin-button";
       adminButton.innerHTML = "⚙️";
-      adminButton.title = "Gestionar páginas";
+      adminButton.title = "Editar JSON";
       adminButton.style.cssText = `
         background: #2d2d2d;
         border: 1px solid #404040;
@@ -473,21 +495,11 @@ try {
         font-size: 16px;
         margin-left: auto;
       `;
-      adminButton.addEventListener("click", () => showAdminPanel(pagesConfig));
+      adminButton.addEventListener("click", () => showJSONEditor(pagesConfig));
       header.appendChild(adminButton);
 
-      if (validPages.length === 0) {
-        pageList.innerHTML = `
-          <div class="empty-state">
-            <p>No hay páginas configuradas</p>
-            <p>Clic en ⚙️ para agregar páginas</p>
-          </div>
-        `;
-        return;
-      }
-
       // Renderizar páginas agrupadas por categorías
-      renderPagesByCategories(pagesConfig, pageList, validPages);
+      renderPagesByCategories(pagesConfig, pageList);
     } catch (error) {
       console.error('❌ Error dentro de OBR.onReady:', error);
       console.error('Stack:', error.stack);
@@ -519,13 +531,27 @@ try {
 }
 
 // Función para renderizar páginas agrupadas por categorías
-function renderPagesByCategories(pagesConfig, pageList, validPages) {
+function renderPagesByCategories(pagesConfig, pageList) {
   pageList.innerHTML = '';
   
+  if (!pagesConfig || !pagesConfig.categories || pagesConfig.categories.length === 0) {
+    pageList.innerHTML = `
+      <div class="empty-state">
+        <p>No hay páginas configuradas</p>
+        <p>Clic en ⚙️ para editar el JSON</p>
+      </div>
+    `;
+    return;
+  }
+  
   pagesConfig.categories.forEach(category => {
-    // Filtrar páginas válidas de esta categoría
+    if (!category.pages || category.pages.length === 0) return;
+    
+    // Filtrar páginas válidas
     const categoryPages = category.pages.filter(page => 
-      validPages.some(vp => vp.id === page.id)
+      page.url && 
+      !page.url.includes('...') && 
+      page.url.startsWith('http')
     );
     
     if (categoryPages.length === 0) return;
@@ -607,273 +633,168 @@ async function loadPageContent(url, name) {
   }
 }
 
-// Función para mostrar el panel de administración
-function showAdminPanel(pagesConfig) {
-  // Importar funciones de gestión dinámicamente
-  import('./pages-manager.js').then(module => {
-    const {
-      addCategory,
-      deleteCategory,
-      addPageToCategory,
-      deletePage,
-      updatePage,
-      updateCategoryName,
-      savePagesConfig,
-      getPagesConfig,
-      getAllPagesFlat
-    } = module;
-    
-    // Crear modal de administración
-    const modal = document.createElement('div');
-    modal.id = 'admin-modal';
-    modal.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    `;
-    
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = `
-      background: #2d2d2d;
-      border-radius: 12px;
-      padding: 24px;
-      max-width: 600px;
-      width: 100%;
-      max-height: 80vh;
-      overflow-y: auto;
-      color: #e0e0e0;
-    `;
-    
-    modalContent.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h2 style="color: #fff; margin: 0;">⚙️ Gestionar Páginas</h2>
-        <button id="close-admin" style="
-          background: transparent;
+// Función para mostrar el editor de JSON
+function showJSONEditor(pagesConfig) {
+  // Crear modal
+  const modal = document.createElement('div');
+  modal.id = 'json-editor-modal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  `;
+  
+  const modalContent = document.createElement('div');
+  modalContent.style.cssText = `
+    background: #1a1a1a;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 800px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    color: #e0e0e0;
+  `;
+  
+  modalContent.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h2 style="color: #fff; margin: 0;">📝 Editar JSON</h2>
+      <button id="close-json-editor" style="
+        background: transparent;
+        border: none;
+        color: #999;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+      ">×</button>
+    </div>
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+      <textarea id="json-textarea" style="
+        background: #0d1117;
+        border: 1px solid #404040;
+        border-radius: 6px;
+        padding: 16px;
+        color: #c9d1d9;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 13px;
+        line-height: 1.5;
+        flex: 1;
+        resize: none;
+        white-space: pre;
+        overflow-wrap: normal;
+        overflow-x: auto;
+      ">${JSON.stringify(pagesConfig, null, 2)}</textarea>
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button id="reset-json" style="
+          background: #dc3545;
           border: none;
-          color: #999;
-          font-size: 24px;
+          border-radius: 6px;
+          padding: 10px 20px;
+          color: #fff;
           cursor: pointer;
-          padding: 0;
-          width: 32px;
-          height: 32px;
-        ">×</button>
+          font-size: 14px;
+        ">Resetear</button>
+        <button id="save-json" style="
+          background: #28a745;
+          border: none;
+          border-radius: 6px;
+          padding: 10px 20px;
+          color: #fff;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 600;
+        ">Guardar</button>
       </div>
-      <div id="admin-content"></div>
-    `;
-    
-    modal.appendChild(modalContent);
-    document.body.appendChild(modal);
-    
-    // Función para recargar contenido
-    const reloadAdmin = () => {
-      const config = getPagesConfig();
-      renderAdminContent(modalContent.querySelector('#admin-content'), config, module);
-    };
-    
-    // Renderizar contenido de administración
-    renderAdminContent(modalContent.querySelector('#admin-content'), pagesConfig, module, reloadAdmin);
-    
-    // Cerrar modal
-    modal.querySelector('#close-admin').addEventListener('click', () => {
+      <div id="json-error" style="
+        color: #dc3545;
+        font-size: 12px;
+        display: none;
+        padding: 8px;
+        background: rgba(220, 53, 69, 0.1);
+        border-radius: 4px;
+      "></div>
+    </div>
+  `;
+  
+  modal.appendChild(modalContent);
+  document.body.appendChild(modal);
+  
+  const textarea = modalContent.querySelector('#json-textarea');
+  const errorDiv = modalContent.querySelector('#json-error');
+  
+  // Guardar JSON
+  modalContent.querySelector('#save-json').addEventListener('click', () => {
+    try {
+      const jsonText = textarea.value.trim();
+      const parsed = JSON.parse(jsonText);
+      
+      // Validar estructura básica
+      if (!parsed.categories || !Array.isArray(parsed.categories)) {
+        throw new Error('El JSON debe tener un array "categories"');
+      }
+      
+      // Guardar
+      savePagesJSON(parsed);
+      errorDiv.style.display = 'none';
+      
+      // Cerrar y recargar
       document.body.removeChild(modal);
-      // Recargar la lista de páginas
-      const config = getPagesConfig();
-      const allPages = getAllPagesFlat();
-      const validPages = allPages.filter(page => 
-        page.url && !page.url.includes('...') && page.url.startsWith('http')
-      );
+      const newConfig = getPagesJSON() || getDefaultJSON();
       const pageList = document.getElementById("page-list");
       if (pageList) {
-        renderPagesByCategories(config, pageList, validPages);
+        renderPagesByCategories(newConfig, pageList);
       }
-    });
-    
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        document.body.removeChild(modal);
-      }
-    });
-  });
-}
-
-// Función para renderizar el contenido del panel de administración
-function renderAdminContent(container, pagesConfig, managerModule, reloadCallback) {
-  container.innerHTML = '';
-  
-  // Botón para agregar categoría
-  const addCategoryBtn = document.createElement('button');
-  addCategoryBtn.textContent = '+ Agregar Categoría';
-  addCategoryBtn.style.cssText = `
-    background: #4a9eff;
-    border: none;
-    border-radius: 6px;
-    padding: 10px 16px;
-    color: #fff;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 20px;
-    width: 100%;
-  `;
-  addCategoryBtn.addEventListener('click', () => {
-    const name = prompt('Nombre de la categoría:');
-    if (name && name.trim()) {
-      managerModule.addCategory(name.trim());
-      reloadCallback();
+    } catch (e) {
+      errorDiv.textContent = `Error: ${e.message}`;
+      errorDiv.style.display = 'block';
     }
   });
-  container.appendChild(addCategoryBtn);
   
-  // Renderizar cada categoría
-  pagesConfig.categories.forEach(category => {
-    const categoryDiv = document.createElement('div');
-    categoryDiv.style.cssText = `
-      background: #1a1a1a;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    `;
-    
-    categoryDiv.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <input type="text" value="${category.name}" id="cat-name-${category.id}" style="
-          background: #2d2d2d;
-          border: 1px solid #404040;
-          border-radius: 4px;
-          padding: 6px 12px;
-          color: #fff;
-          font-size: 14px;
-          flex: 1;
-          margin-right: 8px;
-        ">
-        <button class="delete-category" data-id="${category.id}" style="
-          background: #dc3545;
-          border: none;
-          border-radius: 4px;
-          padding: 6px 12px;
-          color: #fff;
-          cursor: pointer;
-          font-size: 12px;
-        ">Eliminar</button>
-      </div>
-      <div class="category-pages-list" style="margin-bottom: 12px;"></div>
-      <button class="add-page" data-category="${category.id}" style="
-        background: #28a745;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        color: #fff;
-        cursor: pointer;
-        font-size: 12px;
-        width: 100%;
-      ">+ Agregar Página</button>
-    `;
-    
-    // Actualizar nombre de categoría
-    const nameInput = categoryDiv.querySelector(`#cat-name-${category.id}`);
-    nameInput.addEventListener('blur', () => {
-      if (nameInput.value !== category.name) {
-        managerModule.updateCategoryName(category.id, nameInput.value);
-      }
-    });
-    
-    // Eliminar categoría
-    categoryDiv.querySelector('.delete-category').addEventListener('click', () => {
-      if (confirm(`¿Eliminar categoría "${category.name}" y todas sus páginas?`)) {
-        managerModule.deleteCategory(category.id);
-        reloadCallback();
-      }
-    });
-    
-    // Renderizar páginas de la categoría
-    const pagesList = categoryDiv.querySelector('.category-pages-list');
-    category.pages.forEach(page => {
-      const pageDiv = document.createElement('div');
-      pageDiv.style.cssText = `
-        background: #2d2d2d;
-        border-radius: 6px;
-        padding: 12px;
-        margin-bottom: 8px;
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      `;
-      
-      pageDiv.innerHTML = `
-        <div style="flex: 1;">
-          <input type="text" value="${page.name}" class="page-name-input" data-page="${page.id}" style="
-            background: #1a1a1a;
-            border: 1px solid #404040;
-            border-radius: 4px;
-            padding: 4px 8px;
-            color: #fff;
-            font-size: 13px;
-            width: 100%;
-            margin-bottom: 4px;
-          ">
-          <input type="text" value="${page.url}" class="page-url-input" data-page="${page.id}" style="
-            background: #1a1a1a;
-            border: 1px solid #404040;
-            border-radius: 4px;
-            padding: 4px 8px;
-            color: #999;
-            font-size: 11px;
-            width: 100%;
-          ">
-        </div>
-        <button class="delete-page" data-category="${category.id}" data-page="${page.id}" style="
-          background: #dc3545;
-          border: none;
-          border-radius: 4px;
-          padding: 4px 8px;
-          color: #fff;
-          cursor: pointer;
-          font-size: 11px;
-        ">×</button>
-      `;
-      
-      // Actualizar página
-      const nameInput = pageDiv.querySelector('.page-name-input');
-      const urlInput = pageDiv.querySelector('.page-url-input');
-      const updatePage = () => {
-        managerModule.updatePage(category.id, page.id, nameInput.value, urlInput.value);
-      };
-      nameInput.addEventListener('blur', updatePage);
-      urlInput.addEventListener('blur', updatePage);
-      
-      // Eliminar página
-      pageDiv.querySelector('.delete-page').addEventListener('click', () => {
-        if (confirm(`¿Eliminar página "${page.name}"?`)) {
-          managerModule.deletePage(category.id, page.id);
-          reloadCallback();
-        }
-      });
-      
-      pagesList.appendChild(pageDiv);
-    });
-    
-    // Agregar página
-    categoryDiv.querySelector('.add-page').addEventListener('click', () => {
-      const name = prompt('Nombre de la página:');
-      if (!name || !name.trim()) return;
-      
-      const url = prompt('URL de la página de Notion:');
-      if (!url || !url.trim()) return;
-      
-      managerModule.addPageToCategory(category.id, name.trim(), url.trim());
-      reloadCallback();
-    });
-    
-    container.appendChild(categoryDiv);
+  // Resetear JSON
+  modalContent.querySelector('#reset-json').addEventListener('click', () => {
+    if (confirm('¿Resetear al JSON por defecto? Se perderán todos los cambios.')) {
+      const defaultConfig = getDefaultJSON();
+      textarea.value = JSON.stringify(defaultConfig, null, 2);
+      errorDiv.style.display = 'none';
+    }
   });
+  
+  // Validar JSON en tiempo real
+  textarea.addEventListener('input', () => {
+    try {
+      JSON.parse(textarea.value);
+      errorDiv.style.display = 'none';
+      textarea.style.borderColor = '#404040';
+    } catch (e) {
+      textarea.style.borderColor = '#dc3545';
+    }
+  });
+  
+  // Cerrar modal
+  modalContent.querySelector('#close-json-editor').addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal);
+    }
+  });
+  
+  // Auto-focus y seleccionar todo
+  textarea.focus();
+  textarea.select();
 }
 
 // Log adicional para verificar que el script se ejecutó completamente
