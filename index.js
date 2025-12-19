@@ -342,12 +342,30 @@ try {
     console.log('🌐 URL actual:', window.location.href);
     console.log('🔗 Origen:', window.location.origin);
     
+    // Verificar que las variables se cargaron
+    console.log('🔍 Verificando variables...');
+    console.log('NOTION_API_TOKEN existe:', !!NOTION_API_TOKEN);
+    console.log('NOTION_PAGES existe:', !!NOTION_PAGES);
+    console.log('NOTION_PAGES es array:', Array.isArray(NOTION_PAGES));
+    console.log('NOTION_PAGES.length:', NOTION_PAGES?.length || 0);
+    
+    if (NOTION_PAGES && NOTION_PAGES.length > 0) {
+      console.log('📋 Todas las páginas:', NOTION_PAGES);
+      NOTION_PAGES.forEach((page, i) => {
+        console.log(`  ${i + 1}. ${page.name}: ${page.url}`);
+      });
+    } else {
+      console.error('❌ NOTION_PAGES está vacío o no se cargó correctamente');
+    }
+    
     const pageList = document.getElementById("page-list");
 
     if (!pageList) {
-      console.error('No se encontró el elemento page-list');
+      console.error('❌ No se encontró el elemento page-list');
       return;
     }
+
+    console.log('✅ page-list encontrado');
 
     // Filtrar páginas válidas (que tengan URLs reales, no placeholders)
     const validPages = NOTION_PAGES.filter(page => 
@@ -356,9 +374,20 @@ try {
       page.url.startsWith('http')
     );
 
-    console.log('Total de páginas configuradas:', NOTION_PAGES.length);
-    console.log('Páginas válidas encontradas:', validPages.length);
-    console.log('Páginas válidas:', validPages.map(p => p.name));
+    console.log('📊 Total de páginas configuradas:', NOTION_PAGES?.length || 0);
+    console.log('✅ Páginas válidas encontradas:', validPages.length);
+    if (validPages.length > 0) {
+      console.log('📝 Páginas válidas:', validPages.map(p => `${p.name} (${p.url.substring(0, 50)}...)`));
+    } else {
+      console.warn('⚠️ No hay páginas válidas después del filtro');
+      if (NOTION_PAGES && NOTION_PAGES.length > 0) {
+        console.log('🔍 Páginas filtradas:');
+        NOTION_PAGES.forEach((page, i) => {
+          const isValid = page.url && !page.url.includes('...') && page.url.startsWith('http');
+          console.log(`  ${i + 1}. ${page.name}: ${isValid ? '✅ válida' : '❌ inválida'} - ${page.url}`);
+        });
+      }
+    }
 
     if (validPages.length === 0) {
       pageList.innerHTML = `
