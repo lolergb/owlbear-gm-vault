@@ -1,4 +1,4 @@
-import OBR from "https://unpkg.com/@owlbear-rodeo/sdk@1/dist/index.esm.js";
+import OBR from "https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@3.1.0/dist/index.esm.js";
 
 // Configuración de páginas de Notion
 // Agrega aquí tus páginas públicas de Notion
