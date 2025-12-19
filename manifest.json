@@ -5,11 +5,11 @@
   "author": "Lole",
   "description": "Embeber páginas públicas de Notion en Owlbear Rodeo",
   "homepage_url": "https://github.com/lolergb/owlbear-notion-embed",
-  "icon": "./icon.svg",
+  "icon": "/icon.svg",
   "action": {
     "title": "Notion Embed",
-    "icon": "./icon.svg",
-    "popover": "./index.html",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
     "height": 600,
     "width": 400
   }
