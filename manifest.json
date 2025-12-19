@@ -1,0 +1,10 @@
+{
+  "id": "com.lole.notion-embed",
+  "name": "Notion Embed",
+  "version": "1.0.0",
+  "description": "Embeber páginas públicas de Notion en Owlbear Rodeo",
+  "author": "Lole",
+  "entry": "index.html",
+  "icon": "icon.svg"
+}
+

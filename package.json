@@ -1,0 +1,19 @@
+{
+  "name": "owlbear-notion-embed",
+  "version": "1.0.0",
+  "description": "Extensión para embebber páginas de Notion en Owlbear Rodeo",
+  "type": "module",
+  "scripts": {
+    "dev": "python -m http.server 8000",
+    "serve": "npx http-server -p 8000 -c-1"
+  },
+  "keywords": [
+    "owlbear",
+    "notion",
+    "extension",
+    "dnd"
+  ],
+  "author": "Lole",
+  "license": "MIT"
+}
+
