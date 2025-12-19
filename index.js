@@ -7,10 +7,13 @@ console.log('✅ OBR SDK importado');
 // Importar configuración
 // Si config.js no existe, copia config.example.js a config.js y completa los datos
 import { 
-  NOTION_API_TOKEN, 
   NOTION_API_BASE, 
   NOTION_PAGES 
 } from "./config.js";
+
+// El token ya no se importa directamente - se usa Netlify Function como proxy en producción
+// En desarrollo local, config.js puede tener el token, pero en producción no es necesario
+// porque el token está seguro en el servidor (Netlify Function)
 
 // Verificar que las páginas se cargaron correctamente
 console.log('✅ Config.js cargado');
@@ -62,19 +65,39 @@ function extractNotionPageId(url) {
 
 // Función para obtener bloques de una página de Notion
 async function fetchNotionBlocks(pageId) {
-  // Verificar que el token esté configurado
-  if (!NOTION_API_TOKEN || NOTION_API_TOKEN === 'tu_token_de_notion_aqui') {
-    throw new Error('El token de la API de Notion no está configurado. Edita config.js y agrega tu token.');
-  }
-
   try {
-    const response = await fetch(`${NOTION_API_BASE}/blocks/${pageId}/children`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${NOTION_API_TOKEN}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
+    // Usar Netlify Function como proxy para mantener el token seguro
+    const apiUrl = window.location.origin.includes('netlify.app') || window.location.origin.includes('netlify.com')
+      ? `/api/notion-api?pageId=${encodeURIComponent(pageId)}`
+      : `${NOTION_API_BASE}/blocks/${pageId}/children`;
+    
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    // Solo agregar Authorization si no estamos usando el proxy (desarrollo local)
+    // En producción, el token está en el servidor (Netlify Function)
+    if (!apiUrl.includes('/api/')) {
+      // Para desarrollo local, intentar obtener el token dinámicamente
+      try {
+        const config = await import("./config.js");
+        const localToken = config.NOTION_API_TOKEN;
+        if (!localToken || localToken === 'tu_token_de_notion_aqui') {
+          throw new Error('El token de la API de Notion no está configurado. Edita config.js y agrega tu token para desarrollo local.');
+        }
+        headers['Authorization'] = `Bearer ${localToken}`;
+        headers['Notion-Version'] = '2022-06-28';
+      } catch (e) {
+        throw new Error('No se pudo cargar el token. En desarrollo local, asegúrate de que config.js tenga NOTION_API_TOKEN configurado.');
       }
+    } else {
+      // En producción, el token está en el servidor (Netlify Function)
+      console.log('✅ Usando Netlify Function como proxy (token seguro en servidor)');
+    }
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: headers
     });
 
     if (!response.ok) {
@@ -338,16 +361,16 @@ console.log('🔄 Intentando inicializar Owlbear SDK...');
 
 try {
   OBR.onReady(() => {
-    console.log('✅ Owlbear SDK listo');
-    console.log('🌐 URL actual:', window.location.href);
-    console.log('🔗 Origen:', window.location.origin);
-    
-    // Verificar que las variables se cargaron
-    console.log('🔍 Verificando variables...');
-    console.log('NOTION_API_TOKEN existe:', !!NOTION_API_TOKEN);
-    console.log('NOTION_PAGES existe:', !!NOTION_PAGES);
-    console.log('NOTION_PAGES es array:', Array.isArray(NOTION_PAGES));
-    console.log('NOTION_PAGES.length:', NOTION_PAGES?.length || 0);
+    try {
+      console.log('✅ Owlbear SDK listo');
+      console.log('🌐 URL actual:', window.location.href);
+      console.log('🔗 Origen:', window.location.origin);
+      
+      // Verificar que las variables se cargaron
+      console.log('🔍 Verificando variables...');
+      console.log('NOTION_PAGES existe:', !!NOTION_PAGES);
+      console.log('NOTION_PAGES es array:', Array.isArray(NOTION_PAGES));
+      console.log('NOTION_PAGES.length:', NOTION_PAGES?.length || 0);
     
     if (NOTION_PAGES && NOTION_PAGES.length > 0) {
       console.log('📋 Todas las páginas:', NOTION_PAGES);
@@ -459,7 +482,21 @@ try {
       console.log(`Botón agregado: ${page.name}`);
     });
     
-    console.log('Total de botones creados:', pageList.children.length);
+      console.log('Total de botones creados:', pageList.children.length);
+    } catch (error) {
+      console.error('❌ Error dentro de OBR.onReady:', error);
+      console.error('Stack:', error.stack);
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        pageList.innerHTML = `
+          <div class="empty-state">
+            <p>Error al cargar la extensión</p>
+            <p>Verifica la consola para más detalles</p>
+            <p style="font-size: 11px; margin-top: 8px; color: #888;">${error.message || 'Error desconocido'}</p>
+          </div>
+        `;
+      }
+    }
   });
 } catch (error) {
   console.error('❌ Error crítico al cargar el SDK de Owlbear:', error);

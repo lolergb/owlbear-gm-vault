@@ -3,7 +3,9 @@
 // ⚠️ NO subas config.js a GitHub (está en .gitignore)
 
 // Configuración de la API de Notion
-export const NOTION_API_TOKEN = "tu_token_de_notion_aqui";
+// NOTA: En producción (Netlify), el token se usa en el servidor (Netlify Functions)
+// Solo necesitas el token aquí para desarrollo local
+export const NOTION_API_TOKEN = "tu_token_de_notion_aqui"; // Solo para desarrollo local
 export const NOTION_API_BASE = "https://api.notion.com/v1";
 
 // Configuración de páginas de Notion

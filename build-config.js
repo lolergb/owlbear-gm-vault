@@ -23,10 +23,11 @@ if (!NOTION_API_TOKEN) {
   process.exit(1);
 }
 
+// El token ya no se incluye en config.js - se usa Netlify Function como proxy
 const configContent = `// Configuración generada automáticamente desde variables de entorno
 // ⚠️ Este archivo se genera en build time, NO lo edites manualmente
+// El token se mantiene seguro en el servidor usando Netlify Functions
 
-export const NOTION_API_TOKEN = "${NOTION_API_TOKEN}";
 export const NOTION_API_BASE = "${NOTION_API_BASE}";
 
 // Configuración de páginas de Notion

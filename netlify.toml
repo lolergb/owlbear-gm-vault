@@ -44,6 +44,7 @@
 [build]
   command = "node build-config.js"
   publish = "."
+  functions = "netlify/functions"
 
 # Variables de entorno (configúralas en Netlify Dashboard)
 # NOTION_API_TOKEN debe estar configurada en: Site settings → Environment variables
