@@ -66,20 +66,57 @@ try {
       button.addEventListener("click", async () => {
         try {
           console.log("Abriendo modal con URL:", page.url);
-          await OBR.modal.open({
-            id: `notion-modal-${index}`,
-            url: page.url,
+          console.log("Dimensiones del modal:", {
             width: Math.min(window.innerWidth * 0.9, 1200),
             height: Math.min(window.innerHeight * 0.9, 800)
           });
+          
+          // Intentar abrir en modal primero
+          try {
+            const modalResult = await OBR.modal.open({
+              id: `notion-modal-${index}`,
+              url: page.url,
+              width: Math.min(window.innerWidth * 0.9, 1200),
+              height: Math.min(window.innerHeight * 0.9, 800)
+            });
+            
+            console.log("Modal abierto exitosamente:", modalResult);
+            
+            // Verificar si el modal se cargó correctamente después de un breve delay
+            setTimeout(() => {
+              console.log("Verificando estado del modal después de 2 segundos...");
+            }, 2000);
+            
+          } catch (modalError) {
+            console.warn("Error al abrir modal, intentando alternativa:", modalError);
+            // Si el modal falla, ofrecer abrir en nueva ventana
+            const openInNewWindow = confirm(
+              "No se pudo abrir Notion en el modal (Notion bloquea iframes).\n\n" +
+              "¿Deseas abrirlo en una nueva ventana?"
+            );
+            
+            if (openInNewWindow) {
+              window.open(page.url, '_blank', 'noopener,noreferrer');
+            }
+          }
         } catch (error) {
-          console.error("Error al abrir modal:", error);
+          console.error("Error general al abrir página:", error);
           console.error("Detalles del error:", {
             message: error.message,
             stack: error.stack,
             name: error.name
           });
-          alert(`Error al abrir la página de Notion: ${error.message}\n\nVerifica que la URL sea pública y que estés conectado a internet.`);
+          
+          // Ofrecer abrir en nueva ventana como alternativa
+          const openInNewWindow = confirm(
+            `Error al abrir la página de Notion: ${error.message}\n\n` +
+            "Notion bloquea el embedding en iframes por seguridad.\n\n" +
+            "¿Deseas abrirlo en una nueva ventana?"
+          );
+          
+          if (openInNewWindow) {
+            window.open(page.url, '_blank', 'noopener,noreferrer');
+          }
         }
       });
 
