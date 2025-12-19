@@ -63,41 +63,42 @@ try {
         <div class="page-url">${page.url}</div>
       `;
       
-      button.addEventListener("click", async () => {
-        try {
-          console.log("Abriendo modal con URL de Notion:", page.url);
+      button.addEventListener("click", () => {
+        console.log("Cargando Notion en el popover:", page.url);
+        
+        // Obtener elementos
+        const pageList = document.getElementById("page-list");
+        const notionContainer = document.getElementById("notion-container");
+        const backButton = document.getElementById("back-button");
+        const pageTitle = document.getElementById("page-title");
+        const notionIframe = document.getElementById("notion-iframe");
+        
+        if (pageList && notionContainer && backButton && pageTitle && notionIframe) {
+          // Ocultar lista y mostrar contenedor de Notion
+          pageList.classList.add("hidden");
+          notionContainer.classList.remove("hidden");
+          backButton.classList.remove("hidden");
+          pageTitle.textContent = page.name;
           
-          // Crear URL para la página de embed con el parámetro de Notion
-          const embedUrl = `${window.location.origin}/notion-embed.html?url=${encodeURIComponent(page.url)}`;
-          console.log("URL del embed:", embedUrl);
+          // Cargar el iframe con la URL de Notion
+          notionIframe.src = page.url;
           
-          // Abrir modal con la página de embed que contiene el iframe
-          const modalResult = await OBR.modal.open({
-            id: `notion-modal-${index}`,
-            url: embedUrl,
-            width: Math.min(window.innerWidth * 0.9, 1200),
-            height: Math.min(window.innerHeight * 0.9, 800)
-          });
-          
-          console.log("Modal abierto exitosamente:", modalResult);
-        } catch (error) {
-          console.error("Error al abrir modal:", error);
-          console.error("Detalles del error:", {
-            message: error.message,
-            stack: error.stack,
-            name: error.name
-          });
-          
-          // Si el modal falla, ofrecer abrir en nueva ventana
-          const openInNewWindow = confirm(
-            `Error al abrir la página de Notion: ${error.message}\n\n` +
-            "Notion puede bloquear el embedding en iframes por seguridad.\n\n" +
-            "¿Deseas abrirlo en una nueva ventana?"
-          );
-          
-          if (openInNewWindow) {
-            window.open(page.url, '_blank', 'noopener,noreferrer');
+          // Configurar el botón de volver (solo una vez)
+          if (!backButton.dataset.listenerAdded) {
+            backButton.addEventListener("click", () => {
+              // Volver a mostrar la lista
+              pageList.classList.remove("hidden");
+              notionContainer.classList.add("hidden");
+              backButton.classList.add("hidden");
+              pageTitle.textContent = "📚 Páginas de Notion";
+              notionIframe.src = "";
+            });
+            backButton.dataset.listenerAdded = "true";
           }
+        } else {
+          console.error("No se encontraron los elementos necesarios");
+          // Fallback: abrir en nueva ventana
+          window.open(page.url, '_blank', 'noopener,noreferrer');
         }
       });
 
