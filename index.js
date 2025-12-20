@@ -1103,17 +1103,22 @@ try {
 
 // Función para renderizar páginas agrupadas por categorías
 function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
-  pageList.innerHTML = '';
+  // Mostrar loading
+  pageList.innerHTML = '<div class="loading-state" style="text-align: center; padding: 40px; color: #999;"><div style="font-size: 24px; margin-bottom: 12px;">⏳</div><div>Cargando páginas...</div></div>';
   
-  if (!pagesConfig || !pagesConfig.categories || pagesConfig.categories.length === 0) {
-    pageList.innerHTML = `
-      <div class="empty-state">
-        <p>No hay páginas configuradas</p>
-        <p>Clic en ⚙️ para editar el JSON</p>
-      </div>
-    `;
-    return;
-  }
+  // Usar setTimeout para permitir que el DOM se actualice con el loading
+  setTimeout(() => {
+    pageList.innerHTML = '';
+    
+    if (!pagesConfig || !pagesConfig.categories || pagesConfig.categories.length === 0) {
+      pageList.innerHTML = `
+        <div class="empty-state">
+          <p>No hay páginas configuradas</p>
+          <p>Clic en ⚙️ para editar el JSON</p>
+        </div>
+      `;
+      return;
+    }
   
   // Ordenar categorías alfabéticamente
   const sortedCategories = [...pagesConfig.categories].sort((a, b) => {
@@ -1235,8 +1240,10 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       }
     });
     
-    // Crear botones para cada página
-    categoryPages.forEach(async (page) => {
+    // Crear botones para cada página (renderizar primero, luego cargar iconos en paralelo)
+    const buttonsData = [];
+    
+    categoryPages.forEach((page) => {
       const button = document.createElement("button");
       button.className = "page-button";
       
@@ -1257,34 +1264,43 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
         </div>
       `;
       
-      // Intentar obtener el icono real si hay pageId
-      if (pageId) {
-        try {
-          const icon = await fetchPageIcon(pageId);
-          iconHtml = renderPageIcon(icon, page.name, pageId);
-          // Actualizar el HTML del botón con el icono real
-          button.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
-              ${iconHtml}
-              <div class="page-name" style="flex: 1; text-align: left;">${page.name}</div>
-              ${linkIconHtml}
-            </div>
-          `;
-        } catch (e) {
-          console.warn('No se pudo obtener el icono para:', page.name, e);
-        }
-      }
-      
       button.addEventListener("click", async () => {
         await loadPageContent(page.url, page.name);
       });
       
       pagesContainer.appendChild(button);
+      
+      // Guardar datos para cargar iconos después en paralelo
+      if (pageId) {
+        buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml });
+      }
     });
+    
+    // Cargar iconos en paralelo después de renderizar todos los botones
+    if (buttonsData.length > 0) {
+      Promise.all(buttonsData.map(async ({ button, pageId, pageName, linkIconHtml }) => {
+        try {
+          const icon = await fetchPageIcon(pageId);
+          const iconHtml = renderPageIcon(icon, pageName, pageId);
+          button.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+              ${iconHtml}
+              <div class="page-name" style="flex: 1; text-align: left;">${pageName}</div>
+              ${linkIconHtml}
+            </div>
+          `;
+        } catch (e) {
+          console.warn('No se pudo obtener el icono para:', pageName, e);
+        }
+      })).catch(e => {
+        console.error('Error al cargar iconos:', e);
+      });
+    }
     
     categoryDiv.appendChild(pagesContainer);
     pageList.appendChild(categoryDiv);
   });
+  }, 0); // Permitir que el DOM se actualice
 }
 
 // Función para limpiar el caché de una página específica
