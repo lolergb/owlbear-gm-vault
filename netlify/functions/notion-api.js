@@ -38,8 +38,8 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Obtener el pageId de los query parameters
-  const { pageId } = event.queryStringParameters || {};
+  // Obtener el pageId y type de los query parameters
+  const { pageId, type } = event.queryStringParameters || {};
   
   if (!pageId) {
     return {
@@ -49,8 +49,14 @@ exports.handler = async (event, context) => {
   }
 
   try {
+    // Si type es 'page', obtener información de la página (para last_edited_time)
+    // Si no, obtener los bloques hijos
+    const apiEndpoint = type === 'page' 
+      ? `https://api.notion.com/v1/pages/${pageId}`
+      : `https://api.notion.com/v1/blocks/${pageId}/children`;
+    
     // Hacer la petición a la API de Notion
-    const response = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
+    const response = await fetch(apiEndpoint, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${NOTION_API_TOKEN}`,

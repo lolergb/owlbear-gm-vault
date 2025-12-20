@@ -18,6 +18,18 @@ function getStorageKey(roomId) {
   return STORAGE_KEY_PREFIX + (roomId || 'default');
 }
 
+// Función para mostrar un ID de room más amigable (solo primeros caracteres)
+function getFriendlyRoomId(roomId) {
+  if (!roomId || roomId === 'default') {
+    return 'default';
+  }
+  // Mostrar solo los primeros 8 caracteres + "..."
+  if (roomId.length > 12) {
+    return roomId.substring(0, 8) + '...';
+  }
+  return roomId;
+}
+
 function getPagesJSON(roomId) {
   try {
     const storageKey = getStorageKey(roomId);
@@ -139,7 +151,10 @@ function getCachedBlocks(pageId) {
       // Verificar si el caché no ha expirado
       if (data.timestamp && (now - data.timestamp) < CACHE_EXPIRY) {
         console.log('✅ Bloques obtenidos del caché para:', pageId);
-        return data.blocks;
+        return {
+          blocks: data.blocks,
+          lastEditedTime: data.lastEditedTime || null
+        };
       } else {
         // Caché expirado, eliminarlo
         localStorage.removeItem(cacheKey);
@@ -155,15 +170,16 @@ function getCachedBlocks(pageId) {
 /**
  * Guardar bloques en el caché
  */
-function setCachedBlocks(pageId, blocks) {
+function setCachedBlocks(pageId, blocks, lastEditedTime = null) {
   try {
     const cacheKey = CACHE_PREFIX + pageId;
     const data = {
       timestamp: Date.now(),
-      blocks: blocks
+      blocks: blocks,
+      lastEditedTime: lastEditedTime
     };
     localStorage.setItem(cacheKey, JSON.stringify(data));
-    console.log('💾 Bloques guardados en caché para:', pageId);
+    console.log('💾 Bloques guardados en caché para:', pageId, 'con lastEditedTime:', lastEditedTime);
   } catch (e) {
     console.error('Error al guardar en caché:', e);
     // Si el localStorage está lleno, limpiar cachés antiguos
@@ -245,13 +261,77 @@ function extractNotionPageId(url) {
   }
 }
 
-// Función para obtener bloques de una página de Notion (con caché)
+// Función para obtener la información de última edición de una página
+async function fetchPageLastEditedTime(pageId) {
+  try {
+    const apiUrl = window.location.origin.includes('netlify.app') || window.location.origin.includes('netlify.com')
+      ? `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page`
+      : `${NOTION_API_BASE}/pages/${pageId}`;
+    
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (!apiUrl.includes('/.netlify/functions/')) {
+      try {
+        const config = await import("./config.js");
+        const localToken = config.NOTION_API_TOKEN;
+        if (localToken && localToken !== 'tu_token_de_notion_aqui') {
+          headers['Authorization'] = `Bearer ${localToken}`;
+          headers['Notion-Version'] = '2022-06-28';
+        }
+      } catch (e) {
+        // Ignorar errores de importación
+      }
+    }
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: headers
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      // La API de Notion devuelve last_edited_time en el objeto de la página
+      return data.last_edited_time || null;
+    }
+  } catch (e) {
+    console.warn('No se pudo obtener last_edited_time:', e);
+  }
+  return null;
+}
+
+// Función para obtener bloques de una página de Notion (con caché inteligente)
 async function fetchNotionBlocks(pageId, useCache = true) {
-  // Intentar obtener del caché primero
+  // Si hay caché, verificar si el contenido ha cambiado
   if (useCache) {
-    const cachedBlocks = getCachedBlocks(pageId);
-    if (cachedBlocks) {
-      return cachedBlocks;
+    const cachedData = getCachedBlocks(pageId);
+    if (cachedData && cachedData.blocks) {
+      // Intentar verificar si el contenido ha cambiado comparando last_edited_time
+      try {
+        // Obtener el last_edited_time más reciente de los bloques actuales
+        const currentLastEdited = await fetchPageLastEditedTime(pageId);
+        if (currentLastEdited && cachedData.lastEditedTime) {
+          if (currentLastEdited === cachedData.lastEditedTime) {
+            console.log('✅ Contenido sin cambios, usando caché');
+            return cachedData.blocks;
+          } else {
+            console.log('🔄 Contenido modificado detectado, invalidando caché');
+            console.log('   Caché:', cachedData.lastEditedTime);
+            console.log('   Actual:', currentLastEdited);
+            // Invalidar caché
+            const cacheKey = CACHE_PREFIX + pageId;
+            localStorage.removeItem(cacheKey);
+          }
+        } else {
+          // Si no podemos verificar, usar el caché si no ha expirado
+          console.log('⚠️ No se pudo verificar cambios, usando caché si no ha expirado');
+          return cachedData.blocks;
+        }
+      } catch (e) {
+        console.warn('Error al verificar cambios, usando caché:', e);
+        return cachedData.blocks;
+      }
     }
   }
   
@@ -307,9 +387,28 @@ async function fetchNotionBlocks(pageId, useCache = true) {
     const data = await response.json();
     const blocks = data.results || [];
     
+    // Obtener last_edited_time del primer bloque o de la página
+    let lastEditedTime = null;
+    if (blocks.length > 0) {
+      // Buscar el last_edited_time más reciente entre los bloques
+      const editedTimes = blocks
+        .map(b => b.last_edited_time)
+        .filter(t => t)
+        .sort()
+        .reverse();
+      if (editedTimes.length > 0) {
+        lastEditedTime = editedTimes[0];
+      }
+    }
+    
+    // Si no encontramos en los bloques, intentar obtener de la página
+    if (!lastEditedTime) {
+      lastEditedTime = await fetchPageLastEditedTime(pageId);
+    }
+    
     // Guardar en caché después de obtener exitosamente
     if (blocks.length > 0) {
-      setCachedBlocks(pageId, blocks);
+      setCachedBlocks(pageId, blocks, lastEditedTime);
     }
     
     return blocks;
@@ -992,7 +1091,7 @@ function showJSONEditor(pagesConfig, roomId = null) {
       ">← Volver</button>
       <div>
         <h1 style="color: #fff; font-size: 18px; font-weight: 600; margin: 0;">📝 Editar Configuración</h1>
-        ${roomId ? `<p style="color: #999; font-size: 11px; margin: 2px 0 0 0;">Room: ${roomId}</p>` : ''}
+        ${roomId ? `<p style="color: #999; font-size: 11px; margin: 2px 0 0 0;">Room: ${getFriendlyRoomId(roomId)}</p>` : ''}
       </div>
     </div>
   `;
