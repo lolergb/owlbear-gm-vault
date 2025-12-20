@@ -77,6 +77,109 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
+// Sistema de caché para bloques de Notion
+const CACHE_PREFIX = 'notion-blocks-cache-';
+const CACHE_EXPIRY = 60 * 60 * 1000; // 1 hora en milisegundos
+
+/**
+ * Obtener bloques desde el caché
+ */
+function getCachedBlocks(pageId) {
+  try {
+    const cacheKey = CACHE_PREFIX + pageId;
+    const cached = localStorage.getItem(cacheKey);
+    
+    if (cached) {
+      const data = JSON.parse(cached);
+      const now = Date.now();
+      
+      // Verificar si el caché no ha expirado
+      if (data.timestamp && (now - data.timestamp) < CACHE_EXPIRY) {
+        console.log('✅ Bloques obtenidos del caché para:', pageId);
+        return data.blocks;
+      } else {
+        // Caché expirado, eliminarlo
+        localStorage.removeItem(cacheKey);
+        console.log('⏰ Caché expirado para:', pageId);
+      }
+    }
+  } catch (e) {
+    console.error('Error al leer del caché:', e);
+  }
+  return null;
+}
+
+/**
+ * Guardar bloques en el caché
+ */
+function setCachedBlocks(pageId, blocks) {
+  try {
+    const cacheKey = CACHE_PREFIX + pageId;
+    const data = {
+      timestamp: Date.now(),
+      blocks: blocks
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(data));
+    console.log('💾 Bloques guardados en caché para:', pageId);
+  } catch (e) {
+    console.error('Error al guardar en caché:', e);
+    // Si el localStorage está lleno, limpiar cachés antiguos
+    if (e.name === 'QuotaExceededError') {
+      clearOldCache();
+    }
+  }
+}
+
+/**
+ * Limpiar cachés antiguos (más de 24 horas)
+ */
+function clearOldCache() {
+  try {
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(CACHE_PREFIX)) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          if (data.timestamp && (now - data.timestamp) > oneDay) {
+            localStorage.removeItem(key);
+            console.log('🗑️ Caché antiguo eliminado:', key);
+          }
+        } catch (e) {
+          // Si hay error al parsear, eliminar la entrada corrupta
+          localStorage.removeItem(key);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error al limpiar caché:', e);
+  }
+}
+
+/**
+ * Limpiar todo el caché manualmente
+ */
+function clearAllCache() {
+  try {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(CACHE_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    console.log('🗑️ Caché limpiado:', keysToRemove.length, 'entradas');
+  } catch (e) {
+    console.error('Error al limpiar caché:', e);
+  }
+}
+
+// Limpiar cachés antiguos al cargar
+clearOldCache();
+
 // Función para extraer el ID de página desde una URL de Notion
 function extractNotionPageId(url) {
   try {
@@ -99,8 +202,16 @@ function extractNotionPageId(url) {
   }
 }
 
-// Función para obtener bloques de una página de Notion
-async function fetchNotionBlocks(pageId) {
+// Función para obtener bloques de una página de Notion (con caché)
+async function fetchNotionBlocks(pageId, useCache = true) {
+  // Intentar obtener del caché primero
+  if (useCache) {
+    const cachedBlocks = getCachedBlocks(pageId);
+    if (cachedBlocks) {
+      return cachedBlocks;
+    }
+  }
+  
   try {
     // Usar Netlify Function como proxy para mantener el token seguro
     // Netlify Functions se exponen en /.netlify/functions/nombre-funcion
@@ -132,6 +243,7 @@ async function fetchNotionBlocks(pageId) {
       console.log('✅ Usando Netlify Function como proxy (token seguro en servidor)');
     }
     
+    console.log('🌐 Obteniendo bloques desde la API para:', pageId);
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: headers
@@ -150,7 +262,14 @@ async function fetchNotionBlocks(pageId) {
     }
 
     const data = await response.json();
-    return data.results || [];
+    const blocks = data.results || [];
+    
+    // Guardar en caché después de obtener exitosamente
+    if (blocks.length > 0) {
+      setCachedBlocks(pageId, blocks);
+    }
+    
+    return blocks;
   } catch (error) {
     console.error('Error al obtener bloques de Notion:', error);
     throw error;
@@ -408,7 +527,7 @@ function attachImageClickHandlers() {
 }
 
 // Función para cargar y renderizar contenido de Notion desde la API
-async function loadNotionContent(url, container) {
+async function loadNotionContent(url, container, forceRefresh = false) {
   const contentDiv = container.querySelector('#notion-content');
   const iframe = container.querySelector('#notion-iframe');
   
@@ -428,10 +547,10 @@ async function loadNotionContent(url, container) {
       throw new Error('No se pudo extraer el ID de la página desde la URL');
     }
     
-    console.log('Obteniendo bloques para página:', pageId);
+    console.log('Obteniendo bloques para página:', pageId, forceRefresh ? '(recarga forzada)' : '(con caché)');
     
-    // Obtener bloques
-    const blocks = await fetchNotionBlocks(pageId);
+    // Obtener bloques (usar caché a menos que se fuerce la recarga)
+    const blocks = await fetchNotionBlocks(pageId, !forceRefresh);
     console.log('Bloques obtenidos:', blocks.length);
     
     if (blocks.length === 0) {
@@ -530,7 +649,40 @@ try {
         return;
       }
 
-      // Agregar botón de administración (editor JSON)
+      // Agregar botones de administración
+      const buttonContainer = document.createElement("div");
+      buttonContainer.style.cssText = "display: flex; gap: 8px; margin-left: auto;";
+      
+      // Botón para limpiar caché
+      const clearCacheButton = document.createElement("button");
+      clearCacheButton.innerHTML = "🗑️";
+      clearCacheButton.title = "Limpiar caché";
+      clearCacheButton.style.cssText = `
+        background: #2d2d2d;
+        border: 1px solid #404040;
+        border-radius: 6px;
+        padding: 6px 12px;
+        color: #e0e0e0;
+        cursor: pointer;
+        font-size: 16px;
+        transition: all 0.2s;
+      `;
+      clearCacheButton.addEventListener("click", () => {
+        if (confirm('¿Limpiar todo el caché? Las páginas se recargarán desde la API la próxima vez.')) {
+          clearAllCache();
+          alert('Caché limpiado. Las páginas se recargarán desde la API la próxima vez que las abras.');
+        }
+      });
+      clearCacheButton.addEventListener('mouseenter', () => {
+        clearCacheButton.style.background = '#3d3d3d';
+        clearCacheButton.style.borderColor = '#555';
+      });
+      clearCacheButton.addEventListener('mouseleave', () => {
+        clearCacheButton.style.background = '#2d2d2d';
+        clearCacheButton.style.borderColor = '#404040';
+      });
+      
+      // Botón para editar JSON
       const adminButton = document.createElement("button");
       adminButton.className = "admin-button";
       adminButton.innerHTML = "⚙️";
@@ -543,10 +695,21 @@ try {
         color: #e0e0e0;
         cursor: pointer;
         font-size: 16px;
-        margin-left: auto;
+        transition: all 0.2s;
       `;
       adminButton.addEventListener("click", () => showJSONEditor(pagesConfig));
-      header.appendChild(adminButton);
+      adminButton.addEventListener('mouseenter', () => {
+        adminButton.style.background = '#3d3d3d';
+        adminButton.style.borderColor = '#555';
+      });
+      adminButton.addEventListener('mouseleave', () => {
+        adminButton.style.background = '#2d2d2d';
+        adminButton.style.borderColor = '#404040';
+      });
+      
+      buttonContainer.appendChild(clearCacheButton);
+      buttonContainer.appendChild(adminButton);
+      header.appendChild(buttonContainer);
 
       // Renderizar páginas agrupadas por categorías
       renderPagesByCategories(pagesConfig, pageList);
@@ -636,7 +799,7 @@ function renderPagesByCategories(pagesConfig, pageList) {
       button.className = "page-button";
       button.innerHTML = `
         <div class="page-name">${page.name}</div>
-        <div class="page-url">${page.url}</div>
+        <!--div class="page-url">${page.url}</div-->
       `;
       
       button.addEventListener("click", async () => {
