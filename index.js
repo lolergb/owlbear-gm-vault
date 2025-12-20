@@ -895,12 +895,12 @@ try {
         }
       });
       clearCacheButton.addEventListener('mouseenter', () => {
-        clearCacheButton.style.background = '#3d3d3d';
-        clearCacheButton.style.borderColor = '#555';
+        clearCacheButton.style.background = '#2a2a2a';
+        clearCacheButton.style.borderColor = '#3a3a3a';
       });
       clearCacheButton.addEventListener('mouseleave', () => {
-        clearCacheButton.style.background = '#2d2d2d';
-        clearCacheButton.style.borderColor = '#404040';
+        clearCacheButton.style.background = '#1f1f1f';
+        clearCacheButton.style.borderColor = '#2a2a2a';
       });
       
       // Botón para editar JSON
@@ -909,23 +909,23 @@ try {
       adminButton.innerHTML = "⚙️";
       adminButton.title = "Editar JSON";
       adminButton.style.cssText = `
-        background: #2d2d2d;
-        border: 1px solid #404040;
+        background: #1f1f1f;
+        border: 1px solid #2a2a2a;
         border-radius: 6px;
-        padding: 6px 12px;
+        padding: 6px 10px;
         color: #e0e0e0;
         cursor: pointer;
-        font-size: 16px;
-        transition: all 0.2s;
+        font-size: 14px;
+        transition: all 0.15s ease;
       `;
       adminButton.addEventListener("click", () => showJSONEditor(pagesConfig, roomId));
       adminButton.addEventListener('mouseenter', () => {
-        adminButton.style.background = '#3d3d3d';
-        adminButton.style.borderColor = '#555';
+        adminButton.style.background = '#2a2a2a';
+        adminButton.style.borderColor = '#3a3a3a';
       });
       adminButton.addEventListener('mouseleave', () => {
-        adminButton.style.background = '#2d2d2d';
-        adminButton.style.borderColor = '#404040';
+        adminButton.style.background = '#1f1f1f';
+        adminButton.style.borderColor = '#2a2a2a';
       });
       
       buttonContainer.appendChild(clearCacheButton);
@@ -978,41 +978,56 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
     return;
   }
   
-  pagesConfig.categories.forEach(category => {
+  // Ordenar categorías alfabéticamente
+  const sortedCategories = [...pagesConfig.categories].sort((a, b) => {
+    const nameA = (a.name || '').toLowerCase();
+    const nameB = (b.name || '').toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+  
+  sortedCategories.forEach(category => {
     if (!category.pages || category.pages.length === 0) return;
     
-    // Filtrar páginas válidas
-    const categoryPages = category.pages.filter(page => 
-      page.url && 
-      !page.url.includes('...') && 
-      page.url.startsWith('http')
-    );
+    // Filtrar y ordenar páginas válidas alfabéticamente
+    const categoryPages = category.pages
+      .filter(page => 
+        page.url && 
+        !page.url.includes('...') && 
+        page.url.startsWith('http')
+      )
+      .sort((a, b) => {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
     
     if (categoryPages.length === 0) return;
     
     // Crear contenedor de categoría
     const categoryDiv = document.createElement('div');
     categoryDiv.className = 'category-group';
-    categoryDiv.style.cssText = 'margin-bottom: 24px;';
+    categoryDiv.style.cssText = 'margin-bottom: 12px;';
     
     // Título de categoría
     const categoryTitle = document.createElement('h2');
     categoryTitle.className = 'category-title';
     categoryTitle.textContent = category.name;
     categoryTitle.style.cssText = `
-      font-size: 14px;
+      font-size: 11px;
       font-weight: 600;
-      color: #999;
-      margin-bottom: 8px;
+      color: #888;
+      margin-bottom: 6px;
+      margin-top: 16px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
+      padding: 0 4px;
     `;
     categoryDiv.appendChild(categoryTitle);
     
     // Contenedor de páginas de la categoría
     const pagesContainer = document.createElement('div');
     pagesContainer.className = 'category-pages';
-    pagesContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+    pagesContainer.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
     
     // Crear botones para cada página
     categoryPages.forEach(async (page) => {
@@ -1038,9 +1053,9 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
           iconHtml = renderPageIcon(icon, page.name, pageId);
           // Actualizar el HTML del botón con el icono real
           button.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
               ${iconHtml}
-              <div class="page-name" style="flex: 1; text-align: left;">${page.name}</div>
+              <div class="page-name" style="flex: 1; text-align: left; font-weight: 500; color: #fff;">${page.name}</div>
             </div>
           `;
         } catch (e) {
@@ -1119,14 +1134,14 @@ async function loadPageContent(url, name) {
     refreshButton.id = "refresh-page-button";
     refreshButton.dataset.pageUrl = url;
     
-    refreshButton.addEventListener('mouseenter', () => {
-      refreshButton.style.background = '#3d3d3d';
-      refreshButton.style.borderColor = '#555';
-    });
-    refreshButton.addEventListener('mouseleave', () => {
-      refreshButton.style.background = '#2d2d2d';
-      refreshButton.style.borderColor = '#404040';
-    });
+      refreshButton.addEventListener('mouseenter', () => {
+        refreshButton.style.background = '#2a2a2a';
+        refreshButton.style.borderColor = '#3a3a3a';
+      });
+      refreshButton.addEventListener('mouseleave', () => {
+        refreshButton.style.background = '#1f1f1f';
+        refreshButton.style.borderColor = '#2a2a2a';
+      });
     
     refreshButton.addEventListener('click', async () => {
       // Obtener la URL actual del botón
