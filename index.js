@@ -778,10 +778,13 @@ async function loadNotionContent(url, container, forceRefresh = false) {
       throw new Error('No se pudo extraer el ID de la página desde la URL');
     }
     
-    console.log('Obteniendo bloques para página:', pageId, forceRefresh ? '(recarga forzada)' : '(con caché)');
+    console.log('Obteniendo bloques para página:', pageId, forceRefresh ? '(recarga forzada - sin caché)' : '(con caché)');
     
     // Obtener bloques (usar caché a menos que se fuerce la recarga)
-    const blocks = await fetchNotionBlocks(pageId, !forceRefresh);
+    // Si forceRefresh es true, pasamos useCache = false para ignorar el caché
+    const useCache = !forceRefresh;
+    console.log('📋 Parámetros fetchNotionBlocks - useCache:', useCache, 'forceRefresh:', forceRefresh);
+    const blocks = await fetchNotionBlocks(pageId, useCache);
     console.log('Bloques obtenidos:', blocks.length);
     
     if (blocks.length === 0) {
@@ -1133,7 +1136,46 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
     // Crear contenedor de categoría
     const categoryDiv = document.createElement('div');
     categoryDiv.className = 'category-group';
+    categoryDiv.dataset.categoryName = category.name;
     categoryDiv.style.cssText = 'margin-bottom: 24px;';
+    
+    // Contenedor del título con botón de colapsar
+    const titleContainer = document.createElement('div');
+    titleContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    `;
+    
+    // Botón de colapsar/expandir
+    const collapseButton = document.createElement('button');
+    collapseButton.className = 'category-collapse-button';
+    collapseButton.style.cssText = `
+      background: transparent;
+      border: none;
+      padding: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      transition: transform 0.2s;
+    `;
+    
+    // Icono de colapsar (inicialmente cerrado/expandido)
+    const collapseIcon = document.createElement('img');
+    collapseIcon.style.cssText = 'width: 16px; height: 16px; display: block;';
+    
+    // Verificar estado guardado en localStorage
+    const collapseStateKey = `category-collapsed-${category.name}`;
+    const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
+    
+    collapseIcon.src = isCollapsed ? 'img/icon-closed.svg' : 'img/icon-open.svg';
+    collapseIcon.alt = isCollapsed ? 'Expandir' : 'Colapsar';
+    collapseButton.appendChild(collapseIcon);
     
     // Título de categoría
     const categoryTitle = document.createElement('h2');
@@ -1143,16 +1185,48 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       font-size: 14px;
       font-weight: 600;
       color: #999;
-      margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      margin: 0;
+      flex: 1;
     `;
-    categoryDiv.appendChild(categoryTitle);
+    
+    titleContainer.appendChild(collapseButton);
+    titleContainer.appendChild(categoryTitle);
+    categoryDiv.appendChild(titleContainer);
     
     // Contenedor de páginas de la categoría
     const pagesContainer = document.createElement('div');
     pagesContainer.className = 'category-pages';
-    pagesContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+    pagesContainer.style.cssText = `
+      display: ${isCollapsed ? 'none' : 'flex'};
+      flex-direction: column;
+      gap: 8px;
+      transition: opacity 0.2s;
+    `;
+    
+    // Funcionalidad de colapsar/expandir
+    const toggleCollapse = () => {
+      const currentState = pagesContainer.style.display === 'none';
+      pagesContainer.style.display = currentState ? 'flex' : 'none';
+      collapseIcon.src = currentState ? 'img/icon-open.svg' : 'img/icon-closed.svg';
+      collapseIcon.alt = currentState ? 'Colapsar' : 'Expandir';
+      
+      // Guardar estado en localStorage
+      localStorage.setItem(collapseStateKey, currentState ? 'false' : 'true');
+    };
+    
+    collapseButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCollapse();
+    });
+    
+    titleContainer.addEventListener('click', (e) => {
+      // Si se hace clic en el título (no en el botón), también colapsar
+      if (e.target === categoryTitle || e.target === titleContainer) {
+        toggleCollapse();
+      }
+    });
     
     // Crear botones para cada página
     categoryPages.forEach(async (page) => {
@@ -1290,25 +1364,45 @@ async function loadPageContent(url, name) {
         return;
       }
       
-      // Limpiar caché de esta página y recargar
+      // Limpiar caché de esta página ANTES de recargar
       const pageId = extractNotionPageId(currentUrl);
       if (pageId) {
         const cacheKey = CACHE_PREFIX + pageId;
         localStorage.removeItem(cacheKey);
         console.log('🗑️ Caché limpiado para recarga:', pageId, 'clave:', cacheKey);
+        // Verificar que se limpió correctamente
+        const verifyCache = localStorage.getItem(cacheKey);
+        if (verifyCache) {
+          console.warn('⚠️ El caché todavía existe después de limpiarlo');
+        } else {
+          console.log('✅ Caché confirmado como limpiado');
+        }
       } else {
         console.warn('No se pudo extraer pageId de la URL:', currentUrl);
       }
       
       refreshButton.disabled = true;
-      refreshButton.innerHTML = "⏳";
+      // Reemplazar icono por el de reloj (loading)
+      refreshButton.innerHTML = "";
+      const clockIcon = document.createElement("img");
+      clockIcon.src = "img/icon-clock.svg";
+      clockIcon.alt = "Cargando...";
+      clockIcon.style.cssText = "width: 20px; height: 20px; display: block;";
+      refreshButton.appendChild(clockIcon);
       try {
+        console.log('🔄 Llamando a loadNotionContent con forceRefresh = true');
         await loadNotionContent(currentUrl, notionContainer, true);
       } catch (e) {
         console.error('Error al recargar:', e);
       } finally {
         refreshButton.disabled = false;
-        refreshButton.innerHTML = "🔄";
+        // Restaurar icono de reload
+        refreshButton.innerHTML = "";
+        const reloadIconRestore = document.createElement("img");
+        reloadIconRestore.src = "img/icon-reload.svg";
+        reloadIconRestore.alt = "Recargar contenido";
+        reloadIconRestore.style.cssText = "width: 20px; height: 20px; display: block;";
+        refreshButton.appendChild(reloadIconRestore);
       }
     });
     
