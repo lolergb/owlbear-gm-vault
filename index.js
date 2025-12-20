@@ -767,8 +767,15 @@ async function loadNotionContent(url, container, forceRefresh = false) {
     return;
   }
   
+  // Ocultar iframe y mostrar contenido de Notion
+  const iframe = container.querySelector('#notion-iframe');
+  if (iframe) {
+    iframe.style.display = 'none';
+  }
+  
   // Mostrar loading
   contentDiv.innerHTML = '<div class="notion-loading">Cargando contenido...</div>';
+  contentDiv.style.display = 'block';
   container.classList.add('show-content');
   
   try {
@@ -1237,11 +1244,16 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       const pageId = extractNotionPageId(page.url);
       let iconHtml = renderPageIcon(null, page.name, pageId);
       
+      // Obtener el tipo de link y su icono
+      const linkType = getLinkType(page.url);
+      const linkIconHtml = `<img src="img/${linkType.icon}" alt="${linkType.type}" style="width: 16px; height: 16px; opacity: 0.5; flex-shrink: 0;" />`;
+      
       // Mostrar placeholder mientras se carga el icono
       button.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
           ${iconHtml}
           <div class="page-name" style="flex: 1; text-align: left;">${page.name}</div>
+          ${linkIconHtml}
         </div>
       `;
       
@@ -1252,9 +1264,10 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
           iconHtml = renderPageIcon(icon, page.name, pageId);
           // Actualizar el HTML del botón con el icono real
           button.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
               ${iconHtml}
               <div class="page-name" style="flex: 1; text-align: left;">${page.name}</div>
+              ${linkIconHtml}
             </div>
           `;
         } catch (e) {
@@ -1302,6 +1315,37 @@ function isNotionUrl(url) {
   }
 }
 
+// Función para obtener el tipo de link y su icono correspondiente
+// Preparado para añadir más tipos en el futuro
+function getLinkType(url) {
+  if (!url || typeof url !== 'string') {
+    return { type: 'generic', icon: 'icon-link.svg' };
+  }
+  
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // Detectar tipos de links
+    if (hostname.includes('notion.so') || hostname.includes('notion.site')) {
+      return { type: 'notion', icon: 'icon-notion.svg' };
+    }
+    
+    // Aquí se pueden añadir más tipos en el futuro:
+    // if (hostname.includes('dndbeyond.com')) {
+    //   return { type: 'dndbeyond', icon: 'icon-dndbeyond.svg' };
+    // }
+    // if (hostname.includes('roll20.net')) {
+    //   return { type: 'roll20', icon: 'icon-roll20.svg' };
+    // }
+    
+    // Por defecto, link genérico
+    return { type: 'generic', icon: 'icon-link.svg' };
+  } catch (e) {
+    return { type: 'generic', icon: 'icon-link.svg' };
+  }
+}
+
 // Función para cargar contenido en iframe (para URLs no-Notion)
 function loadIframeContent(url, container) {
   const iframe = container.querySelector('#notion-iframe');
@@ -1316,8 +1360,11 @@ function loadIframeContent(url, container) {
   if (contentDiv) {
     contentDiv.style.display = 'none';
   }
+  // Quitar la clase que oculta el iframe
   container.classList.remove('show-content');
+  // Asegurarse de que el iframe se muestre
   iframe.style.display = 'block';
+  iframe.style.visibility = 'visible';
   iframe.src = url;
   
   console.log('📄 Cargando URL en iframe:', url);
@@ -1470,7 +1517,7 @@ async function loadPageContent(url, name) {
         pageList.classList.remove("hidden");
         notionContainer.classList.add("hidden");
         backButton.classList.add("hidden");
-        pageTitle.textContent = "📚 Páginas de Notion";
+        pageTitle.textContent = "📚 Context";
         notionContainer.classList.remove("show-content");
         if (notionContent) {
           notionContent.innerHTML = "";
