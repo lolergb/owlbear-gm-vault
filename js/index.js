@@ -586,6 +586,10 @@ function renderRichText(richTextArray) {
   return richTextArray.map(text => {
     let content = text.plain_text || '';
     
+    // Convertir saltos de línea a <br> antes de aplicar formatos
+    // Esto asegura que los <br> queden dentro de los tags de formato
+    content = content.replace(/\n/g, '<br>');
+    
     if (text.annotations) {
       if (text.annotations.bold) content = `<strong class="notion-text-bold">${content}</strong>`;
       if (text.annotations.italic) content = `<em class="notion-text-italic">${content}</em>`;
