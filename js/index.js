@@ -1595,6 +1595,218 @@ try {
   }
 }
 
+// Función recursiva para renderizar una categoría (puede tener subcategorías)
+function renderCategory(category, parentElement, level = 0, roomId = null) {
+  // Verificar si la categoría tiene contenido (páginas o subcategorías)
+  const hasPages = category.pages && category.pages.length > 0;
+  const hasSubcategories = category.categories && category.categories.length > 0;
+  
+  if (!hasPages && !hasSubcategories) return;
+  
+  // Filtrar páginas válidas (mantener el orden original)
+  const categoryPages = hasPages ? category.pages
+    .filter(page => 
+      page.url && 
+      !page.url.includes('...') && 
+      page.url.startsWith('http')
+    ) : [];
+  
+  // Si no tiene páginas válidas ni subcategorías, no renderizar
+  if (categoryPages.length === 0 && !hasSubcategories) return;
+  
+  // Calcular indentación basada en el nivel
+  const indent = level * 16; // 16px por nivel
+  
+  // Crear contenedor de categoría
+  const categoryDiv = document.createElement('div');
+  categoryDiv.className = 'category-group';
+  categoryDiv.dataset.categoryName = category.name;
+  categoryDiv.dataset.level = level;
+  categoryDiv.style.cssText = `margin-bottom: 0px; margin-left: ${indent}px;`;
+  
+  // Contenedor del título con botón de colapsar
+  const titleContainer = document.createElement('div');
+  titleContainer.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  `;
+  
+  // Botón de colapsar/expandir
+  const collapseButton = document.createElement('button');
+  collapseButton.className = 'category-collapse-button';
+  collapseButton.style.cssText = `
+    background: transparent;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    transition: transform 0.2s;
+  `;
+  
+  // Icono de colapsar (inicialmente cerrado/expandido)
+  const collapseIcon = document.createElement('img');
+  collapseIcon.style.cssText = 'width: 24px; height: 24px; display: block;';
+  
+  // Verificar estado guardado en localStorage (usar nombre completo con nivel para evitar conflictos)
+  const collapseStateKey = `category-collapsed-${category.name}-level-${level}`;
+  const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
+  
+  collapseIcon.src = isCollapsed ? 'img/icon-closed.svg' : 'img/icon-open.svg';
+  collapseIcon.alt = isCollapsed ? 'Expandir' : 'Colapsar';
+  collapseButton.appendChild(collapseIcon);
+  
+  // Título de categoría
+  const categoryTitle = document.createElement('h2');
+  categoryTitle.className = 'category-title';
+  categoryTitle.textContent = category.name;
+  categoryTitle.style.cssText = `
+    font-family: Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 700;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+    flex: 1;
+  `;
+  
+  titleContainer.appendChild(collapseButton);
+  titleContainer.appendChild(categoryTitle);
+  categoryDiv.appendChild(titleContainer);
+  
+  // Contenedor de contenido (páginas y subcategorías)
+  const contentContainer = document.createElement('div');
+  contentContainer.className = 'category-content';
+  contentContainer.style.display = isCollapsed ? 'none' : 'block';
+  
+  // Renderizar subcategorías primero (si existen)
+  if (hasSubcategories) {
+    category.categories.forEach(subcategory => {
+      renderCategory(subcategory, contentContainer, level + 1, roomId);
+    });
+  }
+  
+  // Contenedor de páginas de la categoría
+  if (categoryPages.length > 0) {
+    const pagesContainer = document.createElement('div');
+    pagesContainer.className = 'category-pages';
+    
+    const buttonsData = [];
+    
+    categoryPages.forEach((page, index) => {
+      const pageId = extractNotionPageId(page.url);
+      const isNotion = isNotionUrl(page.url);
+      
+      // Determinar icono de tipo de link
+      let linkIconHtml = '';
+      if (isNotion) {
+        linkIconHtml = '<img src="img/icon-notion.svg" alt="Notion" style="width: 16px; height: 16px; opacity: 0.5;">';
+      } else {
+        linkIconHtml = '<img src="img/icon-link.svg" alt="Link" style="width: 16px; height: 16px; opacity: 0.5;">';
+      }
+      
+      const button = document.createElement('button');
+      button.className = 'page-button';
+      button.dataset.url = page.url;
+      button.dataset.selector = page.selector || '';
+      button.style.cssText = `
+        width: 100%;
+        padding: 12px 16px;
+        margin-bottom: 8px;
+        background: ${CSS_VARS.bg};
+        border: 1px solid ${CSS_VARS.border};
+        border-radius: 8px;
+        cursor: pointer;
+        text-align: left;
+        font-family: Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        font-weight: 400;
+        color: #fff;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      `;
+      
+      // Placeholder para el icono (se cargará después)
+      const placeholderColor = generateColorFromString(pageId || page.name);
+      const placeholderInitial = (page.name || '?')[0].toUpperCase();
+      button.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+          <div style="width: 24px; height: 24px; border-radius: 50%; background: ${placeholderColor}; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px;">${placeholderInitial}</div>
+          <div class="page-name" style="flex: 1; text-align: left;">${page.name}</div>
+          ${linkIconHtml}
+        </div>
+      `;
+      
+      // Hover effect
+      button.addEventListener('mouseenter', () => {
+        button.style.background = CSS_VARS.hover;
+      });
+      button.addEventListener('mouseleave', () => {
+        button.style.background = CSS_VARS.bg;
+      });
+      
+      // Click handler
+      button.addEventListener('click', async () => {
+        await loadPageContent(page.url, page.name, page.selector || '');
+      });
+      
+      const buttonWrapper = document.createElement('div');
+      buttonWrapper.style.cssText = 'display: flex; align-items: center; gap: 0;';
+      buttonWrapper.appendChild(button);
+      buttonWrapper.appendChild(refreshButton);
+      
+      pagesContainer.appendChild(buttonWrapper);
+      
+      buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml });
+    });
+    
+    // Cargar iconos en paralelo después de renderizar todos los botones
+    if (buttonsData.length > 0) {
+      Promise.all(buttonsData.map(async ({ button, pageId, pageName, linkIconHtml }) => {
+        try {
+          const icon = await fetchPageIcon(pageId);
+          const iconHtml = renderPageIcon(icon, pageName, pageId);
+          button.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+              ${iconHtml}
+              <div class="page-name" style="flex: 1; text-align: left;">${pageName}</div>
+              ${linkIconHtml}
+            </div>
+          `;
+        } catch (e) {
+          console.warn('No se pudo obtener el icono para:', pageName, e);
+        }
+      })).catch(e => {
+        console.error('Error al cargar iconos:', e);
+      });
+    }
+    
+    contentContainer.appendChild(pagesContainer);
+  }
+  
+  // Manejar colapso/expansión
+  titleContainer.addEventListener('click', () => {
+    const newIsCollapsed = contentContainer.style.display === 'none';
+    contentContainer.style.display = newIsCollapsed ? 'block' : 'none';
+    collapseIcon.src = newIsCollapsed ? 'img/icon-open.svg' : 'img/icon-closed.svg';
+    collapseIcon.alt = newIsCollapsed ? 'Colapsar' : 'Expandir';
+    localStorage.setItem(collapseStateKey, (!newIsCollapsed).toString());
+  });
+  
+  categoryDiv.appendChild(contentContainer);
+  parentElement.appendChild(categoryDiv);
+}
+
 // Función para renderizar páginas agrupadas por categorías
 function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
   // Mostrar loading
@@ -1616,17 +1828,8 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
   
     // Mantener el orden original del JSON (sin ordenar)
     pagesConfig.categories.forEach(category => {
-      if (!category.pages || category.pages.length === 0) return;
-      
-      // Filtrar páginas válidas (mantener el orden original)
-      const categoryPages = category.pages
-        .filter(page => 
-          page.url && 
-          !page.url.includes('...') && 
-          page.url.startsWith('http')
-        );
-    
-    if (categoryPages.length === 0) return;
+      renderCategory(category, pageList, 0, roomId);
+    });
     
     // Crear contenedor de categoría
     const categoryDiv = document.createElement('div');

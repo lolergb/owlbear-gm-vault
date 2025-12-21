@@ -89,6 +89,17 @@ Extensión simple para embebber páginas de Notion directamente en Owlbear Rodeo
           "url": "URL de la página",
           "selector": "selector-opcional"
         }
+      ],
+      "categories": [
+        {
+          "name": "Subcategoría",
+          "pages": [
+            {
+              "name": "Página en subcategoría",
+              "url": "URL de la página"
+            }
+          ]
+        }
       ]
     }
   ]
@@ -109,8 +120,14 @@ Extensión simple para embebber páginas de Notion directamente en Owlbear Rodeo
 
 #### Páginas (`categories[].pages`)
 - **Tipo:** Array de objetos
-- **Requerido:** Sí
+- **Requerido:** No (opcional si hay subcategorías)
 - **Descripción:** Lista de páginas dentro de la categoría
+
+#### Subcategorías (`categories[].categories`)
+- **Tipo:** Array de objetos
+- **Requerido:** No (opcional)
+- **Descripción:** Lista de subcategorías anidadas dentro de la categoría
+- **Nota:** Las subcategorías pueden tener sus propias páginas y subcategorías (anidación ilimitada)
 
 #### Página (`categories[].pages[].name`)
 - **Tipo:** String
@@ -148,14 +165,26 @@ Extensión simple para embebber páginas de Notion directamente en Owlbear Rodeo
         {
           "name": "Mi Primera Aventura",
           "url": "https://tu-workspace.notion.site/Mi-Primera-Aventura-2d0d4856c90e80f6801dcafb6b7366e6"
+        }
+      ],
+      "categories": [
+        {
+          "name": "Cortas",
+          "pages": [
+            {
+              "name": "Encuentros Aleatorios",
+              "url": "https://www.notion.so/Encuentros-Aleatorios-3e1e5967d01e91f7912ec8bf7c8477f8"
+            }
+          ]
         },
         {
-          "name": "Encuentros Aleatorios",
-          "url": "https://www.notion.so/Encuentros-Aleatorios-3e1e5967d01e91f7912ec8bf7c8477f8"
-        },
-        {
-          "name": "NPCs Importantes",
-          "url": "https://tu-workspace.notion.site/NPCs-Importantes-4f2f6078e02e02f8023fd9cf8d9589f9"
+          "name": "Largas",
+          "pages": [
+            {
+              "name": "NPCs Importantes",
+              "url": "https://tu-workspace.notion.site/NPCs-Importantes-4f2f6078e02e02f8023fd9cf8d9589f9"
+            }
+          ]
         }
       ]
     },
@@ -232,11 +261,13 @@ Extensión simple para embebber páginas de Notion directamente en Owlbear Rodeo
 ```
 
 **Notas importantes:**
-- Las categorías se ordenan alfabéticamente automáticamente
-- Las páginas dentro de cada categoría también se ordenan alfabéticamente
+- Las categorías y páginas se muestran en el mismo orden que en el JSON (sin ordenación automática)
+- Las subcategorías se muestran con indentación visual para indicar la jerarquía
+- Cada categoría y subcategoría puede colapsarse/expandirse independientemente
 - El `selector` solo funciona con URLs externas (no-Notion)
 - Para páginas de Notion, el `selector` se ignora (se usa la API de Notion)
 - Los iconos de las páginas se cargan automáticamente desde Notion
+- Puedes anidar subcategorías a cualquier nivel (sin límite de profundidad)
 
 ### 🔄 Actualizar contenido
 
