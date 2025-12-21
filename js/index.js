@@ -396,32 +396,20 @@ function renderPageIcon(icon, pageName, pageId) {
   if (icon) {
     if (icon.type === 'emoji') {
       // Icono emoji
-      return `<span style="font-size: 24px; line-height: 24px; display: inline-block; width: 24px; height: 24px; text-align: center;">${icon.emoji || '📄'}</span>`;
+      return `<span class="page-icon-emoji">${icon.emoji || '📄'}</span>`;
     } else if (icon.type === 'external' && icon.external) {
       // Icono externo (URL)
-      return `<img src="${icon.external.url}" alt="${pageName}" style="width: 24px; height: 24px; object-fit: cover; border-radius: 4px;" />`;
+      return `<img src="${icon.external.url}" alt="${pageName}" class="page-icon-image" />`;
     } else if (icon.type === 'file' && icon.file) {
       // Icono de archivo
-      return `<img src="${icon.file.url}" alt="${pageName}" style="width: 24px; height: 24px; object-fit: cover; border-radius: 4px;" />`;
+      return `<img src="${icon.file.url}" alt="${pageName}" class="page-icon-image" />`;
     }
   }
   
   // Fallback: círculo con color aleatorio e inicial
   const color = generateColorFromString(pageId || pageName);
   const initial = getInitial(pageName);
-  return `<div style="
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    background: ${color};
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 600;
-    flex-shrink: 0;
-  ">${initial}</div>`;
+  return `<div class="page-icon-placeholder" style="background: ${color};">${initial}</div>`;
 }
 
 // Función para obtener bloques de una página de Notion (con caché persistente)
@@ -643,9 +631,9 @@ function renderBlock(block) {
               data-image-url="${imageUrl}" 
               data-image-caption="${caption.replace(/"/g, '&quot;')}"
               data-block-id="${block.id}"
-              style="cursor: pointer; max-width: 100%; height: auto; display: block; margin: 0 auto;" 
+              class="notion-image-clickable"
               loading="lazy"
-              onerror="this.style.display='none'; const errorDiv = document.createElement('div'); errorDiv.className='notion-image-error'; errorDiv.style.cssText = 'padding: 20px; text-align: center; color: #999; background: #f5f5f5; border-radius: 4px; margin: 10px 0;'; errorDiv.innerHTML = '⚠️ No se pudo cargar la imagen<br><small>La URL puede haber expirado</small><br><button onclick=\\"refreshImage(this)\\" style=\\"margin-top: 10px; padding: 6px 12px; background: #4a90e2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;\\">🔄 Recargar página</button>'; this.parentElement.appendChild(errorDiv);"
+              onerror="this.style.display='none'; const errorDiv = document.createElement('div'); errorDiv.className='notion-image-error'; errorDiv.innerHTML = '⚠️ No se pudo cargar la imagen<br><small>La URL puede haber expirado</small><br><button onclick=\\"refreshImage(this)\\" class=\\"notion-image-error-button\\">🔄 Recargar página</button>'; this.parentElement.appendChild(errorDiv);"
               onload="console.log('✅ Imagen cargada correctamente:', this.src.substring(0, 80));"
             />
             ${caption ? `<div class="notion-image-caption">${caption}</div>` : ''}
@@ -658,7 +646,7 @@ function renderBlock(block) {
           hasFile: !!image?.file,
           image: image
         });
-        return '<div style="padding: 10px; color: #999; font-style: italic;">[Imagen no disponible]</div>';
+        return '<div class="notion-image-unavailable">[Imagen no disponible]</div>';
       }
     
     case 'divider':
@@ -883,7 +871,7 @@ async function renderToggleHeading(toggleHeadingBlock, headingLevel, blockTypes 
   return `
     <details class="notion-toggle notion-toggle-heading">
       <summary class="notion-toggle-summary">
-        <${headingTag} style="display: inline; margin: 0; font-size: inherit; font-weight: inherit;">${headingText}</${headingTag}>
+        <${headingTag} class="notion-toggle-heading-inline">${headingText}</${headingTag}>
       </summary>
       <div class="notion-toggle-content">${toggleContent}</div>
     </details>
@@ -1090,7 +1078,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0) {
         const adjustedLevel = Math.min(headingLevel + headingLevelOffset, 6);
         const headingTag = `h${adjustedLevel}`;
         const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text || block.toggle?.rich_text);
-        html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} style="display: inline; margin: 0;">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
+        html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} class="notion-toggle-heading-inline-error">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
         continue;
       }
     }
@@ -1334,7 +1322,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0) {
         } catch (error) {
           console.error(`❌ Error al renderizar bloque [${index}] de tipo ${type}:`, error);
           // Continuar con el siguiente bloque en lugar de detenerse
-          html += `<div style="padding: 10px; color: #ff6b6b; background: rgba(255, 107, 107, 0.1); border-radius: 4px; margin: 4px 0;">⚠️ Error al renderizar bloque: ${type}</div>`;
+          html += `<div class="error-message">⚠️ Error al renderizar bloque: ${type}</div>`;
         }
       }
     }
@@ -1508,14 +1496,7 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
       <div class="notion-error">
         <strong>Error al cargar el contenido:</strong><br>
         ${error.message}<br><br>
-        <button onclick="window.open('${url}', '_blank')" style="
-          background: #4a9eff;
-          border: none;
-          border-radius: 4px;
-          padding: 8px 16px;
-          color: #fff;
-          cursor: pointer;
-        ">Abrir en Notion</button>
+        <button onclick="window.open('${url}', '_blank')" class="notion-blocked-button-small">Abrir en Notion</button>
       </div>
     `;
   }
@@ -1524,24 +1505,14 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
 // Función para mostrar mensaje cuando Notion bloquea el iframe
 function showNotionBlockedMessage(container, url) {
   container.innerHTML = `
-    <div style="padding: 40px 20px; text-align: center; color: #e0e0e0;">
-      <div style="font-size: 48px; margin-bottom: 16px;">🔒</div>
-      <h2 style="color: #fff; margin-bottom: 12px; font-size: 16px; line-height: 24px; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 700;">Notion bloquea el embedding</h2>
-      <p style="color: #999; margin-bottom: 20px; font-size: 14px; line-height: 1.5; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">
+    <div class="notion-blocked-message">
+      <div class="notion-blocked-icon">🔒</div>
+      <h2 class="notion-blocked-title">Notion bloquea el embedding</h2>
+      <p class="notion-blocked-text">
         Notion no permite que sus páginas se carguen en iframes por razones de seguridad.<br>
         Puedes abrir la página en una nueva ventana para verla.
       </p>
-      <button id="open-notion-window" style="
-        background: #4a9eff;
-        border: none;
-        border-radius: 8px;
-        padding: 12px 24px;
-        color: #fff;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-      ">Abrir en nueva ventana</button>
+      <button id="open-notion-window" class="notion-blocked-button">Abrir en nueva ventana</button>
     </div>
   `;
   
@@ -1549,12 +1520,6 @@ function showNotionBlockedMessage(container, url) {
   if (openButton) {
     openButton.addEventListener('click', () => {
       window.open(url, '_blank', 'noopener,noreferrer');
-    });
-    openButton.addEventListener('mouseenter', () => {
-      openButton.style.background = '#5aaeff';
-    });
-    openButton.addEventListener('mouseleave', () => {
-      openButton.style.background = '#4a9eff';
     });
   }
 }
@@ -1639,29 +1604,17 @@ try {
 
       // Agregar botones de administración
       const buttonContainer = document.createElement("div");
-      buttonContainer.style.cssText = "display: flex; gap: 8px; margin-left: auto;";
+      buttonContainer.className = "button-container";
       
       // Botón para limpiar caché
       const clearCacheButton = document.createElement("button");
+      clearCacheButton.className = "icon-button";
       const deleteIcon = document.createElement("img");
       deleteIcon.src = "img/icon-delete.svg";
       deleteIcon.alt = "Limpiar caché";
-      deleteIcon.style.cssText = "width: 20px; height: 20px; display: block;";
+      deleteIcon.className = "icon-button-icon";
       clearCacheButton.appendChild(deleteIcon);
       clearCacheButton.title = "Limpiar caché";
-      clearCacheButton.style.cssText = `
-        background: transparent;
-        border: none;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-      `;
       clearCacheButton.addEventListener("click", () => {
         if (confirm('¿Limpiar todo el caché? Las páginas se recargarán desde la API la próxima vez.')) {
           try {
@@ -1673,92 +1626,27 @@ try {
           }
         }
       });
-      clearCacheButton.addEventListener('mouseenter', () => {
-        clearCacheButton.style.background = CSS_VARS.bgHover;
-        clearCacheButton.style.borderRadius = '50%';
-      });
-      clearCacheButton.addEventListener('mouseleave', () => {
-        clearCacheButton.style.background = 'transparent';
-      });
-      clearCacheButton.addEventListener('mousedown', () => {
-        clearCacheButton.style.background = CSS_VARS.bgActive;
-      });
-      clearCacheButton.addEventListener('mouseup', () => {
-        clearCacheButton.style.background = CSS_VARS.bgHover;
-      });
-      
       // Botón para editar JSON
       const adminButton = document.createElement("button");
-      adminButton.className = "admin-button";
+      adminButton.className = "icon-button admin-button";
       const jsonIcon = document.createElement("img");
       jsonIcon.src = "img/icon-json.svg";
       jsonIcon.alt = "Editar JSON";
-      jsonIcon.style.cssText = "width: 20px; height: 20px; display: block;";
+      jsonIcon.className = "icon-button-icon";
       adminButton.appendChild(jsonIcon);
       adminButton.title = "Editar JSON";
-      adminButton.style.cssText = `
-        background: transparent;
-        border: none;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-      `;
       adminButton.addEventListener("click", () => showJSONEditor(pagesConfig, roomId));
-      adminButton.addEventListener('mouseenter', () => {
-        adminButton.style.background = CSS_VARS.bgHover;
-        adminButton.style.borderRadius = '50%';
-      });
-      adminButton.addEventListener('mouseleave', () => {
-        adminButton.style.background = 'transparent';
-      });
-      adminButton.addEventListener('mousedown', () => {
-        adminButton.style.background = CSS_VARS.bgActive;
-      });
-      adminButton.addEventListener('mouseup', () => {
-        adminButton.style.background = CSS_VARS.bgHover;
-      });
       
       // Botón para configurar token de Notion
       const tokenButton = document.createElement("button");
+      tokenButton.className = "icon-button";
       const keyIcon = document.createElement("img");
       keyIcon.src = "img/icon-key.svg";
       keyIcon.alt = "Configurar token";
-      keyIcon.style.cssText = "width: 20px; height: 20px; display: block;";
+      keyIcon.className = "icon-button-icon";
       tokenButton.appendChild(keyIcon);
       tokenButton.title = hasUserToken(roomId) ? "Token configurado - Clic para cambiar" : "Configurar token de Notion";
-      tokenButton.style.cssText = `
-        background: transparent;
-        border: none;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-      `;
       tokenButton.addEventListener("click", () => showTokenConfig(roomId));
-      tokenButton.addEventListener('mouseenter', () => {
-        tokenButton.style.background = CSS_VARS.bgHover;
-        tokenButton.style.borderRadius = '50%';
-      });
-      tokenButton.addEventListener('mouseleave', () => {
-        tokenButton.style.background = 'transparent';
-      });
-      tokenButton.addEventListener('mousedown', () => {
-        tokenButton.style.background = CSS_VARS.bgActive;
-      });
-      tokenButton.addEventListener('mouseup', () => {
-        tokenButton.style.background = CSS_VARS.bgHover;
-      });
       
       buttonContainer.appendChild(tokenButton);
       buttonContainer.appendChild(clearCacheButton);
@@ -1776,7 +1664,7 @@ try {
           <div class="empty-state">
             <p>Error al cargar la extensión</p>
             <p>Verifica la consola para más detalles</p>
-            <p style="font-size: 11px; margin-top: 8px; color: #888;">${error.message || 'Error desconocido'}</p>
+            <p class="error-text">${error.message || 'Error desconocido'}</p>
           </div>
         `;
       }
@@ -1821,40 +1709,21 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
   
   // Crear contenedor de categoría
   const categoryDiv = document.createElement('div');
-  categoryDiv.className = 'category-group';
+  categoryDiv.className = `category-group category-level-${Math.min(level, 5)}`;
   categoryDiv.dataset.categoryName = category.name;
   categoryDiv.dataset.level = level;
-  categoryDiv.style.cssText = `margin-bottom: 0px; margin-left: ${indent}px;`;
   
   // Contenedor del título con botón de colapsar
   const titleContainer = document.createElement('div');
-  titleContainer.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    cursor: pointer;
-  `;
+  titleContainer.className = 'category-title-container';
   
   // Botón de colapsar/expandir
   const collapseButton = document.createElement('button');
   collapseButton.className = 'category-collapse-button';
-  collapseButton.style.cssText = `
-    background: transparent;
-    border: none;
-    padding: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    transition: transform 0.2s;
-  `;
   
   // Icono de colapsar (inicialmente cerrado/expandido)
   const collapseIcon = document.createElement('img');
-  collapseIcon.style.cssText = 'width: 24px; height: 24px; display: block;';
+  collapseIcon.className = 'category-collapse-icon';
   
   // Verificar estado guardado en localStorage (usar nombre completo con nivel para evitar conflictos)
   const collapseStateKey = `category-collapsed-${category.name}-level-${level}`;
@@ -1869,17 +1738,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
   const categoryTitle = document.createElement(`h${headingLevel}`);
   categoryTitle.className = 'category-title';
   categoryTitle.textContent = category.name;
-  categoryTitle.style.cssText = `
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 700;
-    color: #999;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 0;
-    flex: 1;
-  `;
   
   titleContainer.appendChild(collapseButton);
   titleContainer.appendChild(categoryTitle);
@@ -1911,9 +1769,9 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
       // Determinar icono de tipo de link
       let linkIconHtml = '';
       if (isNotion) {
-        linkIconHtml = '<img src="img/icon-notion.svg" alt="Notion" style="width: 16px; height: 16px; opacity: 0.5;">';
+        linkIconHtml = '<img src="img/icon-notion.svg" alt="Notion" class="page-link-icon">';
       } else {
-        linkIconHtml = '<img src="img/icon-link.svg" alt="Link" style="width: 16px; height: 16px; opacity: 0.5;">';
+        linkIconHtml = '<img src="img/icon-link.svg" alt="Link" class="page-link-icon">';
       }
       
       const button = document.createElement('button');
@@ -1922,30 +1780,18 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
       button.dataset.selector = page.selector || '';
       button.style.cssText = `
         width: 100%;
-        padding: 12px 16px;
         margin-bottom: 8px;
         background: ${CSS_VARS.bg};
         border: 1px solid ${CSS_VARS.border};
-        border-radius: 8px;
-        cursor: pointer;
-        text-align: left;
-        font-family: Roboto, Helvetica, Arial, sans-serif;
-        font-size: 14px;
-        font-weight: 400;
-        color: #fff;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        gap: 12px;
       `;
       
       // Placeholder para el icono (se cargará después)
       const placeholderColor = generateColorFromString(pageId || page.name);
       const placeholderInitial = (page.name || '?')[0].toUpperCase();
       button.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
-          <div style="width: 24px; height: 24px; border-radius: 50%; background: ${placeholderColor}; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px;">${placeholderInitial}</div>
-          <div class="page-name" style="flex: 1; text-align: left;">${page.name}</div>
+        <div class="page-button-inner">
+          <div class="page-icon-placeholder" style="background: ${placeholderColor};">${placeholderInitial}</div>
+          <div class="page-name-text">${page.name}</div>
           ${linkIconHtml}
         </div>
       `;
