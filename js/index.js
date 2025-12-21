@@ -2763,7 +2763,7 @@ async function showJSONEditor(pagesConfig, roomId = null) {
   };
   
   // Guardar JSON
-  saveBtn.addEventListener('click', () => {
+  saveBtn.addEventListener('click', async () => {
     try {
       console.log('💾 Guardando JSON para roomId:', roomId);
       const jsonText = textarea.value.trim();
@@ -2807,7 +2807,8 @@ async function showJSONEditor(pagesConfig, roomId = null) {
       
       // Recargar la lista de páginas sin cerrar el editor
       console.log('🔄 Recargando configuración para roomId:', roomId);
-      const newConfig = getPagesJSON(roomId) || await getDefaultJSON();
+      const savedConfigForList = getPagesJSON(roomId);
+      const newConfig = savedConfigForList || await getDefaultJSON();
       const pageListEl = document.getElementById("page-list");
       if (pageListEl) {
         renderPagesByCategories(newConfig, pageListEl, roomId);
