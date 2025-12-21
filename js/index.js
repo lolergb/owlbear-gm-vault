@@ -581,12 +581,18 @@ function renderBlock(block) {
       return `<p class="notion-paragraph">${paragraphText || '<br>'}</p>`;
     
     case 'heading_1':
+      // Los headings pueden tener hijos (contenido anidado debajo del heading)
+      // Se manejan en renderBlocks de forma especial si tienen hijos
       return `<h1>${renderRichText(block.heading_1?.rich_text)}</h1>`;
     
     case 'heading_2':
+      // Los headings pueden tener hijos (contenido anidado debajo del heading)
+      // Se manejan en renderBlocks de forma especial si tienen hijos
       return `<h2>${renderRichText(block.heading_2?.rich_text)}</h2>`;
     
     case 'heading_3':
+      // Los headings pueden tener hijos (contenido anidado debajo del heading)
+      // Se manejan en renderBlocks de forma especial si tienen hijos
       return `<h3>${renderRichText(block.heading_3?.rich_text)}</h3>`;
     
     case 'bulleted_list_item':
@@ -1013,6 +1019,81 @@ async function renderBlocks(blocks) {
         const headingTag = `h${headingLevel}`;
         const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text || block.toggle?.rich_text);
         html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} style="display: inline; margin: 0;">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
+        continue;
+      }
+    }
+    
+    // Manejar headings normales que tienen hijos (contenido anidado)
+    if ((type === 'heading_1' || type === 'heading_2' || type === 'heading_3') && block.has_children) {
+      try {
+        const headingLevel = type === 'heading_1' ? 1 : type === 'heading_2' ? 2 : 3;
+        const headingTag = `h${headingLevel}`;
+        const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text);
+        
+        console.log(`  📦 Obteniendo hijos del heading_${headingLevel}...`);
+        const children = await fetchBlockChildren(block.id);
+        console.log(`  📦 Hijos obtenidos: ${children.length}`);
+        
+        let childrenContent = '';
+        if (children.length > 0) {
+          childrenContent = await renderBlocks(children);
+          console.log(`  ✅ Contenido del heading renderizado: ${childrenContent.length} caracteres`);
+        }
+        
+        html += `<${headingTag}>${headingText}</${headingTag}>${childrenContent}`;
+        console.log(`    ✅ Heading ${headingLevel} con hijos renderizado`);
+        continue;
+      } catch (error) {
+        console.error(`Error al renderizar heading con hijos:`, error);
+        // Fallback: renderizar solo el heading sin hijos
+        const headingLevel = type === 'heading_1' ? 1 : type === 'heading_2' ? 2 : 3;
+        const headingTag = `h${headingLevel}`;
+        const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text);
+        html += `<${headingTag}>${headingText}</${headingTag}>`;
+        continue;
+      }
+    }
+    
+    // Manejar callouts que tienen hijos (contenido anidado)
+    if (type === 'callout' && block.has_children) {
+      try {
+        const callout = block.callout;
+        const icon = callout?.icon?.emoji || '💡';
+        const calloutText = renderRichText(callout?.rich_text);
+        
+        console.log(`  📦 Obteniendo hijos del callout...`);
+        const children = await fetchBlockChildren(block.id);
+        console.log(`  📦 Hijos obtenidos: ${children.length}`);
+        
+        let childrenContent = '';
+        if (children.length > 0) {
+          childrenContent = await renderBlocks(children);
+          console.log(`  ✅ Contenido del callout renderizado: ${childrenContent.length} caracteres`);
+        }
+        
+        html += `
+          <div class="notion-callout">
+            <div class="notion-callout-icon">${icon}</div>
+            <div class="notion-callout-content">
+              ${calloutText}
+              ${childrenContent}
+            </div>
+          </div>
+        `;
+        console.log(`    ✅ Callout con hijos renderizado`);
+        continue;
+      } catch (error) {
+        console.error(`Error al renderizar callout con hijos:`, error);
+        // Fallback: renderizar solo el callout sin hijos
+        const callout = block.callout;
+        const icon = callout?.icon?.emoji || '💡';
+        const calloutText = renderRichText(callout?.rich_text);
+        html += `
+          <div class="notion-callout">
+            <div class="notion-callout-icon">${icon}</div>
+            <div class="notion-callout-content">${calloutText}</div>
+          </div>
+        `;
         continue;
       }
     }
