@@ -29,18 +29,17 @@ exports.handler = async (event, context) => {
   }
 
   // Obtener el token del usuario desde los query parameters o headers
-  // Si no hay token del usuario, usar el token de las variables de entorno (fallback)
+  // El token ahora es obligatorio y se configura desde la interfaz del plugin
   const { pageId, type, token } = event.queryStringParameters || {};
   const userToken = token || event.headers['x-notion-token'];
-  const NOTION_API_TOKEN = userToken || process.env.NOTION_API_TOKEN;
   
-  if (!NOTION_API_TOKEN) {
+  if (!userToken) {
     return {
-      statusCode: 500,
+      statusCode: 400,
       headers: {
         'Access-Control-Allow-Origin': '*'
       },
-      body: JSON.stringify({ error: 'No token provided. Configure your Notion token in the extension.' })
+      body: JSON.stringify({ error: 'No token provided. Configure your Notion token in the extension (🔑 button).' })
     };
   }
 
@@ -60,11 +59,11 @@ exports.handler = async (event, context) => {
       ? `https://api.notion.com/v1/pages/${pageId}`
       : `https://api.notion.com/v1/blocks/${pageId}/children`;
     
-    // Hacer la petición a la API de Notion
+    // Hacer la petición a la API de Notion usando el token del usuario
     const response = await fetch(apiEndpoint, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${NOTION_API_TOKEN}`,
+        'Authorization': `Bearer ${userToken}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       }
