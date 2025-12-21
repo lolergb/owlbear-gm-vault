@@ -239,7 +239,7 @@
 .notion-content .notion-loading {
   text-align: center;
   padding: 40px;
-  color: rgba(55, 53, 47, 0.6);
+  color: white;
 }
 
 .notion-content .notion-error {
