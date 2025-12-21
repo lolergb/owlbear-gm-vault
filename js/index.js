@@ -1046,17 +1046,24 @@ async function renderBlocks(blocks) {
         try {
           const tableHtml = await renderTable(block);
           html += tableHtml;
+          console.log(`    ✅ Tabla [${index}] renderizada`);
         } catch (error) {
           console.error('Error al renderizar tabla:', error);
           html += '<div class="notion-table-placeholder">[Error al cargar tabla]</div>';
         }
       } else {
-        const rendered = renderBlock(block);
-        if (rendered) {
-          html += rendered;
-          console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
-        } else {
-          console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
+        try {
+          const rendered = renderBlock(block);
+          if (rendered) {
+            html += rendered;
+            console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
+          } else {
+            console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
+          }
+        } catch (error) {
+          console.error(`❌ Error al renderizar bloque [${index}] de tipo ${type}:`, error);
+          // Continuar con el siguiente bloque en lugar de detenerse
+          html += `<div style="padding: 10px; color: #ff6b6b; background: rgba(255, 107, 107, 0.1); border-radius: 4px; margin: 4px 0;">⚠️ Error al renderizar bloque: ${type}</div>`;
         }
       }
     }
