@@ -451,6 +451,46 @@ Esta extensión usa el SDK oficial de Owlbear Rodeo:
 **Error de CORS:**
 - Asegúrate de alojar la extensión en un servidor (no usar `file://`)
 
+## 🗺️ Roadmap / Próximos Pasos
+
+### ✅ Implementado
+- ✅ Texto, encabezados (H1, H2, H3)
+- ✅ Listas (bulleted, numbered, to-do)
+- ✅ Toggle list y Toggle headings (H1, H2, H3)
+- ✅ Imágenes (clickables, modal a tamaño real)
+- ✅ Tablas
+- ✅ Columnas (2, 3, 4, 5 columnas)
+- ✅ Code, Quote, Callout
+- ✅ Divider
+
+### 🔜 Próximas Implementaciones
+
+#### Child Database (Bases de datos anidadas)
+- **Estado:** Pendiente
+- **Complejidad:** Media-Alta
+- **Descripción:** Renderizar bases de datos completas que están dentro de una página
+- **Requisitos:** 
+  - Obtener estructura de la base de datos
+  - Renderizar filas y columnas
+  - Soporte para diferentes tipos de propiedades (texto, número, fecha, etc.)
+  - Paginación si hay muchas filas
+
+#### Block Equation (Fórmulas matemáticas)
+- **Estado:** Pendiente
+- **Complejidad:** Media
+- **Descripción:** Renderizar fórmulas matemáticas usando KaTeX o MathJax
+- **Requisitos:**
+  - Integrar librería de renderizado matemático
+  - Parsear formato LaTeX de Notion
+
+#### Synced Block (Bloques sincronizados)
+- **Estado:** Pendiente
+- **Complejidad:** Media
+- **Descripción:** Renderizar bloques que están sincronizados entre páginas
+- **Requisitos:**
+  - Detectar bloques sincronizados
+  - Obtener contenido del bloque original
+
 ## 📄 Licencia
 
 Uso personal - Siéntete libre de modificar y usar como quieras.

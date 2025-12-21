@@ -823,6 +823,43 @@ async function renderToggle(toggleBlock) {
   `;
 }
 
+// Función para renderizar un toggle heading con su contenido
+async function renderToggleHeading(toggleHeadingBlock, headingLevel) {
+  const toggleHeading = toggleHeadingBlock[`heading_${headingLevel}`] || toggleHeadingBlock.toggle;
+  const headingText = renderRichText(toggleHeading?.rich_text);
+  
+  console.log(`🔽 Renderizando toggle_heading_${headingLevel}:`, toggleHeadingBlock.id, {
+    hasChildren: toggleHeadingBlock.has_children
+  });
+  
+  let toggleContent = '';
+  
+  if (toggleHeadingBlock.has_children) {
+    console.log(`  📦 Obteniendo hijos del toggle_heading_${headingLevel}...`);
+    const children = await fetchBlockChildren(toggleHeadingBlock.id);
+    console.log(`  📦 Hijos obtenidos: ${children.length}`);
+    if (children.length > 0) {
+      toggleContent = await renderBlocks(children);
+      console.log(`  ✅ Contenido del toggle_heading_${headingLevel} renderizado: ${toggleContent.length} caracteres`);
+    } else {
+      console.log(`  ⚠️ Toggle heading sin contenido`);
+    }
+  } else {
+    console.log(`  ℹ️ Toggle heading sin hijos`);
+  }
+  
+  // Renderizar el heading dentro del summary
+  const headingTag = `h${headingLevel}`;
+  return `
+    <details class="notion-toggle notion-toggle-heading">
+      <summary class="notion-toggle-summary">
+        <${headingTag} style="display: inline; margin: 0; font-size: inherit; font-weight: inherit;">${headingText}</${headingTag}>
+      </summary>
+      <div class="notion-toggle-content">${toggleContent}</div>
+    </details>
+  `;
+}
+
 // Función para renderizar todas las columnas de una column_list
 async function renderColumnList(columnListBlock, allBlocks, currentIndex) {
   console.log('📐 Renderizando column_list:', columnListBlock.id, {
@@ -957,6 +994,25 @@ async function renderBlocks(blocks) {
         const toggle = block.toggle;
         const toggleText = renderRichText(toggle?.rich_text);
         html += `<details class="notion-toggle"><summary class="notion-toggle-summary">${toggleText}</summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
+        continue;
+      }
+    }
+    
+    // Manejar toggle headings de forma especial (tienen hijos que se cargan dinámicamente)
+    if (type === 'toggle_heading_1' || type === 'toggle_heading_2' || type === 'toggle_heading_3') {
+      try {
+        const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : 3;
+        const toggleHeadingHtml = await renderToggleHeading(block, headingLevel);
+        html += toggleHeadingHtml;
+        console.log(`    ✅ Toggle heading ${headingLevel} renderizado`);
+        continue;
+      } catch (error) {
+        console.error(`Error al renderizar toggle_heading:`, error);
+        // Fallback: renderizar sin contenido
+        const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : 3;
+        const headingTag = `h${headingLevel}`;
+        const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text || block.toggle?.rich_text);
+        html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} style="display: inline; margin: 0;">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
         continue;
       }
     }

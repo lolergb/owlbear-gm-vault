@@ -223,6 +223,19 @@
   margin-top: 2px;
 }
 
+.notion-content .notion-toggle-heading summary {
+  font-weight: 600;
+}
+
+.notion-content .notion-toggle-heading summary h1,
+.notion-content .notion-toggle-heading summary h2,
+.notion-content .notion-toggle-heading summary h3 {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
 .notion-content .notion-loading {
   text-align: center;
   padding: 40px;
