@@ -1099,15 +1099,26 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           console.log(`  ✅ Contenido del heading renderizado: ${childrenContent.length} caracteres`);
         }
         
-        // Si hay un filtro activo y el heading no coincide con el tipo filtrado,
-        // solo mostrar el contenido de los hijos (sin el heading)
+        // Si hay un filtro activo, verificar si el heading debe mostrarse
         if (blockTypes) {
           const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
-          if (!typesArray.includes(type) && childrenContent.trim()) {
-            // El heading no coincide con el filtro, pero tiene contenido filtrado
-            html += childrenContent;
-            console.log(`    ✅ Heading ${baseHeadingLevel} filtrado, solo mostrando hijos`);
+          const headingInFilter = typesArray.includes(type);
+          
+          if (!headingInFilter) {
+            // El heading no está en el filtro, solo mostrar hijos si tienen contenido filtrado
+            if (childrenContent.trim()) {
+              html += childrenContent;
+              console.log(`    ✅ Heading ${baseHeadingLevel} filtrado, solo mostrando hijos`);
+            } else {
+              console.log(`    ⏭️ Heading ${baseHeadingLevel} filtrado, sin contenido que mostrar`);
+            }
             continue;
+          } else {
+            // El heading SÍ está en el filtro, pero si no tiene contenido filtrado, no mostrarlo
+            if (!childrenContent.trim()) {
+              console.log(`    ⏭️ Heading ${baseHeadingLevel} en filtro pero sin contenido filtrado en hijos`);
+              continue;
+            }
           }
         }
         
