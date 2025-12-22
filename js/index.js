@@ -1269,15 +1269,26 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           console.log(`  ✅ Contenido del quote renderizado: ${childrenContent.length} caracteres`);
         }
         
-        // Si hay un filtro activo y el quote no coincide con el tipo filtrado,
-        // solo mostrar el contenido de los hijos (sin el quote)
+        // Si hay un filtro activo, verificar si el quote debe mostrarse
         if (blockTypes) {
           const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
-          if (!typesArray.includes('quote') && childrenContent.trim()) {
-            // El quote no coincide con el filtro, pero tiene contenido filtrado
-            html += childrenContent;
-            console.log(`    ✅ Quote filtrado, solo mostrando hijos`);
+          const quoteInFilter = typesArray.includes('quote');
+          
+          if (!quoteInFilter) {
+            // El quote no está en el filtro, solo mostrar hijos si tienen contenido filtrado
+            if (childrenContent.trim()) {
+              html += childrenContent;
+              console.log(`    ✅ Quote filtrado, solo mostrando hijos`);
+            } else {
+              console.log(`    ⏭️ Quote filtrado, sin contenido válido en hijos`);
+            }
             continue;
+          } else {
+            // El quote SÍ está en el filtro, pero si no tiene contenido, no mostrarlo
+            if (!quoteText.trim() && !childrenContent.trim()) {
+              console.log(`    ⏭️ Quote vacío filtrado, no se muestra`);
+              continue;
+            }
           }
         }
         
