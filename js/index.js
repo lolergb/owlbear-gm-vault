@@ -2055,7 +2055,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       pageContextMenuButton.className = 'page-context-menu-button icon-button';
       pageContextMenuButton.style.cssText = `
         position: absolute;
-        right: 8px;
+        right: 0px;
         top: 50%;
         transform: translateY(-50%);
         opacity: 0;
@@ -2674,30 +2674,43 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
     return;
   }
   
-  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
-  
-  if (categoryPath.length === 0) {
-    // Eliminar del nivel raíz
-    const index = config.categories.findIndex(cat => cat.name === category.name);
-    if (index !== -1) {
-      config.categories.splice(index, 1);
+  try {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    
+    if (categoryPath.length === 0) {
+      // Eliminar del nivel raíz
+      const index = config.categories.findIndex(cat => cat.name === category.name);
+      if (index !== -1) {
+        config.categories.splice(index, 1);
+      } else {
+        console.error('No se encontró la categoría en el nivel raíz');
+        alert('Error: No se pudo encontrar la categoría a eliminar');
+        return;
+      }
+    } else {
+      // Eliminar de una categoría padre
+      const key = categoryPath[categoryPath.length - 2];
+      const index = categoryPath[categoryPath.length - 1];
+      const parent = navigateConfigPath(config, categoryPath.slice(0, -2));
+      if (parent && parent[key] && parent[key][index]) {
+        parent[key].splice(index, 1);
+      } else {
+        console.error('No se encontró la categoría en el path:', categoryPath);
+        alert('Error: No se pudo encontrar la categoría a eliminar');
+        return;
+      }
     }
-  } else {
-    // Eliminar de una categoría padre
-    const key = categoryPath[categoryPath.length - 2];
-    const index = categoryPath[categoryPath.length - 1];
-    const parent = navigateConfigPath(config, categoryPath.slice(0, -2));
-    if (parent && parent[key]) {
-      parent[key].splice(index, 1);
+    
+    savePagesJSON(config, roomId);
+    
+    // Recargar la vista
+    const pageList = document.getElementById("page-list");
+    if (pageList) {
+      renderPagesByCategories(config, pageList, roomId);
     }
-  }
-  
-  savePagesJSON(config, roomId);
-  
-  // Recargar la vista
-  const pageList = document.getElementById("page-list");
-  if (pageList) {
-    renderPagesByCategories(config, pageList, roomId);
+  } catch (error) {
+    console.error('Error al eliminar categoría:', error);
+    alert('Error al eliminar la categoría: ' + error.message);
   }
 }
 
@@ -2707,29 +2720,36 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
     return;
   }
   
-  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
-  
-  // Encontrar la página actual
-  const parent = navigateConfigPath(config, pageCategoryPath);
-  if (!parent || !parent.pages) {
-    alert('Error: No se pudo encontrar la página a eliminar');
-    return;
-  }
-  
-  const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
-  if (pageIndex === -1) {
-    alert('Error: No se pudo encontrar la página a eliminar');
-    return;
-  }
-  
-  parent.pages.splice(pageIndex, 1);
-  
-  savePagesJSON(config, roomId);
-  
-  // Recargar la vista
-  const pageList = document.getElementById("page-list");
-  if (pageList) {
-    renderPagesByCategories(config, pageList, roomId);
+  try {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    
+    // Encontrar la página actual
+    const parent = navigateConfigPath(config, pageCategoryPath);
+    if (!parent || !parent.pages) {
+      console.error('No se encontró el parent o pages en:', pageCategoryPath);
+      alert('Error: No se pudo encontrar la página a eliminar');
+      return;
+    }
+    
+    const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+    if (pageIndex === -1) {
+      console.error('No se encontró la página:', page.name, page.url);
+      alert('Error: No se pudo encontrar la página a eliminar');
+      return;
+    }
+    
+    parent.pages.splice(pageIndex, 1);
+    
+    savePagesJSON(config, roomId);
+    
+    // Recargar la vista
+    const pageList = document.getElementById("page-list");
+    if (pageList) {
+      renderPagesByCategories(config, pageList, roomId);
+    }
+  } catch (error) {
+    console.error('Error al eliminar página:', error);
+    alert('Error al eliminar la página: ' + error.message);
   }
 }
 
@@ -3985,13 +4005,20 @@ function createContextMenu(items, position, onClose) {
       menuItem.style.background = 'transparent';
     });
 
-    menuItem.addEventListener('click', (e) => {
+    menuItem.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (item.action) {
-        item.action();
-      }
-      if (onClose) onClose();
+      // Cerrar el menú primero
       menu.remove();
+      document.removeEventListener('click', closeMenu);
+      if (onClose) onClose();
+      // Ejecutar la acción después de cerrar el menú
+      if (item.action) {
+        try {
+          await item.action();
+        } catch (error) {
+          console.error('Error ejecutando acción del menú:', error);
+        }
+      }
     });
 
     menu.appendChild(menuItem);
@@ -4171,6 +4198,13 @@ function showModalForm(title, fields, onSubmit, onCancel) {
 
   const close = () => {
     overlay.remove();
+    // Asegurarse de que todos los menús contextuales estén cerrados
+    const existingMenus = document.querySelectorAll('#context-menu');
+    existingMenus.forEach(menu => menu.remove());
+    // Restaurar opacidad de todos los botones de menú contextual
+    document.querySelectorAll('.category-context-menu-button, .page-context-menu-button').forEach(btn => {
+      btn.style.opacity = '0';
+    });
     if (onCancel) onCancel();
   };
 
