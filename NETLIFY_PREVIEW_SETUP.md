@@ -67,8 +67,11 @@ Las variables de entorno se pueden configurar por contexto:
    - **Deploy previews**: Variables para previews de PRs
    - **Branch deploys**: Variables para otras ramas
 
-Ejemplo:
-- `DEBUG_MODE` = `true` (solo en deploy previews para debugging)
+**Variables importantes:**
+
+- `DEBUG_MODE`: Modo debug
+  - Valor: `true` o `1` para activar logs de debug
+  - Útil para deploy previews: `true` (solo en previews para debugging)
 
 ## Cómo Funciona
 
