@@ -1886,7 +1886,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   contextMenuButton.className = 'category-context-menu-button icon-button';
   contextMenuButton.style.cssText = `
     position: absolute;
-    right: 0px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     opacity: 0;
@@ -2677,8 +2677,10 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
   try {
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
     
+    console.log('🗑️ Eliminando carpeta:', category.name, 'con path:', categoryPath);
+    
     if (categoryPath.length === 0) {
-      // Eliminar del nivel raíz
+      // Si el path está vacío (no debería pasar, pero por si acaso)
       const index = config.categories.findIndex(cat => cat.name === category.name);
       if (index !== -1) {
         config.categories.splice(index, 1);
@@ -2687,26 +2689,43 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
         alert('Error: No se pudo encontrar la carpeta a eliminar');
         return;
       }
+    } else if (categoryPath.length === 2) {
+      // Eliminar del nivel raíz (path es ['categories', index])
+      const key = categoryPath[0];
+      const index = categoryPath[1];
+      if (config[key] && config[key][index]) {
+        config[key].splice(index, 1);
+        console.log('✅ Carpeta eliminada del nivel raíz');
+      } else {
+        console.error('No se encontró la carpeta en el nivel raíz:', key, index);
+        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        return;
+      }
     } else {
-      // Eliminar de una carpeta padre
+      // Eliminar de una carpeta padre (path tiene más de 2 elementos)
       const key = categoryPath[categoryPath.length - 2];
       const index = categoryPath[categoryPath.length - 1];
-      const parent = navigateConfigPath(config, categoryPath.slice(0, -2));
+      const parentPath = categoryPath.slice(0, -2);
+      const parent = navigateConfigPath(config, parentPath);
+      console.log('🔍 Buscando carpeta en parent:', parent, 'key:', key, 'index:', index);
       if (parent && parent[key] && parent[key][index]) {
         parent[key].splice(index, 1);
+        console.log('✅ Carpeta eliminada de carpeta padre');
       } else {
-        console.error('No se encontró la carpeta en el path:', categoryPath);
+        console.error('No se encontró la carpeta en el path:', categoryPath, 'parent:', parent);
         alert('Error: No se pudo encontrar la carpeta a eliminar');
         return;
       }
     }
     
     savePagesJSON(config, roomId);
+    console.log('💾 Configuración guardada');
     
     // Recargar la vista
     const pageList = document.getElementById("page-list");
     if (pageList) {
       renderPagesByCategories(config, pageList, roomId);
+      console.log('🔄 Vista recargada');
     }
   } catch (error) {
     console.error('Error al eliminar carpeta:', error);
@@ -2723,29 +2742,34 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
   try {
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
     
+    console.log('🗑️ Eliminando página:', page.name, 'con path:', pageCategoryPath);
+    
     // Encontrar la página actual
     const parent = navigateConfigPath(config, pageCategoryPath);
     if (!parent || !parent.pages) {
-      console.error('No se encontró el parent o pages en:', pageCategoryPath);
+      console.error('No se encontró el parent o pages en:', pageCategoryPath, 'parent:', parent);
       alert('Error: No se pudo encontrar la página a eliminar');
       return;
     }
     
     const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
     if (pageIndex === -1) {
-      console.error('No se encontró la página:', page.name, page.url);
+      console.error('No se encontró la página:', page.name, page.url, 'en pages:', parent.pages);
       alert('Error: No se pudo encontrar la página a eliminar');
       return;
     }
     
     parent.pages.splice(pageIndex, 1);
+    console.log('✅ Página eliminada');
     
     savePagesJSON(config, roomId);
+    console.log('💾 Configuración guardada');
     
     // Recargar la vista
     const pageList = document.getElementById("page-list");
     if (pageList) {
       renderPagesByCategories(config, pageList, roomId);
+      console.log('🔄 Vista recargada');
     }
   } catch (error) {
     console.error('Error al eliminar página:', error);
