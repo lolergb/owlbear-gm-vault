@@ -1847,6 +1847,9 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   // Contenedor del título con botón de colapsar
   const titleContainer = document.createElement('div');
   titleContainer.className = 'category-title-container';
+  titleContainer.draggable = true;
+  titleContainer.dataset.dragType = 'category';
+  titleContainer.dataset.categoryPath = JSON.stringify(categoryPath);
   
   // Botón de colapsar/expandir
   const collapseButton = document.createElement('button');
@@ -1933,6 +1936,14 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       },
       { separator: true },
       { 
+        icon: '🗑️', 
+        text: 'Eliminar', 
+        action: async () => {
+          await deleteCategoryFromPageList(category, categoryPath, roomId);
+        }
+      },
+      { separator: true },
+      { 
         icon: '📝', 
         text: 'Editar JSON', 
         action: async () => {
@@ -1990,6 +2001,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       button.className = 'page-button';
       button.dataset.url = page.url;
       button.dataset.selector = page.selector || '';
+      button.draggable = true;
+      button.dataset.dragType = 'page';
+      button.dataset.pageIndex = index;
+      button.dataset.categoryPath = JSON.stringify(categoryPath);
       button.style.cssText = `
         width: 100%;
         margin-bottom: 8px;
@@ -2065,6 +2080,14 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           },
           { separator: true },
           { 
+            icon: '🗑️', 
+            text: 'Eliminar', 
+            action: async () => {
+              await deletePageFromPageList(page, pageCategoryPath, roomId);
+            }
+          },
+          { separator: true },
+          { 
             icon: '📝', 
             text: 'Editar JSON', 
             action: async () => {
@@ -2104,6 +2127,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       });
       
       pagesContainer.appendChild(button);
+      
+      // Agregar event listeners para drag and drop en páginas
+      const pagePath = [...categoryPath, 'pages', index];
+      setupDragAndDrop(button, 'page', pagePath, roomId);
       
       buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml, pageContextMenuButton });
     });
@@ -2163,6 +2190,110 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   
   categoryDiv.appendChild(contentContainer);
   parentElement.appendChild(categoryDiv);
+  
+  // Agregar event listeners para drag and drop
+  setupDragAndDrop(titleContainer, 'category', categoryPath, roomId);
+}
+
+// Función para configurar drag and drop en elementos
+function setupDragAndDrop(element, type, path, roomId) {
+  element.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', JSON.stringify({ type, path }));
+    element.style.opacity = '0.5';
+  });
+  
+  element.addEventListener('dragend', (e) => {
+    element.style.opacity = '1';
+  });
+  
+  element.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    // Solo permitir drop en elementos del mismo tipo y mismo nivel
+    const dragDataStr = e.dataTransfer.getData('text/plain');
+    if (!dragDataStr) return;
+    
+    try {
+      const dragData = JSON.parse(dragDataStr);
+      // Solo permitir reordenar dentro del mismo contenedor padre
+      const dragParentPath = dragData.path.slice(0, -2);
+      const dropParentPath = path.slice(0, -2);
+      
+      if (JSON.stringify(dragParentPath) === JSON.stringify(dropParentPath) && dragData.type === type) {
+        element.style.background = 'rgba(74, 158, 255, 0.2)';
+        element.style.cursor = 'move';
+      } else {
+        e.dataTransfer.dropEffect = 'none';
+      }
+    } catch (e) {
+      // Ignorar errores de parsing
+    }
+  });
+  
+  element.addEventListener('dragleave', (e) => {
+    element.style.background = '';
+    element.style.cursor = '';
+  });
+  
+  element.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    element.style.background = '';
+    element.style.cursor = '';
+    
+    try {
+      const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+      if (!dragData || JSON.stringify(dragData.path) === JSON.stringify(path)) return;
+      
+      // Solo permitir reordenar dentro del mismo contenedor padre
+      const dragParentPath = dragData.path.slice(0, -2);
+      const dropParentPath = path.slice(0, -2);
+      
+      if (JSON.stringify(dragParentPath) !== JSON.stringify(dropParentPath) || dragData.type !== type) {
+        return;
+      }
+      
+      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+      
+      // Obtener el elemento que se está moviendo
+      const sourceKey = dragData.path[dragData.path.length - 2];
+      const sourceIndex = dragData.path[dragData.path.length - 1];
+      const sourceParent = navigateConfigPath(config, dragData.path.slice(0, -2));
+      
+      if (!sourceParent || !sourceParent[sourceKey]) return;
+      
+      const item = sourceParent[sourceKey][sourceIndex];
+      
+      // Obtener el índice de destino
+      const targetKey = path[path.length - 2];
+      const targetIndex = path[path.length - 1];
+      
+      // Remover del origen
+      sourceParent[sourceKey].splice(sourceIndex, 1);
+      
+      // Calcular el nuevo índice (ajustar si se movió hacia abajo)
+      let newIndex = targetIndex;
+      if (sourceIndex < targetIndex) {
+        newIndex = targetIndex; // Insertar después
+      } else {
+        newIndex = targetIndex + 1; // Insertar después del elemento objetivo
+      }
+      
+      // Insertar en la nueva posición
+      sourceParent[sourceKey].splice(newIndex, 0, item);
+      
+      savePagesJSON(config, roomId);
+      
+      // Recargar la vista
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        renderPagesByCategories(config, pageList, roomId);
+      }
+    } catch (error) {
+      console.error('Error al reordenar:', error);
+    }
+  });
 }
 
 // Función auxiliar para navegar por el path en la configuración
@@ -2414,6 +2545,71 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
       }
     }
   );
+}
+
+// Función para eliminar categoría desde la vista de page-list
+async function deleteCategoryFromPageList(category, categoryPath, roomId) {
+  if (!confirm(`¿Eliminar la categoría "${category.name}" y todo su contenido?`)) {
+    return;
+  }
+  
+  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+  
+  if (categoryPath.length === 0) {
+    // Eliminar del nivel raíz
+    const index = config.categories.findIndex(cat => cat.name === category.name);
+    if (index !== -1) {
+      config.categories.splice(index, 1);
+    }
+  } else {
+    // Eliminar de una categoría padre
+    const key = categoryPath[categoryPath.length - 2];
+    const index = categoryPath[categoryPath.length - 1];
+    const parent = navigateConfigPath(config, categoryPath.slice(0, -2));
+    if (parent && parent[key]) {
+      parent[key].splice(index, 1);
+    }
+  }
+  
+  savePagesJSON(config, roomId);
+  
+  // Recargar la vista
+  const pageList = document.getElementById("page-list");
+  if (pageList) {
+    renderPagesByCategories(config, pageList, roomId);
+  }
+}
+
+// Función para eliminar página desde la vista de page-list
+async function deletePageFromPageList(page, pageCategoryPath, roomId) {
+  if (!confirm(`¿Eliminar la página "${page.name}"?`)) {
+    return;
+  }
+  
+  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+  
+  // Encontrar la página actual
+  const parent = navigateConfigPath(config, pageCategoryPath);
+  if (!parent || !parent.pages) {
+    alert('Error: No se pudo encontrar la página a eliminar');
+    return;
+  }
+  
+  const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+  if (pageIndex === -1) {
+    alert('Error: No se pudo encontrar la página a eliminar');
+    return;
+  }
+  
+  parent.pages.splice(pageIndex, 1);
+  
+  savePagesJSON(config, roomId);
+  
+  // Recargar la vista
+  const pageList = document.getElementById("page-list");
+  if (pageList) {
+    renderPagesByCategories(config, pageList, roomId);
+  }
 }
 
 // Función auxiliar para obtener todas las categorías como opciones
@@ -3561,10 +3757,17 @@ function showModalForm(title, fields, onSubmit, onCancel) {
     close();
   });
 
-  // Focus en el primer campo
-  const firstInput = modal.querySelector('input, textarea');
+  // Focus en el primer campo (con manejo de errores para evitar conflictos con extensiones)
+  const firstInput = modal.querySelector('input[type="text"], input[type="url"], textarea');
   if (firstInput) {
-    setTimeout(() => firstInput.focus(), 100);
+    setTimeout(() => {
+      try {
+        firstInput.focus();
+      } catch (e) {
+        // Ignorar errores de focus (pueden ser causados por extensiones del navegador)
+        console.debug('No se pudo hacer focus en el campo:', e);
+      }
+    }, 100);
   }
 }
 
