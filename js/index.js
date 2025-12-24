@@ -2307,9 +2307,9 @@ function setupDragAndDrop(element, roomId) {
     createDragIndicator();
   });
   
-  // Drag end
+  // Drag end - siempre restaurar opacidad
   element.addEventListener('dragend', (e) => {
-    // Restaurar estilo
+    // Restaurar estilo siempre
     if (dragState.draggedElement) {
       dragState.draggedElement.style.opacity = '';
     }
@@ -2320,11 +2320,13 @@ function setupDragAndDrop(element, roomId) {
     }
     dragState.dragIndicator = null;
     
-    // Limpiar estado
-    dragState.draggedElement = null;
-    dragState.draggedPath = null;
-    dragState.draggedType = null;
-    dragState.draggedIndex = null;
+    // Limpiar estado después de un pequeño delay para permitir que el drop se complete
+    setTimeout(() => {
+      dragState.draggedElement = null;
+      dragState.draggedPath = null;
+      dragState.draggedType = null;
+      dragState.draggedIndex = null;
+    }, 100);
   });
   
   // Drag over - mostrar indicador
@@ -2419,7 +2421,13 @@ function setupDragAndDrop(element, roomId) {
     e.preventDefault();
     e.stopPropagation();
     
-    if (!dragState.draggedElement || dragState.draggedElement === element) return;
+    if (!dragState.draggedElement || dragState.draggedElement === element) {
+      // Restaurar opacidad si no se puede hacer drop
+      if (dragState.draggedElement) {
+        dragState.draggedElement.style.opacity = '';
+      }
+      return;
+    }
     
     const currentType = element.dataset.dragType;
     const currentPath = JSON.parse(element.dataset.categoryPath || '[]');
@@ -2429,15 +2437,28 @@ function setupDragAndDrop(element, roomId) {
     const currentParentPath = currentPath.slice(0, -2);
     
     if (JSON.stringify(draggedParentPath) !== JSON.stringify(currentParentPath) || dragState.draggedType !== currentType) {
+      // Restaurar opacidad si no se puede hacer drop
+      if (dragState.draggedElement) {
+        dragState.draggedElement.style.opacity = '';
+      }
       return;
     }
     
+    // Usar roomId del estado global
+    const currentRoomId = dragState.roomId || roomId;
+    
     // Obtener configuración actual
-    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    const config = JSON.parse(JSON.stringify(getPagesJSON(currentRoomId) || await getDefaultJSON()));
     
     // Obtener el contenedor padre
     const parent = navigateConfigPath(config, draggedParentPath);
-    if (!parent) return;
+    if (!parent) {
+      // Restaurar opacidad si no se puede hacer drop
+      if (dragState.draggedElement) {
+        dragState.draggedElement.style.opacity = '';
+      }
+      return;
+    }
     
     // Determinar índices
     const parentContainer = element.parentElement;
@@ -2451,6 +2472,14 @@ function setupDragAndDrop(element, roomId) {
     
     const currentIndex = siblings.indexOf(element);
     const draggedIndexInSiblings = siblings.indexOf(dragState.draggedElement);
+    
+    // Si es el mismo índice, no hacer nada
+    if (currentIndex === draggedIndexInSiblings) {
+      if (dragState.draggedElement) {
+        dragState.draggedElement.style.opacity = '';
+      }
+      return;
+    }
     
     // Determinar nueva posición basada en dónde está el indicador
     let newIndex = currentIndex;
@@ -2474,19 +2503,32 @@ function setupDragAndDrop(element, roomId) {
     
     // Mover en el JSON
     const key = dragState.draggedType === 'category' ? 'categories' : 'pages';
-    if (!parent[key]) return;
+    if (!parent[key] || !parent[key][draggedIndexInSiblings]) {
+      if (dragState.draggedElement) {
+        dragState.draggedElement.style.opacity = '';
+      }
+      return;
+    }
     
     const item = parent[key][draggedIndexInSiblings];
+    
+    // Calcular el índice final correcto
+    let finalIndex = newIndex;
+    if (draggedIndexInSiblings < newIndex) {
+      finalIndex = newIndex - 1;
+    }
+    
+    // Mover el elemento
     parent[key].splice(draggedIndexInSiblings, 1);
-    parent[key].splice(newIndex > draggedIndexInSiblings ? newIndex - 1 : newIndex, 0, item);
+    parent[key].splice(finalIndex, 0, item);
     
     // Guardar configuración
-    savePagesJSON(config, roomId);
+    savePagesJSON(config, currentRoomId);
     
     // Recargar vista
     const pageList = document.getElementById("page-list");
     if (pageList) {
-      renderPagesByCategories(config, pageList, roomId);
+      renderPagesByCategories(config, pageList, currentRoomId);
     }
   });
 }
