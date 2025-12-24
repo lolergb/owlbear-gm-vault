@@ -2211,25 +2211,22 @@ function setupDragAndDrop(element, type, path, roomId) {
       // Permitir drop en cualquier elemento (cualquier tipo y nivel)
       e.dataTransfer.dropEffect = 'move';
       element.classList.add('dragover-target');
-        
-        // Mostrar indicador visual de dónde se insertará
-        const rect = element.getBoundingClientRect();
-        const mouseY = e.clientY;
-        const elementCenterY = rect.top + rect.height / 2;
-        
-        if (mouseY < elementCenterY) {
-          // Insertar antes
-          element.style.borderTop = '2px solid #4a9eff';
-          element.style.borderBottom = '';
-        } else {
-          // Insertar después
-          element.style.borderBottom = '2px solid #4a9eff';
-          element.style.borderTop = '';
-        }
-        element.style.background = 'rgba(74, 158, 255, 0.1)';
+      
+      // Mostrar indicador visual de dónde se insertará
+      const rect = element.getBoundingClientRect();
+      const mouseY = e.clientY;
+      const elementCenterY = rect.top + rect.height / 2;
+      
+      if (mouseY < elementCenterY) {
+        // Insertar antes
+        element.style.borderTop = '2px solid #4a9eff';
+        element.style.borderBottom = '';
       } else {
-        e.dataTransfer.dropEffect = 'none';
+        // Insertar después
+        element.style.borderBottom = '2px solid #4a9eff';
+        element.style.borderTop = '';
       }
+      element.style.background = 'rgba(74, 158, 255, 0.1)';
     } catch (e) {
       // Ignorar errores de parsing
     }
