@@ -1671,10 +1671,22 @@ try {
       log('🔍 Intentando cargar configuración para room:', roomId);
       let pagesConfig = getPagesJSON(roomId);
       if (!pagesConfig) {
-        log('📝 No se encontró configuración, creando una nueva para room:', roomId);
-        pagesConfig = await getDefaultJSON();
-        savePagesJSON(pagesConfig, roomId);
-        log('✅ Configuración por defecto creada para room:', roomId);
+        // Verificar si hay alguna configuración guardada (puede ser que el roomId haya cambiado)
+        const allConfigs = getAllRoomConfigs();
+        const configKeys = Object.keys(allConfigs);
+        if (configKeys.length > 0) {
+          log('⚠️ No se encontró configuración para este roomId, pero hay configuraciones guardadas:', configKeys);
+          log('📋 Usando la primera configuración encontrada:', configKeys[0]);
+          pagesConfig = allConfigs[configKeys[0]];
+          // Guardar esta configuración con el roomId actual
+          savePagesJSON(pagesConfig, roomId);
+          log('✅ Configuración migrada al roomId actual:', roomId);
+        } else {
+          log('📝 No se encontró ninguna configuración, creando una nueva para room:', roomId);
+          pagesConfig = await getDefaultJSON();
+          savePagesJSON(pagesConfig, roomId);
+          log('✅ Configuración por defecto creada para room:', roomId);
+        }
       } else {
         log('✅ Configuración encontrada para room:', roomId);
       }
