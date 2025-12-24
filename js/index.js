@@ -3963,9 +3963,9 @@ function createContextMenu(items, position, onClose) {
       // Detectar si necesita rotación (para flechas arriba/abajo)
       let rotation = '';
       if (item.text === 'Mover arriba') {
-        rotation = 'transform: rotate(-90deg);';
-      } else if (item.text === 'Mover abajo') {
         rotation = 'transform: rotate(90deg);';
+      } else if (item.text === 'Mover abajo') {
+        rotation = 'transform: rotate(-90deg);';
       }
       iconHtml = `<img src="${item.icon}" alt="" style="width: 16px; height: 16px; display: block; ${rotation}" />`;
     } else {
