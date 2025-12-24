@@ -1886,7 +1886,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   contextMenuButton.className = 'category-context-menu-button icon-button';
   contextMenuButton.style.cssText = `
     position: absolute;
-    right: 8px;
+    right: 0px;
     top: 50%;
     transform: translateY(-50%);
     opacity: 0;
@@ -2055,7 +2055,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       pageContextMenuButton.className = 'page-context-menu-button icon-button';
       pageContextMenuButton.style.cssText = `
         position: absolute;
-        right: 0px;
+        right: 8px;
         top: 50%;
         transform: translateY(-50%);
         opacity: 0;
