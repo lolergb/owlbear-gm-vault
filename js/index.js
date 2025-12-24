@@ -2244,48 +2244,59 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   setupDragAndDrop(categoryDiv, roomId);
 }
 
+// Variables globales para drag and drop (compartidas entre todos los elementos)
+let dragState = {
+  draggedElement: null,
+  draggedPath: null,
+  draggedType: null,
+  draggedIndex: null,
+  dragIndicator: null,
+  roomId: null
+};
+
+// Función para crear línea indicadora
+function createDragIndicator() {
+  if (dragState.dragIndicator) return dragState.dragIndicator;
+  
+  const indicator = document.createElement('div');
+  indicator.className = 'drag-indicator';
+  indicator.style.cssText = `
+    height: 2px;
+    background: #4a9eff;
+    margin: 2px 0;
+    border-radius: 1px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    position: relative;
+    z-index: 1000;
+    width: 100%;
+  `;
+  dragState.dragIndicator = indicator;
+  return indicator;
+}
+
 // Función para configurar drag and drop en un elemento
 function setupDragAndDrop(element, roomId) {
-  let dragIndicator = null;
-  let draggedElement = null;
-  let draggedPath = null;
-  let draggedType = null;
-  let draggedIndex = null;
-  
-  // Crear línea indicadora
-  const createIndicator = () => {
-    if (dragIndicator) return;
-    dragIndicator = document.createElement('div');
-    dragIndicator.className = 'drag-indicator';
-    dragIndicator.style.cssText = `
-      height: 2px;
-      background: #4a9eff;
-      margin: 2px 0;
-      border-radius: 1px;
-      opacity: 0;
-      transition: opacity 0.2s;
-      pointer-events: none;
-      position: relative;
-      z-index: 1000;
-    `;
-  };
+  // Guardar roomId en el estado global
+  dragState.roomId = roomId;
   
   // Drag start
   element.addEventListener('dragstart', (e) => {
-    draggedElement = element;
-    draggedType = element.dataset.dragType;
-    draggedPath = JSON.parse(element.dataset.categoryPath || '[]');
+    dragState.draggedElement = element;
+    dragState.draggedType = element.dataset.dragType;
+    dragState.draggedPath = JSON.parse(element.dataset.categoryPath || '[]');
     
     // Obtener el índice del elemento
     const parent = element.parentElement;
     const siblings = Array.from(parent.children).filter(child => {
-      if (draggedType === 'category') {
+      if (dragState.draggedType === 'category') {
         return child.classList.contains('category-group');
       } else {
         return child.classList.contains('page-button');
       }
     });
-    draggedIndex = siblings.indexOf(element);
+    dragState.draggedIndex = siblings.indexOf(element);
     
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', ''); // Necesario para Firefox
@@ -2293,42 +2304,41 @@ function setupDragAndDrop(element, roomId) {
     // Estilo visual durante el drag
     element.style.opacity = '0.5';
     
-    createIndicator();
+    createDragIndicator();
   });
   
   // Drag end
   element.addEventListener('dragend', (e) => {
     // Restaurar estilo
-    if (draggedElement) {
-      draggedElement.style.opacity = '';
+    if (dragState.draggedElement) {
+      dragState.draggedElement.style.opacity = '';
     }
     
     // Remover indicador
-    if (dragIndicator && dragIndicator.parentElement) {
-      dragIndicator.parentElement.removeChild(dragIndicator);
-      dragIndicator = null;
+    if (dragState.dragIndicator && dragState.dragIndicator.parentElement) {
+      dragState.dragIndicator.parentElement.removeChild(dragState.dragIndicator);
     }
+    dragState.dragIndicator = null;
     
-    // Limpiar clases de drag-over
-    document.querySelectorAll('.drag-over').forEach(el => {
-      el.classList.remove('drag-over');
-    });
-    
-    draggedElement = null;
-    draggedPath = null;
-    draggedType = null;
-    draggedIndex = null;
+    // Limpiar estado
+    dragState.draggedElement = null;
+    dragState.draggedPath = null;
+    dragState.draggedType = null;
+    dragState.draggedIndex = null;
   });
   
   // Drag over - mostrar indicador
   element.addEventListener('dragover', (e) => {
-    if (!draggedElement || draggedElement === element) return;
+    if (!dragState.draggedElement || dragState.draggedElement === element) {
+      e.preventDefault();
+      return;
+    }
     
     const currentType = element.dataset.dragType;
     const currentPath = JSON.parse(element.dataset.categoryPath || '[]');
     
     // Solo permitir mover en el mismo nivel
-    const draggedParentPath = draggedPath.slice(0, -2);
+    const draggedParentPath = dragState.draggedPath.slice(0, -2);
     const currentParentPath = currentPath.slice(0, -2);
     
     if (JSON.stringify(draggedParentPath) !== JSON.stringify(currentParentPath)) {
@@ -2337,7 +2347,7 @@ function setupDragAndDrop(element, roomId) {
     }
     
     // Solo permitir mover elementos del mismo tipo
-    if (draggedType !== currentType) {
+    if (dragState.draggedType !== currentType) {
       e.preventDefault();
       return;
     }
@@ -2348,7 +2358,7 @@ function setupDragAndDrop(element, roomId) {
     // Determinar si insertar antes o después
     const parent = element.parentElement;
     const siblings = Array.from(parent.children).filter(child => {
-      if (draggedType === 'category') {
+      if (dragState.draggedType === 'category') {
         return child.classList.contains('category-group');
       } else {
         return child.classList.contains('page-button');
@@ -2356,37 +2366,50 @@ function setupDragAndDrop(element, roomId) {
     });
     
     const currentIndex = siblings.indexOf(element);
-    const draggedIndexInSiblings = siblings.indexOf(draggedElement);
+    const draggedIndexInSiblings = siblings.indexOf(dragState.draggedElement);
     const insertBefore = currentIndex < draggedIndexInSiblings || (currentIndex === draggedIndexInSiblings && currentIndex === 0);
     
-    // Remover indicador anterior si existe
-    if (dragIndicator && dragIndicator.parentElement) {
-      dragIndicator.parentElement.removeChild(dragIndicator);
+    // Remover indicador anterior si existe en otro lugar
+    const indicator = createDragIndicator();
+    if (indicator.parentElement && indicator.parentElement !== parent) {
+      indicator.parentElement.removeChild(indicator);
     }
-    
-    createIndicator();
     
     // Insertar indicador
     if (insertBefore) {
-      parent.insertBefore(dragIndicator, element);
+      if (indicator.parentElement !== parent || indicator.nextSibling !== element) {
+        if (indicator.parentElement) {
+          indicator.parentElement.removeChild(indicator);
+        }
+        parent.insertBefore(indicator, element);
+      }
     } else {
       const nextSibling = element.nextElementSibling;
-      if (nextSibling) {
-        parent.insertBefore(dragIndicator, nextSibling);
-      } else {
-        parent.appendChild(dragIndicator);
+      const targetSibling = nextSibling && (nextSibling.classList.contains('category-group') || nextSibling.classList.contains('page-button')) 
+        ? nextSibling 
+        : null;
+      
+      if (indicator.parentElement !== parent || indicator.nextSibling !== targetSibling) {
+        if (indicator.parentElement) {
+          indicator.parentElement.removeChild(indicator);
+        }
+        if (targetSibling) {
+          parent.insertBefore(indicator, targetSibling);
+        } else {
+          parent.appendChild(indicator);
+        }
       }
     }
     
-    dragIndicator.style.opacity = '1';
+    indicator.style.opacity = '1';
   });
   
   // Drag leave
   element.addEventListener('dragleave', (e) => {
     // Solo ocultar si realmente salimos del elemento (no solo entramos a un hijo)
     if (!element.contains(e.relatedTarget)) {
-      if (dragIndicator) {
-        dragIndicator.style.opacity = '0';
+      if (dragState.dragIndicator) {
+        dragState.dragIndicator.style.opacity = '0';
       }
     }
   });
@@ -2396,16 +2419,16 @@ function setupDragAndDrop(element, roomId) {
     e.preventDefault();
     e.stopPropagation();
     
-    if (!draggedElement || draggedElement === element) return;
+    if (!dragState.draggedElement || dragState.draggedElement === element) return;
     
     const currentType = element.dataset.dragType;
     const currentPath = JSON.parse(element.dataset.categoryPath || '[]');
     
     // Verificar que sea el mismo nivel y tipo
-    const draggedParentPath = draggedPath.slice(0, -2);
+    const draggedParentPath = dragState.draggedPath.slice(0, -2);
     const currentParentPath = currentPath.slice(0, -2);
     
-    if (JSON.stringify(draggedParentPath) !== JSON.stringify(currentParentPath) || draggedType !== currentType) {
+    if (JSON.stringify(draggedParentPath) !== JSON.stringify(currentParentPath) || dragState.draggedType !== currentType) {
       return;
     }
     
@@ -2419,7 +2442,7 @@ function setupDragAndDrop(element, roomId) {
     // Determinar índices
     const parentContainer = element.parentElement;
     const siblings = Array.from(parentContainer.children).filter(child => {
-      if (draggedType === 'category') {
+      if (dragState.draggedType === 'category') {
         return child.classList.contains('category-group');
       } else {
         return child.classList.contains('page-button');
@@ -2427,18 +2450,30 @@ function setupDragAndDrop(element, roomId) {
     });
     
     const currentIndex = siblings.indexOf(element);
-    const draggedIndexInSiblings = siblings.indexOf(draggedElement);
+    const draggedIndexInSiblings = siblings.indexOf(dragState.draggedElement);
     
-    // Determinar nueva posición
+    // Determinar nueva posición basada en dónde está el indicador
     let newIndex = currentIndex;
-    if (draggedIndexInSiblings < currentIndex) {
-      newIndex = currentIndex;
+    const indicator = dragState.dragIndicator;
+    if (indicator && indicator.parentElement === parentContainer) {
+      // Si el indicador está antes del elemento actual, insertar antes
+      if (indicator.nextSibling === element) {
+        newIndex = currentIndex;
+      } else {
+        // Si el indicador está después, insertar después
+        newIndex = currentIndex + 1;
+      }
     } else {
-      newIndex = currentIndex + 1;
+      // Fallback: usar lógica basada en índices
+      if (draggedIndexInSiblings < currentIndex) {
+        newIndex = currentIndex;
+      } else {
+        newIndex = currentIndex + 1;
+      }
     }
     
     // Mover en el JSON
-    const key = draggedType === 'category' ? 'categories' : 'pages';
+    const key = dragState.draggedType === 'category' ? 'categories' : 'pages';
     if (!parent[key]) return;
     
     const item = parent[key][draggedIndexInSiblings];
