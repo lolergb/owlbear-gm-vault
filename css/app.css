@@ -477,13 +477,4 @@ h1#page-title {
   user-select: none;
 }
 
-.category-title-container[draggable="true"]:active,
-.page-button[draggable="true"]:active {
-  cursor: grabbing;
-}
-
-.category-title-container.dragging,
-.page-button.dragging {
-  opacity: 0.5;
-}
 

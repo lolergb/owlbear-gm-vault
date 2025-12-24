@@ -1694,26 +1694,6 @@ try {
       const buttonContainer = document.createElement("div");
       buttonContainer.className = "button-container";
       
-      // Botón para limpiar caché
-      const clearCacheButton = document.createElement("button");
-      clearCacheButton.className = "icon-button";
-      const deleteIcon = document.createElement("img");
-      deleteIcon.src = "img/icon-delete.svg";
-      deleteIcon.alt = "Limpiar caché";
-      deleteIcon.className = "icon-button-icon";
-      clearCacheButton.appendChild(deleteIcon);
-      clearCacheButton.title = "Limpiar caché";
-      clearCacheButton.addEventListener("click", () => {
-        if (confirm('¿Limpiar todo el caché? Las páginas se recargarán desde la API la próxima vez.')) {
-          try {
-            clearAllCache();
-            alert('Caché limpiado. Las páginas se recargarán desde la API la próxima vez que las abras.');
-          } catch (e) {
-            console.error('Error al limpiar caché:', e);
-            alert('Error al limpiar el caché. Revisa la consola para más detalles.');
-          }
-        }
-      });
       // Botón para configurar token de Notion
       const tokenButton = document.createElement("button");
       tokenButton.className = "icon-button";
@@ -1757,7 +1737,6 @@ try {
       
       buttonContainer.appendChild(addButton);
       buttonContainer.appendChild(tokenButton);
-      buttonContainer.appendChild(clearCacheButton);
       header.appendChild(buttonContainer);
 
       // Renderizar páginas agrupadas por categorías
@@ -1822,8 +1801,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   // Contenedor del título con botón de colapsar
   const titleContainer = document.createElement('div');
   titleContainer.className = 'category-title-container';
-  titleContainer.draggable = true;
-  titleContainer.dataset.dragType = 'category';
   titleContainer.dataset.categoryPath = JSON.stringify(categoryPath);
   
   // Botón de colapsar/expandir
@@ -1932,15 +1909,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   // Mostrar el contenido si no está colapsado Y si tiene contenido o si está vacía (para poder agregar)
   const hasContent = hasSubcategories || categoryPages.length > 0;
   contentContainer.style.display = isCollapsed ? 'none' : 'block';
-  // Permitir drop en el contenedor para reordenar
-  contentContainer.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
-  contentContainer.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
   
   // Renderizar subcategorías primero (si existen)
   if (hasSubcategories) {
@@ -1958,15 +1926,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   if (categoryPages.length > 0 || (!hasPages && !hasSubcategories)) {
     const pagesContainer = document.createElement('div');
     pagesContainer.className = 'category-pages';
-    // Permitir drop en el contenedor para reordenar
-    pagesContainer.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    pagesContainer.addEventListener('drop', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
     
     const buttonsData = [];
     
@@ -1989,8 +1948,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       button.className = 'page-button';
       button.dataset.url = page.url;
       button.dataset.selector = page.selector || '';
-      button.draggable = true;
-      button.dataset.dragType = 'page';
       button.dataset.pageIndex = index;
       button.dataset.categoryPath = JSON.stringify(categoryPath);
       button.style.cssText = `
@@ -2109,10 +2066,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       
       pagesContainer.appendChild(button);
       
-      // Agregar event listeners para drag and drop en páginas
-      const pagePath = [...categoryPath, 'pages', index];
-      setupDragAndDrop(button, 'page', pagePath, roomId);
-      
       buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml, pageContextMenuButton });
     });
     
@@ -2171,180 +2124,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   
   categoryDiv.appendChild(contentContainer);
   parentElement.appendChild(categoryDiv);
-  
-  // Agregar event listeners para drag and drop
-  setupDragAndDrop(titleContainer, 'category', categoryPath, roomId);
-}
-
-// Función para configurar drag and drop en elementos
-function setupDragAndDrop(element, type, path, roomId) {
-  element.addEventListener('dragstart', (e) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', JSON.stringify({ type, path }));
-    element.style.opacity = '0.5';
-    element.classList.add('dragging');
-  });
-  
-  element.addEventListener('dragend', (e) => {
-    element.style.opacity = '1';
-    element.classList.remove('dragging');
-    // Limpiar todos los estilos de drag
-    document.querySelectorAll('.dragover-target').forEach(el => {
-      el.classList.remove('dragover-target');
-      el.style.background = '';
-      el.style.borderTop = '';
-      el.style.borderBottom = '';
-    });
-  });
-  
-  element.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    
-    const dragDataStr = e.dataTransfer.getData('text/plain');
-    if (!dragDataStr) return;
-    
-    try {
-      const dragData = JSON.parse(dragDataStr);
-      
-      // No permitir drop sobre sí mismo
-      if (JSON.stringify(dragData.path) === JSON.stringify(path)) {
-        e.dataTransfer.dropEffect = 'none';
-        return;
-      }
-      
-      // Permitir drop en cualquier elemento (cualquier tipo y nivel)
-      e.dataTransfer.dropEffect = 'move';
-      element.classList.add('dragover-target');
-      
-      // Mostrar indicador visual de dónde se insertará
-      const rect = element.getBoundingClientRect();
-      const mouseY = e.clientY;
-      const elementCenterY = rect.top + rect.height / 2;
-      
-      if (mouseY < elementCenterY) {
-        // Insertar antes
-        element.style.borderTop = '2px solid #4a9eff';
-        element.style.borderBottom = '';
-      } else {
-        // Insertar después
-        element.style.borderBottom = '2px solid #4a9eff';
-        element.style.borderTop = '';
-      }
-      element.style.background = 'rgba(74, 158, 255, 0.1)';
-    } catch (e) {
-      // Ignorar errores de parsing
-    }
-  });
-  
-  element.addEventListener('dragleave', (e) => {
-    element.classList.remove('dragover-target');
-    element.style.background = '';
-    element.style.borderTop = '';
-    element.style.borderBottom = '';
-  });
-  
-  element.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    element.classList.remove('dragover-target');
-    element.style.background = '';
-    element.style.borderTop = '';
-    element.style.borderBottom = '';
-    
-    try {
-      const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
-      if (!dragData || JSON.stringify(dragData.path) === JSON.stringify(path)) return;
-      
-      // Permitir mover cualquier elemento a cualquier nivel
-      
-      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
-      
-      // Obtener el elemento que se está moviendo
-      const sourceKey = dragData.path[dragData.path.length - 2];
-      const sourceIndex = dragData.path[dragData.path.length - 1];
-      const sourceParent = navigateConfigPath(config, dragData.path.slice(0, -2));
-      
-      if (!sourceParent || !sourceParent[sourceKey] || !sourceParent[sourceKey][sourceIndex]) {
-        console.error('No se pudo encontrar el elemento origen');
-        return;
-      }
-      
-      const item = sourceParent[sourceKey][sourceIndex];
-      
-      // Obtener el contenedor y índice de destino
-      const targetKey = path[path.length - 2];
-      const targetIndex = path[path.length - 1];
-      const targetParent = navigateConfigPath(config, path.slice(0, -2));
-      
-      if (!targetParent || !targetParent[targetKey]) {
-        console.error('No se pudo encontrar el contenedor destino');
-        return;
-      }
-      
-      // Determinar si insertar antes o después basado en la posición del mouse
-      const rect = element.getBoundingClientRect();
-      const mouseY = e.clientY;
-      const elementCenterY = rect.top + rect.height / 2;
-      const insertAfter = mouseY > elementCenterY;
-      
-      // Si es el mismo contenedor, ajustar el índice
-      const isSameContainer = JSON.stringify(dragData.path.slice(0, -2)) === JSON.stringify(path.slice(0, -2));
-      
-      let newIndex;
-      
-      if (isSameContainer) {
-        // Mismo contenedor: calcular el índice correctamente
-        if (sourceIndex === targetIndex) {
-          // Mismo elemento, no hacer nada
-          return;
-        }
-        
-        // Calcular el nuevo índice considerando que vamos a remover sourceIndex primero
-        if (sourceIndex < targetIndex) {
-          // Moviendo hacia abajo: después de remover sourceIndex, targetIndex se reduce en 1
-          newIndex = insertAfter ? targetIndex : targetIndex - 1;
-        } else {
-          // Moviendo hacia arriba: targetIndex no cambia
-          newIndex = insertAfter ? targetIndex + 1 : targetIndex;
-        }
-        
-        // Remover del origen primero
-        sourceParent[sourceKey].splice(sourceIndex, 1);
-        
-        // Ajustar newIndex si removimos antes de la posición objetivo
-        // (ya está ajustado arriba, pero asegurémonos)
-        if (sourceIndex < targetIndex && !insertAfter) {
-          newIndex = targetIndex - 1;
-        }
-        
-        // Asegurar que el índice esté dentro de los límites
-        newIndex = Math.max(0, Math.min(newIndex, sourceParent[sourceKey].length));
-        
-        // Insertar en la nueva posición (mismo contenedor)
-        sourceParent[sourceKey].splice(newIndex, 0, item);
-      } else {
-        // Diferente contenedor: insertar en la posición calculada
-        newIndex = insertAfter ? targetIndex + 1 : targetIndex;
-        newIndex = Math.max(0, newIndex);
-        
-        // Remover del origen
-        sourceParent[sourceKey].splice(sourceIndex, 1);
-        
-        // Insertar en la nueva posición (diferente contenedor)
-        targetParent[targetKey].splice(newIndex, 0, item);
-      }
-      
-      savePagesJSON(config, roomId);
-      
-      // Recargar la vista
-      const pageList = document.getElementById("page-list");
-      if (pageList) {
-        renderPagesByCategories(config, pageList, roomId);
-      }
-    } catch (error) {
-      console.error('Error al reordenar:', error);
-      alert('Error al reordenar el elemento. Por favor, intenta de nuevo.');
-    }
-  });
 }
 
 // Función auxiliar para navegar por el path en la configuración
@@ -3419,7 +3198,7 @@ async function showTokenConfig() {
             transition: all 0.2s;
             flex: 1;
           ">Ver JSON</button>
-          <button id="clear-cache-btn" style="
+          <button id="load-json-btn" style="
             background: ${CSS_VARS.bgPrimary};
             border: 1px solid ${CSS_VARS.borderPrimary};
             border-radius: 6px;
@@ -3431,7 +3210,7 @@ async function showTokenConfig() {
             font-family: Roboto, Helvetica, Arial, sans-serif;
             transition: all 0.2s;
             flex: 1;
-          ">Limpiar toda la cache</button>
+          ">Cargar JSON</button>
           <button id="download-json-btn" style="
             background: ${CSS_VARS.bgPrimary};
             border: 1px solid ${CSS_VARS.borderPrimary};
@@ -3487,7 +3266,7 @@ async function showTokenConfig() {
   const saveBtn = contentArea.querySelector('#save-token');
   const clearBtn = contentArea.querySelector('#clear-token');
   const viewJsonBtn = contentArea.querySelector('#view-json-btn');
-  const clearCacheBtn = contentArea.querySelector('#clear-cache-btn');
+  const loadJsonBtn = contentArea.querySelector('#load-json-btn');
   const downloadJsonBtn = contentArea.querySelector('#download-json-btn');
   const backBtn = header.querySelector('#back-from-token');
   
@@ -3687,28 +3466,81 @@ async function showTokenConfig() {
     });
   }
   
-  // Limpiar toda la cache
-  if (clearCacheBtn) {
-    clearCacheBtn.addEventListener('mouseenter', () => {
-      clearCacheBtn.style.background = CSS_VARS.bgHover;
-      clearCacheBtn.style.borderColor = CSS_VARS.borderPrimary;
+  // Cargar JSON
+  if (loadJsonBtn) {
+    loadJsonBtn.addEventListener('mouseenter', () => {
+      loadJsonBtn.style.background = CSS_VARS.bgHover;
+      loadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
     });
-    clearCacheBtn.addEventListener('mouseleave', () => {
-      clearCacheBtn.style.background = CSS_VARS.bgPrimary;
-      clearCacheBtn.style.borderColor = CSS_VARS.borderPrimary;
+    loadJsonBtn.addEventListener('mouseleave', () => {
+      loadJsonBtn.style.background = CSS_VARS.bgPrimary;
+      loadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
     });
-    clearCacheBtn.addEventListener('mousedown', () => {
-      clearCacheBtn.style.background = CSS_VARS.bgActive;
-      clearCacheBtn.style.borderColor = CSS_VARS.borderActive;
+    loadJsonBtn.addEventListener('mousedown', () => {
+      loadJsonBtn.style.background = CSS_VARS.bgActive;
+      loadJsonBtn.style.borderColor = CSS_VARS.borderActive;
     });
-    clearCacheBtn.addEventListener('mouseup', () => {
-      clearCacheBtn.style.background = CSS_VARS.bgHover;
-      clearCacheBtn.style.borderColor = CSS_VARS.borderPrimary;
+    loadJsonBtn.addEventListener('mouseup', () => {
+      loadJsonBtn.style.background = CSS_VARS.bgHover;
+      loadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
     });
-    clearCacheBtn.addEventListener('click', () => {
-      if (confirm('¿Limpiar toda la caché? Esto eliminará todas las páginas en caché.')) {
-        const cleared = clearAllCache();
-        alert(`✅ Caché limpiada: ${cleared} entradas eliminadas`);
+    loadJsonBtn.addEventListener('click', async () => {
+      try {
+        // Crear input de archivo oculto
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            
+            // Validar estructura básica
+            if (!parsed.categories || !Array.isArray(parsed.categories)) {
+              alert('❌ El JSON debe tener un array "categories"');
+              return;
+            }
+            
+            // Usar el roomId obtenido al inicio de la función, o intentar obtenerlo de nuevo
+            let currentRoomId = roomId;
+            if (!currentRoomId) {
+              try {
+                if (typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
+                  currentRoomId = await OBR.room.getId();
+                }
+              } catch (e) {
+                console.warn('No se pudo obtener roomId:', e);
+              }
+            }
+            
+            // Guardar la nueva configuración
+            if (savePagesJSON(parsed, currentRoomId)) {
+              alert('✅ JSON cargado exitosamente. La configuración ha sido actualizada.');
+              closeTokenConfig();
+              // Recargar la página para aplicar la nueva configuración
+              window.location.reload();
+            } else {
+              alert('❌ Error al guardar el JSON. Revisa la consola para más detalles.');
+            }
+          } catch (e) {
+            console.error('Error al cargar JSON:', e);
+            alert('❌ Error al cargar JSON: ' + e.message);
+          }
+          
+          // Limpiar el input
+          document.body.removeChild(fileInput);
+        });
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+      } catch (e) {
+        console.error('Error al cargar JSON:', e);
+        alert('❌ Error al cargar JSON: ' + e.message);
       }
     });
   }
