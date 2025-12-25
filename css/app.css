@@ -172,6 +172,7 @@ h1#page-title {
 /* Category styles */
 .category-group {
   margin-bottom: 0px;
+  margin-left: 32px;
 }
 
 .category-group[draggable="true"] {
@@ -441,31 +442,6 @@ h1#page-title {
 
 .notion-image-clickable:hover {
   opacity: 0.9;
-}
-
-/* Category indent levels */
-.category-group[data-level="0"] {
-  margin-left: 0px;
-}
-
-.category-group[data-level="1"] {
-  margin-left: 28px;
-}
-
-.category-group[data-level="2"] {
-  margin-left: 32px;
-}
-
-.category-group[data-level="3"] {
-  margin-left: 48px;
-}
-
-.category-group[data-level="4"] {
-  margin-left: 64px;
-}
-
-.category-group[data-level="5"] {
-  margin-left: 80px;
 }
 
 /* Page button with dynamic background */
