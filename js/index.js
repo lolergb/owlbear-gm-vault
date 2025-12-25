@@ -51,34 +51,6 @@ import {
   NOTION_PAGES 
 } from "../config/config.js";
 
-/* 
- * NOTA SOBRE ESTILOS INLINE:
- * 
- * Los siguientes estilos DEBEN permanecer inline porque son dinámicos o calculados:
- * 
- * 1. Colores generados dinámicamente:
- *    - `style="background: ${color}"` (línea ~477, ~2073): Color generado a partir del nombre de la página
- *    - `style="background: ${placeholderColor}"`: Color calculado para placeholders
- * 
- * 2. Estilos calculados dinámicamente:
- *    - `contentContainer.style.display = isCollapsed ? 'none' : 'block'`: Lógica condicional
- *    - `contentContainer.style.maxHeight = scrollHeight + 'px'`: Valor calculado para animaciones
- *    - `contentContainer.style.opacity`: Valores calculados para transiciones
- * 
- * 3. Estilos que cambian en tiempo de ejecución (event listeners):
- *    - `contextMenuButton.style.opacity`: Cambia según hover/interacción
- *    - `pageContextMenuButton.style.opacity`: Cambia según hover/interacción
- *    - `button.style.background`: Cambia según hover/interacción
- *    - `img.style.opacity`: Cambia según hover
- *    - `iframe.style.display`: Cambia según estado de carga
- * 
- * 4. Estilos en modales dinámicos:
- *    - `jsonModal.style.cssText`: Modal creado dinámicamente para mostrar JSON
- *    - `jsonContent.style.cssText`: Contenido del modal con variables CSS dinámicas
- * 
- * Todos los demás estilos estáticos han sido movidos a app.css
- */
-
 // Variables de color CSS (deben coincidir con las del index.html)
 const CSS_VARS = {
   bgPrimary: '#ffffff0d',
@@ -1769,7 +1741,8 @@ try {
             }
           }
         ];
-        createContextMenu(menuItems, { x: rect.right, y: rect.top });
+        // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
+    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
       });
       
       buttonContainer.appendChild(tokenButton);
@@ -1866,6 +1839,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   // Botón de menú contextual para carpetas
   const contextMenuButton = document.createElement('button');
   contextMenuButton.className = 'category-context-menu-button icon-button';
+  // Estilos movidos a CSS - solo opacity se controla dinámicamente
   const contextMenuIcon = document.createElement('img');
   contextMenuIcon.src = 'img/icon-contextualmenu.svg';
   contextMenuIcon.className = 'icon-button-icon';
@@ -1954,7 +1928,8 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       }
     });
     
-    createContextMenu(menuItems, { x: rect.right, y: rect.top });
+    // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
+    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
   });
   
   titleContainer.appendChild(collapseButton);
@@ -2009,8 +1984,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       button.dataset.selector = page.selector || '';
       button.dataset.pageIndex = index;
       button.dataset.categoryPath = JSON.stringify(categoryPath);
-      // Los estilos base del botón están en CSS (.page-button)
-      // Solo establecer position: relative que es necesario para el menú contextual
+      button.className = 'page-button';
+      // background y border son dinámicos (CSS_VARS) - se mantienen inline
+      button.style.background = CSS_VARS.bg;
+      button.style.border = `1px solid ${CSS_VARS.border}`;
       button.style.position = 'relative';
       
       // Placeholder para el icono (se cargará después)
@@ -2020,6 +1997,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       // Botón de menú contextual para páginas
       const pageContextMenuButton = document.createElement('button');
       pageContextMenuButton.className = 'page-context-menu-button icon-button';
+      // Estilos movidos a CSS - solo opacity se controla dinámicamente
       const pageContextMenuIcon = document.createElement('img');
       pageContextMenuIcon.src = 'img/icon-contextualmenu.svg';
       pageContextMenuIcon.className = 'icon-button-icon';
@@ -2093,7 +2071,8 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           }
         });
         
-        createContextMenu(menuItems, { x: rect.right, y: rect.top });
+        // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
+    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
       });
       
       button.innerHTML = `
@@ -2143,9 +2122,9 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
             const menuButtonParent = pageContextMenuButton ? pageContextMenuButton.parentNode : null;
             
             button.innerHTML = `
-              <div class="page-button-inner-layout">
+              <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
                 ${iconHtml}
-                <div class="page-name page-name-inner">${pageName}</div>
+                <div class="page-name" style="flex: 1; text-align: left;">${pageName}</div>
                 ${linkIconHtml}
               </div>
             `;
@@ -2920,7 +2899,7 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       emptyState.className = 'empty-state';
       emptyState.innerHTML = `
         <p>No hay páginas configuradas</p>
-        <button id="add-first-category" class="add-first-category-btn">➕ Agregar primera carpeta</button>
+        <button id="add-first-category" class="add-first-category-button">➕ Agregar primera carpeta</button>
       `;
       pageList.appendChild(emptyState);
       
@@ -2930,7 +2909,7 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
         addFirstCategoryBtn.addEventListener('click', async () => {
           await addCategoryToPageList([], roomId);
         });
-        // Los estilos hover se manejan con CSS
+        // Hover styles movidos a CSS con :hover
       }
       return;
     }
@@ -3182,10 +3161,10 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
     const reloadIcon = document.createElement("img");
     reloadIcon.src = "img/icon-reload.svg";
     reloadIcon.alt = "Recargar contenido";
-    reloadIcon.className = "refresh-icon";
+    reloadIcon.className = "icon-button-icon";
     refreshButton.appendChild(reloadIcon);
     refreshButton.title = "Recargar contenido";
-    refreshButton.className = "icon-button";
+    // Estilos movidos a CSS - solo background se controla dinámicamente en hover
     
     // Remover listeners anteriores si existen
     const newRefreshButton = refreshButton.cloneNode(true);
@@ -3199,7 +3178,8 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       delete refreshButton.dataset.blockTypes;
     }
     
-      // Los estilos hover se manejan con CSS (.icon-button:hover)
+      // Hover styles movidos a CSS con :hover y :active
+      // Solo se mantiene el background dinámico si es necesario, pero CSS ya lo maneja
     
     refreshButton.addEventListener('click', async () => {
       // Obtener la URL actual del botón
@@ -3232,7 +3212,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       const clockIcon = document.createElement("img");
       clockIcon.src = "img/icon-clock.svg";
       clockIcon.alt = "Cargando...";
-      clockIcon.className = "refresh-icon";
+      clockIcon.style.cssText = "width: 20px; height: 20px; display: block;";
       refreshButton.appendChild(clockIcon);
       try {
         console.log('🔄 Llamando a loadNotionContent con forceRefresh = true');
@@ -3248,7 +3228,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         const reloadIconRestore = document.createElement("img");
         reloadIconRestore.src = "img/icon-reload.svg";
         reloadIconRestore.alt = "Recargar contenido";
-        reloadIconRestore.className = "refresh-icon";
+        reloadIconRestore.style.cssText = "width: 20px; height: 20px; display: block;";
         refreshButton.appendChild(reloadIconRestore);
       }
     });
@@ -3326,35 +3306,69 @@ async function showTokenConfig() {
   
   const tokenContainer = document.createElement('div');
   tokenContainer.id = 'token-config-container';
-  tokenContainer.id = 'token-config-container';
+  tokenContainer.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: ${CSS_VARS.bgPrimary};
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    font-family: Roboto, Helvetica, Arial, sans-serif;
+  `;
   
   const header = document.createElement('div');
-  header.className = 'token-config-header';
+  header.style.cssText = `
+    background: ${CSS_VARS.bgPrimary};
+    border-bottom: 1px solid ${CSS_VARS.borderPrimary};
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  `;
   
   header.innerHTML = `
-    <div class="token-config-header-inner">
-      <button id="back-from-token" class="token-config-back-btn">← Volver</button>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button id="back-from-token" style="
+        background: ${CSS_VARS.bgPrimary};
+        border: 1px solid ${CSS_VARS.borderPrimary};
+        border-radius: 6px;
+        padding: 6px 12px;
+        color: #e0e0e0;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+      ">← Volver</button>
       <div>
-        <h1 class="token-config-title">🔑 Configurar Token de Notion</h1>
+        <h1 style="font-family: Roboto, Helvetica, Arial, sans-serif; color: #fff; font-size: 18px; line-height: 24px; font-weight: 700; margin: 0;">🔑 Configurar Token de Notion</h1>
       </div>
     </div>
   `;
   
   const contentArea = document.createElement('div');
-  contentArea.className = 'token-config-content';
+  contentArea.style.cssText = `
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    max-width: 600px;
+    margin: 0 auto;
+    width: 100%;
+  `;
   
   contentArea.innerHTML = `
-    <div class="token-config-section">
-      <p class="token-config-text">
+    <div style="margin-bottom: 24px;">
+      <p style="color: #999; font-size: 14px; margin-bottom: 16px; line-height: 1.6;">
         Configura tu token de Notion para usar tus propias páginas. Este token es global para toda la extensión (todas las rooms).
       </p>
       
-      <div class="token-config-info-box">
-        <h3 class="token-config-info-title">📝 Cómo obtener tu token:</h3>
-        <ol class="token-config-list">
-          <li>Ve a <a href="https://www.notion.so/my-integrations" target="_blank" class="token-config-link">notion.so/my-integrations</a></li>
+      <div style="background: ${CSS_VARS.bgPrimary}; border: 1px solid ${CSS_VARS.borderPrimary}; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <h3 style="color: #fff; font-size: 14px; font-weight: 700; margin-bottom: 12px; font-family: Roboto, Helvetica, Arial, sans-serif;">📝 Cómo obtener tu token:</h3>
+        <ol style="color: #ccc; font-size: 13px; line-height: 1.8; margin-left: 20px; padding-left: 0; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">
+          <li>Ve a <a href="https://www.notion.so/my-integrations" target="_blank" style="color: #4a9eff; text-decoration: none;">notion.so/my-integrations</a></li>
           <li><strong>Crea una nueva integración:</strong>
-            <ul>
+            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
               <li>Clic en <strong>"+ Nueva integración"</strong></li>
               <li>Dale un nombre (ej: "Owlbear Notion")</li>
               <li>Selecciona el workspace donde están tus páginas</li>
@@ -3362,13 +3376,13 @@ async function showTokenConfig() {
             </ul>
           </li>
           <li><strong>Copia el token:</strong>
-            <ul>
+            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
               <li>En la página de la integración, busca <strong>"Internal Integration Token"</strong></li>
               <li>Clic en <strong>"Mostrar"</strong> y copia el token completo</li>
             </ul>
           </li>
           <li><strong>Comparte tus páginas:</strong>
-            <ul>
+            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
               <li>En Notion, abre cada página que quieres usar</li>
               <li>Clic en <strong>"Compartir"</strong> (arriba a la derecha)</li>
               <li>Busca el nombre de tu integración y dale acceso</li>
@@ -3379,30 +3393,109 @@ async function showTokenConfig() {
       </div>
       
       <div style="margin-bottom: 16px;">
-        <label class="token-config-label">
+        <label style="display: block; color: #fff; font-size: 14px; font-weight: 400; margin-bottom: 8px; font-family: Roboto, Helvetica, Arial, sans-serif;">
           Token de Notion:
         </label>
         <input 
           type="password" 
           id="token-input" 
-          class="token-config-input"
           placeholder="ntn_... o secret_..." 
           value="${currentToken}"
+          style="
+            width: 100%;
+            padding: 12px;
+            background: ${CSS_VARS.bgPrimary};
+            border: 1px solid ${CSS_VARS.borderPrimary};
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            font-family: monospace;
+            box-sizing: border-box;
+          "
         />
-        ${currentToken ? `<p class="token-config-input-info">Token actual: ${maskedToken}</p>` : ''}
+        ${currentToken ? `<p style="color: #888; font-size: 12px; margin-top: 8px; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">Token actual: ${maskedToken}</p>` : ''}
       </div>
       
-      <div id="token-error" class="token-config-error"></div>
+      <div id="token-error" style="
+        display: none;
+        background: #4a2d2d;
+        border: 1px solid #6a4040;
+        border-radius: 6px;
+        padding: 12px;
+        color: #ff6b6b;
+        font-size: 13px;
+        margin-bottom: 16px;
+      "></div>
       
-      <div class="token-config-actions">
-        <div class="token-config-buttons-row">
-          <button id="view-json-btn" class="token-config-button">Ver JSON</button>
-          <button id="load-json-btn" class="token-config-button">Cargar JSON</button>
-          <button id="download-json-btn" class="token-config-button">Descargar JSON</button>
+      <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid ${CSS_VARS.borderPrimary};">
+        <div style="display: flex; gap: 12px;">
+          <button id="view-json-btn" style="
+            background: ${CSS_VARS.bgPrimary};
+            border: 1px solid ${CSS_VARS.borderPrimary};
+            border-radius: 6px;
+            padding: 10px 20px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 400;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            transition: all 0.2s;
+            flex: 1;
+          ">Ver JSON</button>
+          <button id="load-json-btn" style="
+            background: ${CSS_VARS.bgPrimary};
+            border: 1px solid ${CSS_VARS.borderPrimary};
+            border-radius: 6px;
+            padding: 10px 20px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 400;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            transition: all 0.2s;
+            flex: 1;
+          ">Cargar JSON</button>
+          <button id="download-json-btn" style="
+            background: ${CSS_VARS.bgPrimary};
+            border: 1px solid ${CSS_VARS.borderPrimary};
+            border-radius: 6px;
+            padding: 10px 20px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 400;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            transition: all 0.2s;
+            flex: 1;
+          ">Descargar JSON</button>
         </div>
-        <div class="token-config-actions-bottom">
-          <button id="clear-token" class="token-config-button">Eliminar Token</button>
-          <button id="save-token" class="token-config-button token-config-button-primary">Guardar Token</button>
+        <div style="display: flex; gap: 16px; justify-content: flex-end;">
+          <button id="clear-token" style="
+            background: ${CSS_VARS.bgPrimary};
+            border: 1px solid ${CSS_VARS.borderPrimary};
+            border-radius: 6px;
+            padding: 10px 20px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 400;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            transition: all 0.2s;
+            flex: 1;
+          ">Eliminar Token</button>
+          <button id="save-token" style="
+            background: #4a9eff;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            transition: all 0.2s;
+            flex: 1;
+          ">Guardar Token</button>
         </div>
       </div>
     </div>
@@ -3777,20 +3870,9 @@ function createContextMenu(items, position, onClose) {
 
   const menu = document.createElement('div');
   menu.id = 'context-menu';
-  menu.style.cssText = `
-    position: fixed;
-    left: ${position.x}px;
-    top: ${position.y}px;
-    background: rgba(30, 30, 30, 0.95);
-    backdrop-filter: blur(10px);
-    border-radius: 8px;
-    padding: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    min-width: 180px;
-    z-index: 10000;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-    font-size: 14px;
-  `;
+  // left y top son dinámicos (position.x, position.y) - se mantienen inline
+  menu.style.left = `${position.x}px`;
+  menu.style.top = `${position.y}px`;
 
   // Cerrar al hacer click fuera
   const closeMenu = (e) => {
@@ -3804,27 +3886,14 @@ function createContextMenu(items, position, onClose) {
   items.forEach((item, index) => {
     if (item.separator) {
       const separator = document.createElement('div');
-      separator.style.cssText = `
-        height: 1px;
-        background: rgba(255, 255, 255, 0.1);
-        margin: 4px 0;
-      `;
+      separator.className = 'context-menu-separator';
       menu.appendChild(separator);
       return;
     }
 
     const menuItem = document.createElement('div');
     menuItem.className = 'context-menu-item';
-    menuItem.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      color: #e0e0e0;
-      transition: background 0.15s;
-    `;
+    // Estilos movidos a CSS
 
     // Si el icon es una ruta de imagen, usar img, sino usar emoji/texto
     let iconHtml = '';
@@ -3846,13 +3915,7 @@ function createContextMenu(items, position, onClose) {
       <span>${item.text}</span>
     `;
 
-    menuItem.addEventListener('mouseenter', () => {
-      menuItem.style.background = 'rgba(255, 255, 255, 0.1)';
-    });
-
-    menuItem.addEventListener('mouseleave', () => {
-      menuItem.style.background = 'transparent';
-    });
+    // Hover styles movidos a CSS con :hover
 
     menuItem.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -3923,8 +3986,8 @@ function showModalForm(title, fields, onSubmit, onCancel) {
   `;
 
   modal.innerHTML = `
-    <h2 style="color: #fff; font-size: 20px; font-weight: 700; margin-bottom: 20px;">${title}</h2>
-    <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+    <h2 class="modal-title">${title}</h2>
+    <form id="modal-form" class="modal-form">
       ${fields.map(field => `
         <div class="modal-field">
           <label class="modal-label">
@@ -3973,7 +4036,7 @@ function showModalForm(title, fields, onSubmit, onCancel) {
           ${field.help ? `<div class="modal-help">${field.help}</div>` : ''}
         </div>
       `).join('')}
-      <div class="modal-actions">
+      <div class="modal-buttons">
         <button type="button" id="modal-cancel" class="modal-button modal-button-cancel">Cancelar</button>
         <button type="submit" id="modal-submit" class="modal-button modal-button-submit">Guardar</button>
       </div>
@@ -4063,64 +4126,22 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   // Crear contenedor del editor
   const editorContainer = document.createElement('div');
   editorContainer.id = 'visual-editor-container';
-  editorContainer.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #1a1a1a;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
+  // Estilos movidos a CSS
 
   // Header
   const header = document.createElement('div');
-  header.style.cssText = `
-    background: #1a1a1a;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  `;
+  header.className = 'visual-editor-header';
 
   header.innerHTML = `
-    <h1 style="margin: 0; font-size: 18px; font-weight: 700; color: #fff;">Editor de Configuración</h1>
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <button id="editor-filter-btn" class="icon-button" style="
-        background: transparent;
-        border: none;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-      " title="Filtros">
+    <h1>Editor de Configuración</h1>
+    <div class="visual-editor-header-buttons">
+      <button id="editor-filter-btn" class="icon-button" title="Filtros">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 6H20M7 12H17M10 18H14" stroke="white" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </button>
-      <button id="editor-add-btn" class="icon-button" style="
-        background: transparent;
-        border: none;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-      " title="Agregar">
-        <img src="img/icon-add.svg" alt="Agregar" style="width: 20px; height: 20px;" />
+      <button id="editor-add-btn" class="icon-button" title="Agregar">
+        <img src="img/icon-add.svg" alt="Agregar" class="icon-button-icon" />
       </button>
     </div>
   `;
@@ -4128,14 +4149,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   // Área de contenido (sidebar tipo Notion)
   const contentArea = document.createElement('div');
   contentArea.id = 'visual-editor-content';
-  contentArea.style.cssText = `
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-    max-width: 100%;
-    width: 100%;
-    background: #1a1a1a;
-  `;
+  // Estilos movidos a CSS
 
   // Función para renderizar items recursivamente
   const renderEditorItem = (item, parentElement, level = 0, path = [], isExpanded = false) => {
@@ -4148,11 +4162,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     const isCategory = item.pages !== undefined || item.categories !== undefined;
     const hasChildren = (item.pages && item.pages.length > 0) || (item.categories && item.categories.length > 0);
 
-    itemDiv.style.cssText = `
-      margin-left: ${indent}px;
-      margin-bottom: 0;
-      position: relative;
-    `;
+    itemDiv.className = 'editor-item';
+    // margin-left se calcula dinámicamente según el nivel - NO se puede mover a CSS
+    itemDiv.style.marginLeft = `${indent}px`;
 
     const itemRow = document.createElement('div');
     itemRow.className = 'editor-item-row';
@@ -4229,11 +4241,8 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     // Nombre
     const name = document.createElement('span');
     name.textContent = item.name;
-    name.style.cssText = `
-      flex: 1;
-      color: #e0e0e0;
-      font-size: 14px;
-    `;
+    name.className = 'editor-item-name';
+    // Estilos movidos a CSS
     itemRow.appendChild(name);
 
     // Icono a la derecha (Notion o ampersand)
@@ -4280,35 +4289,15 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     // Botón de menú contextual
     const menuBtn = document.createElement('button');
     menuBtn.className = 'editor-menu-btn';
-    menuBtn.style.cssText = `
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-      opacity: 0;
-      transition: all 0.15s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-    `;
+    // Estilos movidos a CSS - solo opacity se controla dinámicamente en hover
     const menuIcon = document.createElement('img');
     menuIcon.src = 'img/icon-contextualmenu.svg';
     menuIcon.style.width = '16px';
     menuIcon.style.height = '16px';
     menuBtn.appendChild(menuIcon);
 
-    itemRow.addEventListener('mouseenter', () => {
-      itemRow.style.background = 'rgba(255, 255, 255, 0.06)';
-      menuBtn.style.opacity = '1';
-    });
-
-    itemRow.addEventListener('mouseleave', () => {
-      itemRow.style.background = 'rgba(255, 255, 255, 0.02)';
-      menuBtn.style.opacity = '0';
-    });
+    // Hover styles movidos a CSS con :hover
+    // Solo se mantiene el control dinámico de opacity si es necesario
 
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4330,7 +4319,8 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         );
       }
 
-      createContextMenu(menuItems, { x: rect.right, y: rect.top });
+      // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
+    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
     });
 
     itemRow.appendChild(menuBtn);
