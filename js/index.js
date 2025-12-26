@@ -1809,7 +1809,7 @@ try {
         const newState = !isCollapsed;
         
         // Actualizar icono y estado
-        collapseIcon.src = newState ? "img/icon-collapse-true.svg" : "img/icon-collapse-false.svg";
+        collapseIcon.src = newState ? "img/icon-collapse-false.svg" : "img/icon-collapse-true.svg";
         collapseAllButton.dataset.collapsed = newState.toString();
         collapseAllButton.title = newState ? "Expandir todas las carpetas" : "Colapsar todas las carpetas";
         
