@@ -3439,335 +3439,107 @@ async function showTokenConfig() {
   const mainContainer = document.querySelector('.container');
   const pageList = document.getElementById("page-list");
   const notionContainer = document.getElementById("notion-container");
+  const tokenContainer = document.getElementById("token-config-container");
   
   if (mainContainer) mainContainer.classList.add('hidden');
   if (pageList) pageList.classList.add('hidden');
   if (notionContainer) notionContainer.classList.add('hidden');
+  if (tokenContainer) tokenContainer.classList.remove('hidden');
   
   const currentToken = getUserToken() || '';
   const maskedToken = currentToken ? currentToken.substring(0, 8) + '...' + currentToken.substring(currentToken.length - 4) : '';
   
-  const tokenContainer = document.createElement('div');
-  tokenContainer.id = 'token-config-container';
-  tokenContainer.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: ${CSS_VARS.bgPrimary};
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
+  // Llenar el contenido dinámicamente
+  const tokenInput = document.getElementById('token-input');
+  const tokenMasked = document.getElementById('token-masked');
+  const errorDiv = document.getElementById('token-error');
+  const saveBtn = document.getElementById('save-token');
+  const clearBtn = document.getElementById('clear-token');
+  const viewJsonBtn = document.getElementById('view-json-btn');
+  const loadJsonBtn = document.getElementById('load-json-btn');
+  const downloadJsonBtn = document.getElementById('download-json-btn');
+  const backBtn = document.getElementById('back-from-token');
   
-  const header = document.createElement('div');
-  header.style.cssText = `
-    background: ${CSS_VARS.bgPrimary};
-    border-bottom: 1px solid ${CSS_VARS.borderPrimary};
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  `;
+  if (tokenInput) {
+    tokenInput.value = currentToken;
+  }
   
-  header.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <button id="back-from-token" style="
-        background: ${CSS_VARS.bgPrimary};
-        border: 1px solid ${CSS_VARS.borderPrimary};
-        border-radius: 6px;
-        padding: 6px 12px;
-        color: #e0e0e0;
-        cursor: pointer;
-        font-size: 14px;
-        transition: all 0.2s;
-      ">← Volver</button>
-      <div>
-        <h1 style="font-family: Roboto, Helvetica, Arial, sans-serif; color: #fff; font-size: 18px; line-height: 24px; font-weight: 700; margin: 0;">🔑 Configurar Token de Notion</h1>
-      </div>
-    </div>
-  `;
-  
-  const contentArea = document.createElement('div');
-  contentArea.style.cssText = `
-    flex: 1;
-    padding: 24px;
-    overflow-y: auto;
-    max-width: 600px;
-    margin: 0 auto;
-    width: 100%;
-  `;
-  
-  contentArea.innerHTML = `
-    <div style="margin-bottom: 24px;">
-      <p style="color: #999; font-size: 14px; margin-bottom: 16px; line-height: 1.6;">
-        Configura tu token de Notion para usar tus propias páginas. Este token es global para toda la extensión (todas las rooms).
-      </p>
-      
-      <div style="background: ${CSS_VARS.bgPrimary}; border: 1px solid ${CSS_VARS.borderPrimary}; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-        <h3 style="color: #fff; font-size: 14px; font-weight: 700; margin-bottom: 12px; font-family: Roboto, Helvetica, Arial, sans-serif;">📝 Cómo obtener tu token:</h3>
-        <ol style="color: #ccc; font-size: 13px; line-height: 1.8; margin-left: 20px; padding-left: 0; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">
-          <li>Ve a <a href="https://www.notion.so/my-integrations" target="_blank" style="color: #4a9eff; text-decoration: none;">notion.so/my-integrations</a></li>
-          <li><strong>Crea una nueva integración:</strong>
-            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
-              <li>Clic en <strong>"+ Nueva integración"</strong></li>
-              <li>Dale un nombre (ej: "Owlbear Notion")</li>
-              <li>Selecciona el workspace donde están tus páginas</li>
-              <li>Clic en <strong>"Enviar"</strong></li>
-            </ul>
-          </li>
-          <li><strong>Copia el token:</strong>
-            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
-              <li>En la página de la integración, busca <strong>"Internal Integration Token"</strong></li>
-              <li>Clic en <strong>"Mostrar"</strong> y copia el token completo</li>
-            </ul>
-          </li>
-          <li><strong>Comparte tus páginas:</strong>
-            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
-              <li>En Notion, abre cada página que quieres usar</li>
-              <li>Clic en <strong>"Compartir"</strong> (arriba a la derecha)</li>
-              <li>Busca el nombre de tu integración y dale acceso</li>
-            </ul>
-          </li>
-          <li>Pega el token en el campo de abajo y guarda</li>
-        </ol>
-      </div>
-      
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; color: #fff; font-size: 14px; font-weight: 400; margin-bottom: 8px; font-family: Roboto, Helvetica, Arial, sans-serif;">
-          Token de Notion:
-        </label>
-        <input 
-          type="password" 
-          id="token-input" 
-          placeholder="ntn_... o secret_..." 
-          value="${currentToken}"
-          style="
-            width: 100%;
-            padding: 12px;
-            background: ${CSS_VARS.bgPrimary};
-            border: 1px solid ${CSS_VARS.borderPrimary};
-            border-radius: 6px;
-            color: #fff;
-            font-size: 14px;
-            font-family: monospace;
-            box-sizing: border-box;
-          "
-        />
-        ${currentToken ? `<p style="color: #888; font-size: 12px; margin-top: 8px; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">Token actual: ${maskedToken}</p>` : ''}
-      </div>
-      
-      <div id="token-error" style="
-        display: none;
-        background: #4a2d2d;
-        border: 1px solid #6a4040;
-        border-radius: 6px;
-        padding: 12px;
-        color: #ff6b6b;
-        font-size: 13px;
-        margin-bottom: 16px;
-      "></div>
-      
-      <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid ${CSS_VARS.borderPrimary};">
-        <div style="display: flex; gap: 12px;">
-          <button id="view-json-btn" style="
-            background: ${CSS_VARS.bgPrimary};
-            border: 1px solid ${CSS_VARS.borderPrimary};
-            border-radius: 6px;
-            padding: 10px 20px;
-            color: #e0e0e0;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 400;
-            font-family: Roboto, Helvetica, Arial, sans-serif;
-            transition: all 0.2s;
-            flex: 1;
-          ">Ver JSON</button>
-          <button id="load-json-btn" style="
-            background: ${CSS_VARS.bgPrimary};
-            border: 1px solid ${CSS_VARS.borderPrimary};
-            border-radius: 6px;
-            padding: 10px 20px;
-            color: #e0e0e0;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 400;
-            font-family: Roboto, Helvetica, Arial, sans-serif;
-            transition: all 0.2s;
-            flex: 1;
-          ">Cargar JSON</button>
-          <button id="download-json-btn" style="
-            background: ${CSS_VARS.bgPrimary};
-            border: 1px solid ${CSS_VARS.borderPrimary};
-            border-radius: 6px;
-            padding: 10px 20px;
-            color: #e0e0e0;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 400;
-            font-family: Roboto, Helvetica, Arial, sans-serif;
-            transition: all 0.2s;
-            flex: 1;
-          ">Descargar JSON</button>
-        </div>
-        <div style="display: flex; gap: 16px; justify-content: flex-end;">
-        <button id="clear-token" style="
-          background: ${CSS_VARS.bgPrimary};
-          border: 1px solid ${CSS_VARS.borderPrimary};
-          border-radius: 6px;
-          padding: 10px 20px;
-          color: #e0e0e0;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 400;
-          font-family: Roboto, Helvetica, Arial, sans-serif;
-          transition: all 0.2s;
-          flex: 1;
-        ">Eliminar Token</button>
-        <button id="save-token" style="
-          background: #4a9eff;
-          border: none;
-          border-radius: 6px;
-          padding: 10px 20px;
-          color: #fff;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 700;
-          font-family: Roboto, Helvetica, Arial, sans-serif;
-          transition: all 0.2s;
-          flex: 1;
-        ">Guardar Token</button>
-        </div>
-      </div>
-    </div>
-  `;
-  
-  tokenContainer.appendChild(header);
-  tokenContainer.appendChild(contentArea);
-  document.body.appendChild(tokenContainer);
-  
-  const tokenInput = contentArea.querySelector('#token-input');
-  const errorDiv = contentArea.querySelector('#token-error');
-  const saveBtn = contentArea.querySelector('#save-token');
-  const clearBtn = contentArea.querySelector('#clear-token');
-  const viewJsonBtn = contentArea.querySelector('#view-json-btn');
-  const loadJsonBtn = contentArea.querySelector('#load-json-btn');
-  const downloadJsonBtn = contentArea.querySelector('#download-json-btn');
-  const backBtn = header.querySelector('#back-from-token');
-  
-  // Estilos hover
-  saveBtn.addEventListener('mouseenter', () => {
-    saveBtn.style.background = '#5aaeff';
-  });
-  saveBtn.addEventListener('mouseleave', () => {
-    saveBtn.style.background = '#4a9eff';
-  });
-  
-  clearBtn.addEventListener('mouseenter', () => {
-    clearBtn.style.background = CSS_VARS.bgHover;
-    clearBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  clearBtn.addEventListener('mouseleave', () => {
-    clearBtn.style.background = CSS_VARS.bgPrimary;
-    clearBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  clearBtn.addEventListener('mousedown', () => {
-    clearBtn.style.background = CSS_VARS.bgActive;
-    clearBtn.style.borderColor = CSS_VARS.borderActive;
-  });
-  clearBtn.addEventListener('mouseup', () => {
-    clearBtn.style.background = CSS_VARS.bgHover;
-    clearBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  
-  backBtn.addEventListener('mouseenter', () => {
-    backBtn.style.background = CSS_VARS.bgHover;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  backBtn.addEventListener('mouseleave', () => {
-    backBtn.style.background = CSS_VARS.bgPrimary;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  backBtn.addEventListener('mousedown', () => {
-    backBtn.style.background = CSS_VARS.bgActive;
-    backBtn.style.borderColor = CSS_VARS.borderActive;
-  });
-  backBtn.addEventListener('mouseup', () => {
-    backBtn.style.background = CSS_VARS.bgHover;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  
-  // Guardar token
-  saveBtn.addEventListener('click', () => {
-    const token = tokenInput.value.trim();
-    
-    if (!token) {
-      errorDiv.textContent = 'Por favor, ingresa un token de Notion';
-      errorDiv.style.display = 'block';
-      return;
-    }
-    
-    if (saveUserToken(token)) {
-      errorDiv.style.display = 'none';
-      alert('✅ Token guardado exitosamente. Ahora puedes usar tus propias páginas de Notion.');
-      closeTokenConfig();
-      // Actualizar el título del botón de token sin recargar la página
-      const tokenButton = document.querySelector('.icon-button[title*="Token"]');
-      if (tokenButton) {
-        tokenButton.title = "Token configurado - Clic para cambiar";
-      }
-      // No recargar la página para preservar la configuración actual
+  if (tokenMasked) {
+    if (currentToken) {
+      tokenMasked.textContent = `Token actual: ${maskedToken}`;
     } else {
-      errorDiv.textContent = 'Error al guardar el token. Revisa la consola para más detalles.';
-      errorDiv.style.display = 'block';
+      tokenMasked.textContent = '';
     }
-  });
+  }
   
-  // Eliminar token
-  clearBtn.addEventListener('click', () => {
-    if (confirm('¿Eliminar el token? Volverás a usar el token del servidor (si está configurado).')) {
-      if (saveUserToken('')) {
-        alert('Token eliminado. Se usará el token del servidor.');
-        closeTokenConfig();
-        // Actualizar el título del botón de token sin recargar la página
-        const tokenButton = document.querySelector('.icon-button[title*="Token"]');
-        if (tokenButton) {
-          tokenButton.title = "Configurar token de Notion";
-        }
-        // No recargar la página para preservar la configuración actual
-      }
-    }
-  });
+  if (errorDiv) {
+    errorDiv.style.display = 'none';
+    errorDiv.textContent = '';
+  }
   
   // Cerrar
   const closeTokenConfig = () => {
-    document.body.removeChild(tokenContainer);
+    if (tokenContainer) tokenContainer.classList.add('hidden');
     if (mainContainer) mainContainer.classList.remove('hidden');
     if (pageList) pageList.classList.remove('hidden');
   };
   
-  backBtn.addEventListener('click', closeTokenConfig);
+  // Guardar token
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const token = tokenInput ? tokenInput.value.trim() : '';
+      
+      if (!token) {
+        if (errorDiv) {
+          errorDiv.textContent = 'Por favor, ingresa un token de Notion';
+          errorDiv.style.display = 'block';
+        }
+        return;
+      }
+      
+      if (saveUserToken(token)) {
+        if (errorDiv) errorDiv.style.display = 'none';
+        alert('✅ Token guardado exitosamente. Ahora puedes usar tus propias páginas de Notion.');
+        closeTokenConfig();
+        // Actualizar el título del botón de token sin recargar la página
+        const tokenButton = document.querySelector('.icon-button[title*="Token"]');
+        if (tokenButton) {
+          tokenButton.title = "Token configurado - Clic para cambiar";
+        }
+        // No recargar la página para preservar la configuración actual
+      } else {
+        if (errorDiv) {
+          errorDiv.textContent = 'Error al guardar el token. Revisa la consola para más detalles.';
+          errorDiv.style.display = 'block';
+        }
+      }
+    });
+  }
+  
+  // Eliminar token
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (confirm('¿Eliminar el token? Volverás a usar el token del servidor (si está configurado).')) {
+        if (saveUserToken('')) {
+          alert('Token eliminado. Se usará el token del servidor.');
+          closeTokenConfig();
+          // Actualizar el título del botón de token sin recargar la página
+          const tokenButton = document.querySelector('.icon-button[title*="Token"]');
+          if (tokenButton) {
+            tokenButton.title = "Configurar token de Notion";
+          }
+          // No recargar la página para preservar la configuración actual
+        }
+      }
+    });
+  }
+  
+  if (backBtn) {
+    backBtn.addEventListener('click', closeTokenConfig);
+  }
   
   // Ver JSON
   if (viewJsonBtn) {
-    viewJsonBtn.addEventListener('mouseenter', () => {
-      viewJsonBtn.style.background = CSS_VARS.bgHover;
-      viewJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
-    viewJsonBtn.addEventListener('mouseleave', () => {
-      viewJsonBtn.style.background = CSS_VARS.bgPrimary;
-      viewJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
-    viewJsonBtn.addEventListener('mousedown', () => {
-      viewJsonBtn.style.background = CSS_VARS.bgActive;
-      viewJsonBtn.style.borderColor = CSS_VARS.borderActive;
-    });
-    viewJsonBtn.addEventListener('mouseup', () => {
-      viewJsonBtn.style.background = CSS_VARS.bgHover;
-      viewJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
     viewJsonBtn.addEventListener('click', async () => {
       try {
         // Usar el roomId obtenido al inicio de la función, o intentar obtenerlo de nuevo
@@ -3864,22 +3636,6 @@ async function showTokenConfig() {
   
   // Cargar JSON
   if (loadJsonBtn) {
-    loadJsonBtn.addEventListener('mouseenter', () => {
-      loadJsonBtn.style.background = CSS_VARS.bgHover;
-      loadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
-    loadJsonBtn.addEventListener('mouseleave', () => {
-      loadJsonBtn.style.background = CSS_VARS.bgPrimary;
-      loadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
-    loadJsonBtn.addEventListener('mousedown', () => {
-      loadJsonBtn.style.background = CSS_VARS.bgActive;
-      loadJsonBtn.style.borderColor = CSS_VARS.borderActive;
-    });
-    loadJsonBtn.addEventListener('mouseup', () => {
-      loadJsonBtn.style.background = CSS_VARS.bgHover;
-      loadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
     loadJsonBtn.addEventListener('click', async () => {
       try {
         // Crear input de archivo oculto
@@ -3950,22 +3706,6 @@ async function showTokenConfig() {
   
   // Descargar JSON
   if (downloadJsonBtn) {
-    downloadJsonBtn.addEventListener('mouseenter', () => {
-      downloadJsonBtn.style.background = CSS_VARS.bgHover;
-      downloadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
-    downloadJsonBtn.addEventListener('mouseleave', () => {
-      downloadJsonBtn.style.background = CSS_VARS.bgPrimary;
-      downloadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
-    downloadJsonBtn.addEventListener('mousedown', () => {
-      downloadJsonBtn.style.background = CSS_VARS.bgActive;
-      downloadJsonBtn.style.borderColor = CSS_VARS.borderActive;
-    });
-    downloadJsonBtn.addEventListener('mouseup', () => {
-      downloadJsonBtn.style.background = CSS_VARS.bgHover;
-      downloadJsonBtn.style.borderColor = CSS_VARS.borderPrimary;
-    });
     downloadJsonBtn.addEventListener('click', async () => {
       try {
         // Usar el roomId obtenido al inicio de la función, o intentar obtenerlo de nuevo

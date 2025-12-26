@@ -169,6 +169,210 @@ h1#page-title {
   display: none !important;
 }
 
+/* Token Config Container */
+.token-config-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg-primary);
+}
+
+.token-config-header {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-primary);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.token-back-button {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: #e0e0e0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+}
+
+.token-back-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-primary);
+}
+
+.token-back-button:active {
+  background: var(--bg-active);
+  border-color: var(--border-active);
+}
+
+.token-config-title {
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  color: #fff;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.token-config-content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.token-config-section {
+  margin-bottom: 24px;
+}
+
+.token-config-description {
+  color: #999;
+  font-size: 14px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+}
+
+.token-config-info-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.token-config-info-title {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+}
+
+.token-config-info-list {
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.8;
+  margin-left: 20px;
+  padding-left: 0;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 400;
+}
+
+.token-config-info-sublist {
+  margin-top: 8px;
+  margin-left: 20px;
+  padding-left: 0;
+}
+
+.token-config-link {
+  color: #4a9eff;
+  text-decoration: none;
+}
+
+.token-config-input-group {
+  margin-bottom: 16px;
+}
+
+.token-config-label {
+  display: block;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 400;
+  margin-bottom: 8px;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+}
+
+.token-config-input {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-family: monospace;
+  box-sizing: border-box;
+}
+
+.token-config-masked {
+  color: #888;
+  font-size: 12px;
+  margin-top: 8px;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 400;
+}
+
+.token-config-error {
+  display: none;
+  background: #4a2d2d;
+  border: 1px solid #6a4040;
+  border-radius: 6px;
+  padding: 12px;
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.token-config-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-primary);
+}
+
+.token-config-buttons-row {
+  display: flex;
+  gap: 12px;
+}
+
+.token-config-button {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 10px 20px;
+  color: #e0e0e0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  transition: all 0.2s;
+  flex: 1;
+}
+
+.token-config-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-primary);
+}
+
+.token-config-button:active {
+  background: var(--bg-active);
+  border-color: var(--border-active);
+}
+
+.token-config-button-primary {
+  background: #4a9eff;
+  border: none;
+  color: #fff;
+  font-weight: 700;
+}
+
+.token-config-button-primary:hover {
+  background: #5aaeff;
+}
+
+.token-config-button-secondary {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+}
+
 /* Category styles */
 .category-group {
   margin-bottom: 0px;
