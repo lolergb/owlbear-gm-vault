@@ -196,43 +196,9 @@ body {
    Componentes Base - Inputs
    ========================================================================== */
 
-/* Input base */
-.input {
-  width: 100%;
-  padding: var(--spacing-md);
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-family: var(--font-family-base);
-  font-size: var(--font-size-base);
-  transition: border-color var(--transition-fast);
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--color-accent-primary);
-}
-
-.input--mono {
-  font-family: var(--font-family-mono);
-}
-
-/* Textarea */
-.textarea {
-  width: 100%;
-  padding: var(--spacing-md);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  font-family: var(--font-family-base);
-  font-size: var(--font-size-base);
-  resize: vertical;
-  min-height: 60px;
-}
-
-/* Select */
+/* Input base - Unificado con estilo modal */
+.input,
+.textarea,
 .select {
   width: 100%;
   padding: 10px var(--spacing-md);
@@ -242,6 +208,24 @@ body {
   color: var(--color-text-secondary);
   font-family: var(--font-family-base);
   font-size: var(--font-size-base);
+  transition: border-color var(--transition-fast);
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+}
+
+.input--mono {
+  font-family: var(--font-family-mono);
+}
+
+/* Textarea específico */
+.textarea {
+  resize: vertical;
+  min-height: 60px;
 }
 
 /* ==========================================================================
@@ -567,35 +551,6 @@ body {
   line-height: 1.6;
 }
 
-.settings__info-box {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
-}
-
-.settings__info-title {
-  color: var(--color-text-primary);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--spacing-md);
-}
-
-.settings__info-list {
-  color: #ccc;
-  font-size: 13px;
-  line-height: 1.8;
-  margin-left: 20px;
-  padding-left: 0;
-}
-
-.settings__info-sublist {
-  margin-top: var(--spacing-sm);
-  margin-left: 20px;
-  padding-left: 0;
-}
-
 .settings__link {
   color: var(--color-accent-link);
   text-decoration: none;
@@ -603,16 +558,6 @@ body {
 
 .settings__link:hover {
   text-decoration: underline;
-}
-
-.settings__field {
-  margin-bottom: var(--spacing-lg);
-}
-
-.settings__masked {
-  color: var(--color-text-hint);
-  font-size: var(--font-size-sm);
-  margin-top: var(--spacing-sm);
 }
 
 .settings__error {
@@ -700,7 +645,7 @@ body {
 .context-menu-icon-rotate-down { transform: rotate(-90deg); }
 
 /* ==========================================================================
-   Modal
+   Modal (solo layout - usa clases base para form, inputs, buttons)
    ========================================================================== */
 .modal {
   position: fixed;
@@ -718,9 +663,7 @@ body {
 
 .modal__content {
   padding: var(--spacing-xl);
-  position: fixed;
   border-radius: var(--radius-lg);
-  z-index: 10000;
   width: 80%;
   font-family: var(--font-family-base);
   font-size: var(--font-size-md);
@@ -733,105 +676,8 @@ body {
   color: var(--color-text-primary);
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-bold);
-  margin-bottom: 20px;
+  margin-bottom: var(--spacing-lg);
 }
-
-.modal__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-}
-
-.modal__field {
-  display: block;
-}
-
-.modal__label {
-  display: block;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
-  margin-bottom: var(--spacing-sm);
-}
-
-.modal__input,
-.modal__textarea,
-.modal__select {
-  width: 100%;
-  padding: 10px var(--spacing-md);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-base);
-  font-family: var(--font-family-base);
-}
-
-.modal__textarea {
-  resize: vertical;
-  min-height: 60px;
-}
-
-.modal__help {
-  color: var(--color-text-disabled);
-  font-size: var(--font-size-sm);
-  margin-top: var(--spacing-xs);
-}
-
-.modal__actions {
-  display: flex;
-  gap: var(--spacing-md);
-  justify-content: flex-end;
-  margin-top: var(--spacing-sm);
-}
-
-.modal__btn {
-  padding: 10px 20px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-size-base);
-  transition: all var(--transition-normal);
-  font-family: var(--font-family-base);
-  flex: 1;
-}
-
-.modal__btn--cancel {
-  background: transparent;
-  border: 1px solid var(--color-border-subtle);
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-medium);
-}
-
-.modal__btn--cancel:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.modal__btn--submit {
-  background: var(--color-accent-primary);
-  border: none;
-  color: var(--color-text-primary);
-  font-weight: var(--font-weight-bold);
-}
-
-.modal__btn--submit:hover {
-  background: var(--color-accent-primary-hover);
-}
-
-/* Alias para compatibilidad */
-#modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--color-bg-overlay); z-index: 10001; display: flex; align-items: center; justify-content: center; font-family: var(--font-family-base); }
-#modal-overlay > div { padding: var(--spacing-xl); position: fixed; border-radius: var(--radius-lg); z-index: 10000; width: 80%; font-family: var(--font-family-base); font-size: var(--font-size-md); background-color: var(--color-bg-surface); box-shadow: var(--shadow-menu); background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)); }
-.modal-title { color: var(--color-text-primary); font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); margin-bottom: 20px; }
-#modal-form { display: flex; flex-direction: column; gap: var(--spacing-lg); }
-.modal-field { display: block; }
-.modal-label { display: block; color: var(--color-text-primary); font-size: var(--font-size-sm); margin-bottom: var(--spacing-sm); }
-.modal-input, .modal-textarea, .modal-select { width: 100%; padding: 10px var(--spacing-md); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); color: var(--color-text-secondary); font-size: var(--font-size-base); font-family: var(--font-family-base); }
-.modal-textarea { resize: vertical; min-height: 60px; }
-.modal-help { color: var(--color-text-disabled); font-size: var(--font-size-sm); margin-top: var(--spacing-xs); }
-.modal-buttons { display: flex; gap: var(--spacing-md); justify-content: flex-end; margin-top: var(--spacing-sm); }
-.modal-button { padding: 10px 20px; border-radius: var(--radius-md); cursor: pointer; font-size: var(--font-size-base); transition: all var(--transition-normal); font-family: var(--font-family-base); flex: 1; }
-.modal-button-cancel { background: transparent; border: 1px solid var(--color-border-subtle); color: var(--color-text-secondary); font-weight: var(--font-weight-medium); }
-.modal-button-cancel:hover { background: rgba(255, 255, 255, 0.05); }
-.modal-button-submit { background: var(--color-accent-primary); border: none; color: var(--color-text-primary); font-weight: var(--font-weight-bold); }
-.modal-button-submit:hover { background: var(--color-accent-primary-hover); }
 
 /* ==========================================================================
    Notion Container

@@ -3921,47 +3921,24 @@ function createContextMenu(items, position, onClose) {
 function showModalForm(title, fields, onSubmit, onCancel) {
   const overlay = document.createElement('div');
   overlay.id = 'modal-overlay';
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(34, 38, 57, 0.9);
-    z-index: 10001;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
+  overlay.className = 'modal';
 
   const modal = document.createElement('div');
-  modal.style.cssText = `
-    padding: 24px;
-    position: fixed;
-    border-radius: 8px;
-    z-index: 10000;
-    width: 80%;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    background-color: rgb(34, 38, 57);
-    box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 4px -1px, rgba(0, 0, 0, 0.14) 0px 4px 5px 0px, rgba(0, 0, 0, 0.12) 0px 1px 10px 0px;
-    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
-  `;
+  modal.className = 'modal__content';
 
   modal.innerHTML = `
-    <h2 class="modal-title">${title}</h2>
-    <form id="modal-form" class="modal-form">
+    <h2 class="modal__title">${title}</h2>
+    <form id="modal-form" class="form">
       ${fields.map(field => `
-        <div class="modal-field">
-          <label class="modal-label">
+        <div class="form__field">
+          <label class="form__label">
             ${field.label}${field.required ? ' *' : ''}
           </label>
           ${field.type === 'textarea' ? `
             <textarea 
               id="field-${field.name}" 
               name="${field.name}"
-              class="modal-textarea"
+              class="textarea"
               ${field.required ? 'required' : ''}
               placeholder="${field.placeholder || ''}"
             >${field.value || ''}</textarea>
@@ -3969,7 +3946,7 @@ function showModalForm(title, fields, onSubmit, onCancel) {
             <select 
               id="field-${field.name}" 
               name="${field.name}"
-              class="modal-select"
+              class="select"
               ${field.required ? 'required' : ''}
             >
               ${(field.options || []).map(opt => {
@@ -3991,18 +3968,18 @@ function showModalForm(title, fields, onSubmit, onCancel) {
               type="${field.type || 'text'}" 
               id="field-${field.name}" 
               name="${field.name}"
-              class="modal-input"
+              class="input"
               ${field.required ? 'required' : ''}
               placeholder="${field.placeholder || ''}"
               value="${field.value || ''}"
             />
           `}
-          ${field.help ? `<div class="modal-help">${field.help}</div>` : ''}
+          ${field.help ? `<div class="form__help">${field.help}</div>` : ''}
         </div>
       `).join('')}
-      <div class="modal-buttons">
-        <button type="button" id="modal-cancel" class="modal-button modal-button-cancel">Cancelar</button>
-        <button type="submit" id="modal-submit" class="modal-button modal-button-submit">Guardar</button>
+      <div class="form__actions">
+        <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">Cancelar</button>
+        <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">Guardar</button>
       </div>
     </form>
   `;
