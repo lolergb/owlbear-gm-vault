@@ -3395,25 +3395,36 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
     
     if (!backButton.dataset.listenerAdded) {
       backButton.addEventListener("click", () => {
+        const tokenContainer = document.getElementById("token-config-container");
+        const isTokenConfigVisible = tokenContainer && !tokenContainer.classList.contains('hidden');
+        
+        if (isTokenConfigVisible) {
+          // Cerrar token config
+          tokenContainer.classList.add("hidden");
+        } else {
+          // Volver a la vista principal desde notion-container
+          notionContainer.classList.add("hidden");
+          notionContainer.classList.remove("show-content");
+          if (notionContent) {
+            notionContent.innerHTML = "";
+          }
+          // Limpiar iframe
+          const iframe = notionContainer.querySelector('#notion-iframe');
+          if (iframe) {
+            iframe.src = '';
+            iframe.style.display = 'none';
+          }
+          // Ocultar botón de recargar
+          const refreshButton = document.getElementById("refresh-page-button");
+          if (refreshButton) {
+            refreshButton.classList.add("hidden");
+          }
+        }
+        
+        // Restaurar vista principal
         pageList.classList.remove("hidden");
-        notionContainer.classList.add("hidden");
         backButton.classList.add("hidden");
         pageTitle.textContent = "DM screen";
-        notionContainer.classList.remove("show-content");
-        if (notionContent) {
-          notionContent.innerHTML = "";
-        }
-        // Limpiar iframe
-        const iframe = notionContainer.querySelector('#notion-iframe');
-        if (iframe) {
-          iframe.src = '';
-          iframe.style.display = 'none';
-        }
-        // Ocultar botón de recargar
-        const refreshButton = document.getElementById("refresh-page-button");
-        if (refreshButton) {
-          refreshButton.classList.add("hidden");
-        }
         // Mostrar el button-container cuando se vuelve a la vista principal
         const buttonContainer = document.querySelector('.button-container');
         if (buttonContainer) {
@@ -3439,11 +3450,24 @@ async function showTokenConfig() {
   const pageList = document.getElementById("page-list");
   const notionContainer = document.getElementById("notion-container");
   const tokenContainer = document.getElementById("token-config-container");
+  const backButton = document.getElementById("back-button");
+  const pageTitle = document.getElementById("page-title");
+  const header = document.getElementById("header");
   
   // Ocultar otros contenedores pero mantener el container visible
   if (pageList) pageList.classList.add('hidden');
   if (notionContainer) notionContainer.classList.add('hidden');
   if (tokenContainer) tokenContainer.classList.remove('hidden');
+  
+  // Actualizar header como en loadPageContent
+  if (backButton) backButton.classList.remove('hidden');
+  if (pageTitle) pageTitle.textContent = '🔑 Configurar Token de Notion';
+  
+  // Ocultar el button-container cuando se está en la vista de token config
+  const buttonContainer = document.querySelector('.button-container');
+  if (buttonContainer) {
+    buttonContainer.classList.add('hidden');
+  }
   
   const currentToken = getUserToken() || '';
   const maskedToken = currentToken ? currentToken.substring(0, 8) + '...' + currentToken.substring(currentToken.length - 4) : '';
@@ -3457,7 +3481,6 @@ async function showTokenConfig() {
   const viewJsonBtn = document.getElementById('view-json-btn');
   const loadJsonBtn = document.getElementById('load-json-btn');
   const downloadJsonBtn = document.getElementById('download-json-btn');
-  const backBtn = document.getElementById('back-from-token');
   
   if (tokenInput) {
     tokenInput.value = currentToken;
@@ -3480,6 +3503,13 @@ async function showTokenConfig() {
   const closeTokenConfig = () => {
     if (tokenContainer) tokenContainer.classList.add('hidden');
     if (pageList) pageList.classList.remove('hidden');
+    if (backButton) backButton.classList.add('hidden');
+    if (pageTitle) pageTitle.textContent = 'DM screen';
+    // Mostrar el button-container cuando se vuelve a la vista principal
+    const buttonContainer = document.querySelector('.button-container');
+    if (buttonContainer) {
+      buttonContainer.classList.remove('hidden');
+    }
   };
   
   // Guardar token
@@ -3532,9 +3562,8 @@ async function showTokenConfig() {
     });
   }
   
-  if (backBtn) {
-    backBtn.addEventListener('click', closeTokenConfig);
-  }
+  // El back-button ya tiene un listener que maneja el cierre de token-config-container
+  // No necesitamos agregar otro listener aquí
   
   // Ver JSON
   if (viewJsonBtn) {

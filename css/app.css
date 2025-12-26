@@ -178,46 +178,6 @@ h1#page-title {
   background: var(--bg-primary);
 }
 
-.token-config-header {
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-primary);
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.token-back-button {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  padding: 6px 12px;
-  color: #e0e0e0;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-  font-family: Roboto, Helvetica, Arial, sans-serif;
-}
-
-.token-back-button:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-primary);
-}
-
-.token-back-button:active {
-  background: var(--bg-active);
-  border-color: var(--border-active);
-}
-
-.token-config-title {
-  font-family: Roboto, Helvetica, Arial, sans-serif;
-  color: #fff;
-  font-size: 18px;
-  line-height: 24px;
-  font-weight: 700;
-  margin: 0;
-}
-
 .token-config-content {
   flex: 1;
   padding: 24px;
