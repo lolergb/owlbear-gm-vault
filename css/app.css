@@ -244,7 +244,7 @@ body {
 .form__label {
   display: block;
   color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-normal);
   margin-bottom: var(--spacing-sm);
 }
