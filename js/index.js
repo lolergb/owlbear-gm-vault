@@ -3464,7 +3464,7 @@ async function showSettings() {
     backButton.classList.remove('hidden');
   }
   if (pageTitle) {
-    pageTitle.textContent = '⚙️ Configuración';
+    pageTitle.textContent = 'Configuración';
   }
   
   // Asegurar que el listener esté configurado (se agrega en loadPageContent o aquí si es necesario)
