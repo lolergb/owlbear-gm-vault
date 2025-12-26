@@ -185,10 +185,7 @@ h1#page-title {
   max-width: 600px;
   margin: 0 auto;
   width: 100%;
-}
-
-.token-config-section {
-  margin-bottom: 24px;
+  border-radius: 8px;
 }
 
 .token-config-description {

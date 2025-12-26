@@ -3464,7 +3464,7 @@ async function showTokenConfig() {
     backButton.classList.remove('hidden');
   }
   if (pageTitle) {
-    pageTitle.textContent = '🔑 Configurar Token de Notion';
+    pageTitle.textContent = 'Configurar Token de Notion';
   }
   
   // Asegurar que el listener esté configurado (se agrega en loadPageContent o aquí si es necesario)
