@@ -117,12 +117,18 @@ h1#page-title {
 .back-button {
   border: 1px solid var(--border-primary);
   background-color: var(--bg-primary);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: 8px;
+  padding: 8px 12px;
   color: #e0e0e0;
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
+  display: flex;
+  gap: 8px;
+}
+
+.back-button-icon {
+  width: 16px;
 }
 
 .back-button:hover {
@@ -176,6 +182,7 @@ h1#page-title {
   flex-direction: column;
   font-family: Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg-primary);
+  border-radius: 8px;
 }
 
 .token-config-content {
