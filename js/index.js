@@ -1641,6 +1641,12 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
         const item = context.items[0];
         if (!item) return;
         
+        // Primero abrir el panel de la extensión
+        await OBR.action.open();
+        
+        // Pequeña espera para que el panel se abra
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         // Mostrar selector de páginas
         showPageSelectorForToken(item.id, pagesConfig, roomId);
       }
@@ -1669,6 +1675,12 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
         const pageName = item.metadata[`${METADATA_KEY}/pageName`] || "Página vinculada";
         
         if (pageUrl) {
+          // Primero abrir el panel de la extensión
+          await OBR.action.open();
+          
+          // Pequeña espera para que el panel se abra
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
           // Abrir la página usando la función existente
           await loadPageContent(pageUrl, pageName);
         }
