@@ -1,0 +1,222 @@
+{
+  "categories": [
+    {
+      "name": "Act I – Goblin Arrows",
+      "categories": [
+        {
+          "name": "Encounter – Goblin Ambush",
+          "pages": [
+            {
+              "name": "Story – Goblin Arrows (Chapter Start)",
+              "url": "https://5e.tools/adventure.html#lmop,1,goblin-arrows,0"
+            },
+            {
+              "name": "Story – Goblin Ambush",
+              "url": "https://5e.tools/adventure.html#lmop,1,goblin-ambush,0"
+            },
+            {
+              "name": "Map – Sword Coast Region (Reference)",
+              "url": "https://5e.tools/img/adventure/LMoP/Sword%20Coast.webp"
+            },
+            {
+              "name": "Enemy – Goblin",
+              "url": "https://5e.tools/bestiary.html#goblin_mm,bookview:true"
+            }
+          ]
+        },
+        {
+          "name": "Encounter – Cragmaw Hideout",
+          "pages": [
+            {
+              "name": "Story – Cragmaw Hideout",
+              "url": "https://5e.tools/adventure.html#lmop,1,cragmaw-hideout,0"
+            },
+            {
+              "name": "Map – Cragmaw Hideout",
+              "url": "https://5e.tools/img/adventure/LMoP/Cragmaw%20Hideout.webp"
+            },
+            {
+              "name": "Enemy – Goblin",
+              "url": "https://5e.tools/bestiary.html#goblin_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Wolf",
+              "url": "https://5e.tools/bestiary.html#wolf_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Goblin Boss (Klarg)",
+              "url": "https://5e.tools/bestiary.html#goblin%20boss_mm,bookview:true"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Act II – Phandalin & Redbrands",
+      "categories": [
+        {
+          "name": "Encounter – Arrive in Phandalin (Social Hub)",
+          "pages": [
+            {
+              "name": "Story – Phandalin",
+              "url": "https://5e.tools/adventure.html#lmop,2,phandalin,0"
+            },
+            {
+              "name": "Map – Phandalin",
+              "url": "https://5e.tools/img/adventure/LMoP/Phandalin.webp"
+            }
+          ]
+        },
+        {
+          "name": "Encounter – Redbrand Street Fight",
+          "pages": [
+            {
+              "name": "Story – Redbrand Ruffians",
+              "url": "https://5e.tools/adventure.html#lmop,2,redbrand-ruffians,0"
+            },
+            {
+              "name": "Map – Phandalin",
+              "url": "https://5e.tools/img/adventure/LMoP/Phandalin.webp"
+            },
+            {
+              "name": "Enemy – Bandit (Redbrand Ruffian)",
+              "url": "https://5e.tools/bestiary.html#bandit_mm,bookview:true"
+            }
+          ]
+        },
+        {
+          "name": "Encounter – Redbrand Hideout (Dungeon)",
+          "pages": [
+            {
+              "name": "Story – Redbrand Hideout",
+              "url": "https://5e.tools/adventure.html#lmop,2,redbrand-hideout,0"
+            },
+            {
+              "name": "Map – Redbrand Hideout",
+              "url": "https://5e.tools/img/adventure/LMoP/Redbrand%20Hideout.webp"
+            },
+            {
+              "name": "Enemy – Bandit (Redbrand Ruffian)",
+              "url": "https://5e.tools/bestiary.html#bandit_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Nothic",
+              "url": "https://5e.tools/bestiary.html#nothic_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Mage (Glasstaff)",
+              "url": "https://5e.tools/bestiary.html#mage_mm,bookview:true"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Act III – The Spider’s Web",
+      "categories": [
+        {
+          "name": "Encounter – The Spider’s Web (Chapter Start)",
+          "pages": [
+            {
+              "name": "Story – The Spider’s Web",
+              "url": "https://5e.tools/adventure.html#lmop,3,the-spiders-web,0"
+            }
+          ]
+        },
+        {
+          "name": "Encounter – Cragmaw Castle",
+          "pages": [
+            {
+              "name": "Story – Cragmaw Castle",
+              "url": "https://5e.tools/adventure.html#lmop,3,cragmaw-castle,0"
+            },
+            {
+              "name": "Map – Cragmaw Castle",
+              "url": "https://5e.tools/img/adventure/LMoP/Cragmaw%20Castle.webp"
+            },
+            {
+              "name": "Enemy – Goblin",
+              "url": "https://5e.tools/bestiary.html#goblin_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Hobgoblin",
+              "url": "https://5e.tools/bestiary.html#hobgoblin_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Bugbear (King Grol)",
+              "url": "https://5e.tools/bestiary.html#bugbear_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Doppelganger",
+              "url": "https://5e.tools/bestiary.html#doppelganger_mm,bookview:true"
+            }
+          ]
+        },
+        {
+          "name": "Encounter – Thundertree (Venomfang)",
+          "pages": [
+            {
+              "name": "Story – Thundertree",
+              "url": "https://5e.tools/adventure.html#lmop,3,thundertree,0"
+            },
+            {
+              "name": "Enemy – Young Green Dragon (Venomfang)",
+              "url": "https://5e.tools/bestiary.html#young%20green%20dragon_mm,bookview:true"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Act IV – Wave Echo Cave",
+      "categories": [
+        {
+          "name": "Encounter – Wave Echo Cave (Final Dungeon)",
+          "pages": [
+            {
+              "name": "Story – Wave Echo Cave",
+              "url": "https://5e.tools/adventure.html#lmop,4,wave-echo-cave,0"
+            },
+            {
+              "name": "Story – Forge of Spells",
+              "url": "https://5e.tools/adventure.html#lmop,4,forge-of-spells,0"
+            },
+            {
+              "name": "Map – Wave Echo Cave",
+              "url": "https://5e.tools/img/adventure/LMoP/Wave%20Echo%20Cave.webp"
+            },
+            {
+              "name": "Enemy – Stirge",
+              "url": "https://5e.tools/bestiary.html#stirge_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Skeleton",
+              "url": "https://5e.tools/bestiary.html#skeleton_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Zombie",
+              "url": "https://5e.tools/bestiary.html#zombie_mm,bookview:true"
+            },
+            {
+              "name": "Enemy – Specter",
+              "url": "https://5e.tools/bestiary.html#specter_mm,bookview:true"
+            },
+            {
+              "name": "Boss – Drow (Nezznar stat base)",
+              "url": "https://5e.tools/bestiary.html#drow_mm,bookview:true"
+            }
+          ]
+        },
+        {
+          "name": "Encounter – Ending",
+          "pages": [
+            {
+              "name": "Story – Conclusion",
+              "url": "https://5e.tools/adventure.html#lmop,4,conclusion,0"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

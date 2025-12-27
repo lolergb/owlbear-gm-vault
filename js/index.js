@@ -3449,6 +3449,13 @@ function getLinkType(url) {
       return { type: 'pdf', icon: 'icon-pdf.svg' };
     }
     
+    // Imágenes
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
+    const lowercasePath = pathname.toLowerCase();
+    if (imageExtensions.some(ext => lowercasePath.endsWith(ext))) {
+      return { type: 'image', icon: 'icon-image.svg' };
+    }
+    
     // Por defecto, link genérico
     return { type: 'generic', icon: 'icon-link.svg' };
   } catch (e) {
@@ -3634,6 +3641,99 @@ function convertToEmbedUrl(url) {
     console.warn('Error al convertir URL:', e);
     return { url, converted: false, service: null };
   }
+}
+
+// Función para cargar imagen en viewer dedicado
+async function loadImageContent(url, container, name) {
+  const contentDiv = container.querySelector('#notion-content');
+  const iframe = container.querySelector('#notion-iframe');
+  
+  // Ocultar iframe
+  if (iframe) {
+    iframe.style.display = 'none';
+  }
+  
+  // Mostrar contenido
+  if (contentDiv) {
+    contentDiv.style.display = 'block';
+    container.classList.add('show-content');
+    
+    // Convertir URL si es de Google Drive
+    let imageUrl = url;
+    if (url.includes('drive.google.com') && url.includes('/file/d/')) {
+      const match = url.match(/\/file\/d\/([^/]+)/);
+      if (match) {
+        // Usar formato de thumbnail grande para mejor calidad
+        imageUrl = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w2000`;
+      }
+    }
+    
+    contentDiv.innerHTML = `
+      <div class="image-viewer-container" style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        padding: 16px;
+        gap: 16px;
+      ">
+        <img 
+          src="${imageUrl}" 
+          alt="${name || 'Imagen'}"
+          class="notion-image-clickable"
+          style="
+            max-width: 100%;
+            max-height: calc(100vh - 150px);
+            object-fit: contain;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+          "
+        />
+        <p style="color: var(--color-text-secondary); font-size: 14px;">Haz clic en la imagen para verla a tamaño completo</p>
+      </div>
+    `;
+    
+    // Añadir handler para abrir en modal al hacer click
+    const img = contentDiv.querySelector('img');
+    if (img) {
+      img.addEventListener('click', () => {
+        showImageModal(imageUrl, name);
+      });
+    }
+  }
+}
+
+// Función para cargar video en player dedicado
+async function loadVideoContent(url, container, videoType) {
+  const contentDiv = container.querySelector('#notion-content');
+  const iframe = container.querySelector('#notion-iframe');
+  
+  // Ocultar contenido de Notion
+  if (contentDiv) {
+    contentDiv.style.display = 'none';
+  }
+  
+  // Convertir URL a formato embed
+  const embedResult = convertToEmbedUrl(url);
+  const embedUrl = embedResult.url;
+  
+  // Mostrar video en iframe con estilo mejorado
+  if (iframe) {
+    // Configurar el iframe para video
+    iframe.src = embedUrl;
+    iframe.style.display = 'block';
+    iframe.style.visibility = 'visible';
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = 'none';
+    iframe.style.borderRadius = '8px';
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    iframe.allowFullscreen = true;
+  }
+  
+  container.classList.remove('show-content');
 }
 
 // Función para cargar contenido en iframe (para URLs no-Notion)
@@ -3888,8 +3988,9 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       
       await loadNotionContent(url, notionContainer, false, blockTypes);
     } else {
-      // No es una URL de Notion → cargar en iframe
-      console.log('🌐 URL genérica detectada, usando iframe');
+      // No es una URL de Notion → detectar tipo de contenido
+      const linkType = getLinkType(url);
+      console.log('🌐 URL detectada:', linkType.type);
       
       // Ocultar botón de recargar si existe (solo para Notion)
       let refreshButton = document.getElementById("refresh-page-button");
@@ -3897,8 +3998,19 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         refreshButton.classList.add("hidden");
       }
       
-      // Cargar en iframe (con selector opcional)
-      await loadIframeContent(url, notionContainer, selector);
+      // Manejar según el tipo de contenido
+      if (linkType.type === 'image') {
+        // Es una imagen → abrir en image viewer
+        console.log('🖼️ Imagen detectada, abriendo en viewer');
+        await loadImageContent(url, notionContainer, name);
+      } else if (linkType.type === 'youtube' || linkType.type === 'vimeo') {
+        // Es un video → abrir en video player
+        console.log('🎬 Video detectado, abriendo en player');
+        await loadVideoContent(url, notionContainer, linkType.type);
+      } else {
+        // Cargar en iframe (con selector opcional)
+        await loadIframeContent(url, notionContainer, selector);
+      }
     }
     
     if (!backButton.dataset.listenerAdded) {

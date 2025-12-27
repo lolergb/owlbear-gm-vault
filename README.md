@@ -675,6 +675,43 @@ This extension uses the official Owlbear Rodeo SDK:
   - Detect synchronized blocks
   - Get content from the original block
 
+## 📊 Estadísticas del Proyecto
+
+### ⏱️ Tiempo de Desarrollo
+- **Fecha de inicio:** 19 de diciembre de 2025
+- **Última actualización:** 27 de diciembre de 2025
+- **Días de trabajo activo:** 8 días (19, 20, 21, 22, 24, 25, 26, 27 dic)
+- **Total de commits:** 223 commits
+- **Promedio de commits por día:** ~28 commits/día
+- **Días más productivos:** 
+  - 21 dic: 45 commits
+  - 20 dic: 39 commits  
+  - 24 dic: 37 commits
+- **Horas más activas:** 20:00-21:00 (sesiones nocturnas intensas)
+
+### 📈 Métricas del Código
+- **Líneas de código:** ~7,045 líneas
+- **Archivos principales:** 17 archivos
+- **Lenguajes:** JavaScript (ES6+), HTML5, CSS3, JSON
+- **Versión actual:** 2.0.1
+- **Tamaño del proyecto:** ~500 KB (sin node_modules)
+
+### 🎯 Alcance del Proyecto
+- **Tipo:** Extensión para Owlbear Rodeo
+- **Funcionalidad principal:** Integración de Notion y servicios externos
+- **Servicios soportados:** 10+ servicios (Notion, Google Drive, Docs, Sheets, Slides, Dropbox, OneDrive, YouTube, Vimeo, Figma, PDFs)
+- **Características implementadas:** 30+ funcionalidades principales
+- **Bloques de Notion soportados:** 15+ tipos de bloques
+
+### 🛠️ Tecnologías Utilizadas
+- **Frontend:** Vanilla JavaScript (ES6+), HTML5, CSS3
+- **Backend:** Netlify Functions (Node.js)
+- **SDK:** Owlbear Rodeo SDK v3.1.0
+- **APIs:** Notion API, servicios externos (Google, Dropbox, OneDrive, etc.)
+- **Almacenamiento:** localStorage (configuración por sala)
+- **Deployment:** Netlify
+- **Control de versiones:** Git
+
 ## 📄 License
 
 Personal use - Feel free to modify and use as you wish.
