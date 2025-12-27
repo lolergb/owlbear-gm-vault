@@ -891,6 +891,10 @@ body {
 
 /* Alias: icon-button → btn--icon (para compatibilidad) */
 .icon-button { background: transparent; border: none; border-radius: var(--radius-full); width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all var(--transition-normal); }
+.category-context-menu-button.context-menu-active,
+.page-context-menu-button.context-menu-active,
+.category-title-container.context-menu-open .category-context-menu-button,
+.page-button.context-menu-open .page-context-menu-button,
 .icon-button:hover { background: var(--color-bg-hover); }
 .icon-button:active { background: var(--color-bg-active); }
 .icon-button-icon { width: var(--icon-size-md); height: var(--icon-size-md); display: block; }
