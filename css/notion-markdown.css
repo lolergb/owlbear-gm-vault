@@ -12,7 +12,7 @@
   max-width: 900px;
   margin: 0 auto;
   color: var(--color-text-primary);
-  background: var(--color-bg-overlay);
+  background: var(--color-bg-surface);
   line-height: 1.6;
   font-family: var(--font-family-base);
 }

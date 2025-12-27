@@ -570,11 +570,12 @@ body {
 .page-context-menu-button { z-index: 10; }
 
 /* Mantener visible el botón cuando el menú contextual está activo */
+/* Usar !important para sobreescribir los estilos inline de opacity */
 .category-context-menu-button.context-menu-active,
 .page-context-menu-button.context-menu-active,
 .category-title-container.context-menu-open .category-context-menu-button,
 .page-button.context-menu-open .page-context-menu-button {
-  opacity: 1;
+  opacity: 1 !important;
 }
 
 /* Mantener el hover visible en el padre cuando el menú está activo */
