@@ -712,7 +712,7 @@ body {
   height: calc(100vh - 100px);
   min-height: 500px;
   border: 1px solid var(--color-border-primary);
-  background-color: var(--color-bg-overlay);
+  background-color: var(--color-bg-primary);
   border-radius: var(--radius-lg);
   overflow-y: auto;
   overflow-x: hidden;
