@@ -569,6 +569,19 @@ body {
 }
 .page-context-menu-button { z-index: 10; }
 
+/* Mantener visible el botón cuando el menú contextual está activo */
+.category-context-menu-button.context-menu-active,
+.page-context-menu-button.context-menu-active {
+  opacity: 1;
+}
+
+/* Mantener el hover visible en el padre cuando el menú está activo */
+.category-title-container.context-menu-open,
+.page-button.context-menu-open {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-active);
+}
+
 /* ==========================================================================
     Settings
     ========================================================================== */

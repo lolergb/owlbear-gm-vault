@@ -1788,8 +1788,15 @@ try {
             }
           }
         ];
+        
+        // Marcar como activo mientras el menú está abierto
+        addButton.classList.add('context-menu-active');
+        
         // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
-    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
+        createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 }, () => {
+          // Callback cuando se cierra el menú
+          addButton.classList.remove('context-menu-active');
+        });
       });
       
       // Botón para colapsar/expandir todas las carpetas
@@ -1943,10 +1950,16 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   
   // Mostrar menú contextual al hover
   titleContainer.addEventListener('mouseenter', () => {
-    contextMenuButton.style.opacity = '1';
+    if (!contextMenuButton.classList.contains('context-menu-active')) {
+      contextMenuButton.style.opacity = '1';
+    }
   });
   titleContainer.addEventListener('mouseleave', (e) => {
-    // No ocultar si el mouse está sobre el menú contextual o el menú está abierto
+    // No ocultar si el menú contextual está activo
+    if (contextMenuButton.classList.contains('context-menu-active')) {
+      return;
+    }
+    // No ocultar si el mouse está sobre el menú contextual
     if (!e.relatedTarget || (!e.relatedTarget.closest('.category-context-menu-button') && !e.relatedTarget.closest('#context-menu'))) {
       contextMenuButton.style.opacity = '0';
     }
@@ -2025,8 +2038,17 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       }
     });
     
+    // Marcar como activo mientras el menú está abierto
+    contextMenuButton.classList.add('context-menu-active');
+    titleContainer.classList.add('context-menu-open');
+    
     // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
-    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
+    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 }, () => {
+      // Callback cuando se cierra el menú
+      contextMenuButton.classList.remove('context-menu-active');
+      titleContainer.classList.remove('context-menu-open');
+      contextMenuButton.style.opacity = '0';
+    });
   });
   
   titleContainer.appendChild(collapseButton);
@@ -2096,10 +2118,16 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       
       // Mostrar menú contextual al hover
       button.addEventListener('mouseenter', () => {
-        pageContextMenuButton.style.opacity = '1';
+        if (!pageContextMenuButton.classList.contains('context-menu-active')) {
+          pageContextMenuButton.style.opacity = '1';
+        }
       });
       button.addEventListener('mouseleave', (e) => {
-        // No ocultar si el mouse está sobre el menú contextual o el menú está abierto
+        // No ocultar si el menú contextual está activo
+        if (pageContextMenuButton.classList.contains('context-menu-active')) {
+          return;
+        }
+        // No ocultar si el mouse está sobre el menú contextual
         if (!e.relatedTarget || (!e.relatedTarget.closest('.page-context-menu-button') && !e.relatedTarget.closest('#context-menu'))) {
           pageContextMenuButton.style.opacity = '0';
         }
@@ -2163,8 +2191,17 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           }
         });
         
+        // Marcar como activo mientras el menú está abierto
+        pageContextMenuButton.classList.add('context-menu-active');
+        button.classList.add('context-menu-open');
+        
         // Ajustar posición para mostrar el botón seleccionado (32px altura + 16px padding = 48px)
-    createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 });
+        createContextMenu(menuItems, { x: rect.right, y: rect.top + 48 }, () => {
+          // Callback cuando se cierra el menú
+          pageContextMenuButton.classList.remove('context-menu-active');
+          button.classList.remove('context-menu-open');
+          pageContextMenuButton.style.opacity = '0';
+        });
       });
       
       button.innerHTML = `
