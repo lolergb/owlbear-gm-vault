@@ -571,15 +571,16 @@ body {
 
 /* Mantener visible el botón cuando el menú contextual está activo */
 .category-context-menu-button.context-menu-active,
-.page-context-menu-button.context-menu-active {
+.page-context-menu-button.context-menu-active,
+.category-title-container.context-menu-open .category-context-menu-button,
+.page-button.context-menu-open .page-context-menu-button {
   opacity: 1;
 }
 
 /* Mantener el hover visible en el padre cuando el menú está activo */
-.category-title-container.context-menu-open,
 .page-button.context-menu-open {
   background: var(--color-bg-hover);
-  border-color: var(--color-border-active);
+  border: 1px solid var(--color-border-active);
 }
 
 /* ==========================================================================
