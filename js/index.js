@@ -2122,6 +2122,15 @@ try {
       // Registrar menús contextuales para tokens
       await setupTokenContextMenus(pagesConfig, roomId);
       
+      // Listener para recibir imágenes compartidas por el GM
+      OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
+        const { url, caption } = event.data;
+        if (url) {
+          // Abrir la imagen en modal para este jugador
+          await showImageModal(url, caption);
+        }
+      });
+      
     } catch (error) {
       console.error('❌ Error dentro de OBR.onReady:', error);
       console.error('Stack:', error.stack);
@@ -2239,6 +2248,27 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   categoryTitle.className = 'category-title';
   categoryTitle.textContent = category.name;
   
+  // Verificar si la carpeta tiene contenido visible para jugadores
+  const isCategoryVisible = hasVisibleContentForPlayers(category);
+  
+  // Botón de toggle de visibilidad para carpetas (mostrar/ocultar todas las páginas)
+  const categoryVisibilityButton = document.createElement('button');
+  categoryVisibilityButton.className = 'category-visibility-button icon-button';
+  const categoryVisibilityIcon = document.createElement('img');
+  categoryVisibilityIcon.src = isCategoryVisible ? 'img/icon-eye-open.svg' : 'img/icon-eye-close.svg';
+  categoryVisibilityIcon.className = 'icon-button-icon';
+  categoryVisibilityButton.appendChild(categoryVisibilityIcon);
+  categoryVisibilityButton.title = isCategoryVisible ? 'Has visible pages (click to hide all)' : 'No visible pages (click to show all)';
+  // El botón de visibilidad siempre es visible si la categoría tiene contenido visible
+  categoryVisibilityButton.style.opacity = isCategoryVisible ? '1' : '0';
+  
+  // Click handler para toggle de visibilidad de carpeta
+  categoryVisibilityButton.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    // Toggle: si tiene contenido visible, ocultar todo; si no, mostrar todo
+    await toggleCategoryVisibility(category, categoryPath, roomId, !isCategoryVisible);
+  });
+  
   // Botón de menú contextual para carpetas
   const contextMenuButton = document.createElement('button');
   contextMenuButton.className = 'category-context-menu-button icon-button';
@@ -2249,10 +2279,11 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   contextMenuButton.appendChild(contextMenuIcon);
   contextMenuButton.title = 'Menú';
   
-  // Mostrar menú contextual al hover
+  // Mostrar botones al hover
   titleContainer.addEventListener('mouseenter', () => {
     if (!contextMenuButton.classList.contains('context-menu-active')) {
       contextMenuButton.style.opacity = '1';
+      categoryVisibilityButton.style.opacity = '1';
     }
   });
   titleContainer.addEventListener('mouseleave', (e) => {
@@ -2260,9 +2291,13 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
     if (contextMenuButton.classList.contains('context-menu-active')) {
       return;
     }
-    // No ocultar si el mouse está sobre el menú contextual
-    if (!e.relatedTarget || (!e.relatedTarget.closest('.category-context-menu-button') && !e.relatedTarget.closest('#context-menu'))) {
+    // No ocultar si el mouse está sobre los botones
+    if (!e.relatedTarget || (!e.relatedTarget.closest('.category-context-menu-button') && !e.relatedTarget.closest('.category-visibility-button') && !e.relatedTarget.closest('#context-menu'))) {
       contextMenuButton.style.opacity = '0';
+      // Solo ocultar el botón de visibilidad si la categoría no tiene contenido visible
+      if (!isCategoryVisible) {
+        categoryVisibilityButton.style.opacity = '0';
+      }
     }
   });
   
@@ -2303,21 +2338,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         text: 'Edit', 
         action: async () => {
           await editCategoryFromPageList(category, categoryPath, roomId);
-        }
-      },
-      { separator: true },
-      { 
-        icon: 'img/icon-eye-open.svg', 
-        text: 'Show all pages to players', 
-        action: async () => {
-          await toggleCategoryVisibility(category, categoryPath, roomId, true);
-        }
-      },
-      { 
-        icon: 'img/icon-eye-close.svg', 
-        text: 'Hide all pages from players', 
-        action: async () => {
-          await toggleCategoryVisibility(category, categoryPath, roomId, false);
         }
       },
       { separator: true },
@@ -2369,6 +2389,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   
   titleContainer.appendChild(collapseButton);
   titleContainer.appendChild(categoryTitle);
+  titleContainer.appendChild(categoryVisibilityButton);
   titleContainer.appendChild(contextMenuButton);
   categoryDiv.appendChild(titleContainer);
   
@@ -2426,6 +2447,24 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       const placeholderColor = generateColorFromString(pageId || page.name);
       const placeholderInitial = (page.name || '?')[0].toUpperCase();
       
+      // Botón de toggle de visibilidad para jugadores
+      const pageVisibilityButton = document.createElement('button');
+      pageVisibilityButton.className = 'page-visibility-button icon-button';
+      const pageVisibilityIcon = document.createElement('img');
+      const isPageVisible = page.visibleToPlayers === true;
+      pageVisibilityIcon.src = isPageVisible ? 'img/icon-eye-open.svg' : 'img/icon-eye-close.svg';
+      pageVisibilityIcon.className = 'icon-button-icon';
+      pageVisibilityButton.appendChild(pageVisibilityIcon);
+      pageVisibilityButton.title = isPageVisible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
+      // El botón de visibilidad siempre es visible si la página está compartida
+      pageVisibilityButton.style.opacity = isPageVisible ? '1' : '0';
+      
+      // Click handler para toggle de visibilidad
+      pageVisibilityButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await togglePageVisibility(page, categoryPath, roomId);
+      });
+      
       // Botón de menú contextual para páginas
       const pageContextMenuButton = document.createElement('button');
       pageContextMenuButton.className = 'page-context-menu-button icon-button';
@@ -2436,10 +2475,11 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       pageContextMenuButton.appendChild(pageContextMenuIcon);
       pageContextMenuButton.title = 'Menú';
       
-      // Mostrar menú contextual al hover
+      // Mostrar botones al hover
       button.addEventListener('mouseenter', () => {
         if (!pageContextMenuButton.classList.contains('context-menu-active')) {
           pageContextMenuButton.style.opacity = '1';
+          pageVisibilityButton.style.opacity = '1';
         }
       });
       button.addEventListener('mouseleave', (e) => {
@@ -2447,9 +2487,13 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         if (pageContextMenuButton.classList.contains('context-menu-active')) {
           return;
         }
-        // No ocultar si el mouse está sobre el menú contextual
-        if (!e.relatedTarget || (!e.relatedTarget.closest('.page-context-menu-button') && !e.relatedTarget.closest('#context-menu'))) {
+        // No ocultar si el mouse está sobre los botones
+        if (!e.relatedTarget || (!e.relatedTarget.closest('.page-context-menu-button') && !e.relatedTarget.closest('.page-visibility-button') && !e.relatedTarget.closest('#context-menu'))) {
           pageContextMenuButton.style.opacity = '0';
+          // Solo ocultar el botón de visibilidad si la página no está visible para jugadores
+          if (!isPageVisible) {
+            pageVisibilityButton.style.opacity = '0';
+          }
         }
       });
       
@@ -2469,21 +2513,12 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         const canMoveUp = currentPos > 0;
         const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
         
-        const isVisible = page.visibleToPlayers === true;
         const menuItems = [
           { 
             icon: 'img/icon-edit.svg', 
             text: 'Edit', 
             action: async () => {
               await editPageFromPageList(page, pageCategoryPath, roomId);
-            }
-          },
-          { separator: true },
-          { 
-            icon: isVisible ? 'img/icon-eye-close.svg' : 'img/icon-eye-open.svg', 
-            text: isVisible ? 'Hide from players' : 'Show to all players', 
-            action: async () => {
-              await togglePageVisibility(page, pageCategoryPath, roomId);
             }
           },
           { separator: true },
@@ -2540,6 +2575,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           ${linkIconHtml}
         </div>
       `;
+      button.appendChild(pageVisibilityButton);
       button.appendChild(pageContextMenuButton);
       
       // Hover effect
@@ -2550,10 +2586,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         button.style.background = CSS_VARS.bg;
       });
       
-      // Click handler (no ejecutar si se hace click en el menú contextual o el menú está abierto)
+      // Click handler (no ejecutar si se hace click en los botones o el menú está abierto)
       button.addEventListener('click', async (e) => {
-        // No abrir la página si se hace click en el menú contextual
-        if (e.target.closest('.page-context-menu-button')) {
+        // No abrir la página si se hace click en el menú contextual o botón de visibilidad
+        if (e.target.closest('.page-context-menu-button') || e.target.closest('.page-visibility-button')) {
           return;
         }
         // No abrir la página si el menú contextual está abierto
@@ -3271,6 +3307,27 @@ async function togglePageVisibility(page, pageCategoryPath, roomId) {
     console.error('Error al alternar visibilidad de página:', error);
     alert('Error toggling page visibility: ' + error.message);
   }
+}
+
+// Función para verificar si una carpeta tiene algún contenido visible para jugadores
+function hasVisibleContentForPlayers(category) {
+  // Verificar si hay páginas visibles directamente
+  if (category.pages && Array.isArray(category.pages)) {
+    if (category.pages.some(page => page.visibleToPlayers === true)) {
+      return true;
+    }
+  }
+  
+  // Verificar recursivamente en subcategorías
+  if (category.categories && Array.isArray(category.categories)) {
+    for (const subcat of category.categories) {
+      if (hasVisibleContentForPlayers(subcat)) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
 }
 
 // Función para alternar la visibilidad de todas las páginas en una carpeta (recursivamente)

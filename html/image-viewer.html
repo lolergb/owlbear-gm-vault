@@ -40,33 +40,81 @@
       max-width: 800px;
       padding: 24px;
     }
-    .close-button {
+    .toolbar {
       position: fixed;
       top: 20px;
       right: 20px;
+      display: flex;
+      gap: 8px;
+    }
+    .toolbar-button {
       background: #2d2d2d;
       border: 1px solid #404040;
       border-radius: 6px;
-      padding: 10px 20px;
+      padding: 10px 16px;
       color: #e0e0e0;
       cursor: pointer;
       font-size: 14px;
       font-weight: 600;
       transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .close-button:hover {
+    .toolbar-button:hover {
       background: #3d3d3d;
       border-color: #555;
+    }
+    .toolbar-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .toolbar-button.shared {
+      background: #2d4a2d;
+      border-color: #4a6a4a;
+    }
+    .toolbar-button img {
+      width: 18px;
+      height: 18px;
+    }
+    .gm-only {
+      display: none;
+    }
+    .feedback {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2d4a2d;
+      border: 1px solid #4a6a4a;
+      padding: 12px 24px;
+      border-radius: 6px;
+      color: #8fdf8f;
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .feedback.visible {
+      opacity: 1;
     }
   </style>
 </head>
 <body>
-  <!--button class="close-button" onclick="window.close()">Cerrar</button-->
+  <div class="toolbar gm-only">
+    <button id="share-button" class="toolbar-button" title="Show this image to all players">
+      <img src="../img/icon-eye-open.svg" alt="Share" />
+      <span>Show to players</span>
+    </button>
+  </div>
   <div class="image-container">
     <img id="viewer-image" src="" alt="" />
     <div id="viewer-caption" class="caption" style="display: none;"></div>
   </div>
-  <script>
+  <div id="feedback" class="feedback">✓ Image shared with all players</div>
+  
+  <script type="module">
+    import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+    
     // Obtener parámetros de la URL
     const urlParams = new URLSearchParams(window.location.search);
     const imageUrl = urlParams.get('url');
@@ -91,7 +139,48 @@
         window.close();
       }
     });
+    
+    // Inicializar OBR para verificar rol y compartir imagen
+    OBR.onReady(async () => {
+      try {
+        const role = await OBR.player.getRole();
+        const isGM = role === 'GM';
+        
+        // Mostrar botón de compartir solo para GM
+        if (isGM) {
+          document.querySelector('.gm-only').style.display = 'flex';
+          
+          // Configurar botón de compartir
+          const shareButton = document.getElementById('share-button');
+          shareButton.addEventListener('click', async () => {
+            try {
+              // Enviar broadcast a todos los usuarios para que abran la imagen
+              await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
+                url: imageUrl,
+                caption: caption
+              });
+              
+              // Mostrar feedback
+              const feedback = document.getElementById('feedback');
+              feedback.classList.add('visible');
+              setTimeout(() => {
+                feedback.classList.remove('visible');
+              }, 2000);
+              
+              // Cambiar el botón a estado compartido
+              shareButton.classList.add('shared');
+              shareButton.querySelector('span').textContent = 'Shared!';
+              
+            } catch (error) {
+              console.error('Error al compartir imagen:', error);
+              alert('Error sharing image');
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('No se pudo verificar el rol:', e);
+      }
+    });
   </script>
 </body>
 </html>
-

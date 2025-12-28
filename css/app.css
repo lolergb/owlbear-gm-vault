@@ -612,6 +612,20 @@
   }
   .page-context-menu-button { z-index: 10; }
   
+  /* Botones de visibilidad para páginas y carpetas */
+  .category-visibility-button,
+  .page-visibility-button {
+    position: absolute;
+    right: 40px; /* A la izquierda del botón de menú contextual */
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    width: 32px;
+    height: 32px;
+  }
+  .page-visibility-button { z-index: 10; }
+  
   /* Mantener visible el botón cuando el menú contextual está activo */
   /* Usar !important para sobreescribir los estilos inline de opacity */
   .category-context-menu-button.context-menu-active,
