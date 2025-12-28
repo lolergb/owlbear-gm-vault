@@ -46,6 +46,23 @@
   publish = "."
   functions = "netlify/functions"
 
+# Configuración de Deploy Previews (para Pull Requests)
+[build.processing]
+  skip_processing = false
+
+# Configuración de branches
+[context.production]
+  command = "node scripts/build-config.js"
+  publish = "."
+
+[context.deploy-preview]
+  command = "node scripts/build-config.js"
+  publish = "."
+
+[context.branch-deploy]
+  command = "node scripts/build-config.js"
+  publish = "."
+
 # Variables de entorno (configúralas en Netlify Dashboard)
 # DEBUG_MODE: Configura en Site settings → Environment variables
 #   - Valor: "true" o "1" para activar logs de debug

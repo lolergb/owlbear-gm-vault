@@ -3,31 +3,66 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Context</title>
-  <link rel="stylesheet" href="css/notion-markdown.css">
+  <title>DM screen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Permanent+Marker&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/notion-markdown.css">
 </head>
 <body>
   <div class="container">
-    <div id="header" class="header">
-      <button id="back-button" class="back-button hidden">← Volver</button>
-      <h1 id="page-title">Context panel</h1>
+    <!-- Header global -->
+    <header id="header" class="header">
+      <button id="back-button" class="btn btn--sm hidden">
+        <img src="img/icon-arrow.svg" alt="Volver" class="btn__icon">
+        Volver
+      </button>
+      <h1 id="page-title" class="header__title">DM screen</h1>
+    </header>
+
+    <!-- Lista de páginas -->
+    <div id="page-list" class="page-list"></div>
+
+    <!-- Contenedor de Notion -->
+    <div id="notion-container" class="notion-container hidden">
+      <iframe id="notion-iframe" class="notion-container__iframe" src="" frameborder="0" allowfullscreen></iframe>
+      <div id="notion-content" class="notion-container__content notion-content"></div>
     </div>
-    <div id="page-list" class="page-list">
-      <!-- Las páginas se cargarán aquí dinámicamente -->
-    </div>
-    <div id="notion-container" class="notion-container hidden notion-container-dark">
-      <iframe id="notion-iframe" src="" frameborder="0" allowfullscreen></iframe>
-      <div id="notion-content" class="notion-content"></div>
+
+    <!-- Panel de configuración -->
+    <div id="settings-container" class="settings hidden">
+      <div class="settings__content">
+        
+        <div class="form">
+          <div class="form__field">
+            <label class="form__label" for="token-input">Token de Notion</label>
+            <p class="settings__description">
+              Configura tu token de Notion <a href="https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion" class="link">siguiendo este tutorial</a> para usar tus propias páginas. Este token es global para toda la extensión (todas las rooms). 
+            </p>
+            <input type="password" id="token-input" placeholder="ntn_... o secret_..." class="input input--mono">
+            <p id="token-masked" class="form__help"></p>
+          </div>
+          
+          <div id="token-error" class="form__error"></div>
+          
+          <div class="form__actions">
+            <button id="clear-token" class="btn btn--ghost btn--flex">Eliminar Token</button>
+            <button id="save-token" class="btn btn--primary btn--flex">Guardar Token</button>
+          </div>
+        </div>
+
+        <div class="form form--separated">
+          <label class="form__label">Configuración JSON</label>
+          <div class="form__actions">
+            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">Ver JSON</button>
+            <button id="download-json-btn" class="btn btn--ghost btn--flex">Descargar JSON</button>
+            <button id="load-json-btn" class="btn btn--primary btn--flex">Cargar JSON</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-  <script>
-    // Log inmediato para verificar que el HTML se carga
-    console.log('📄 HTML cargado');
-    console.log('🔍 Buscando elementos...');
-    console.log('page-list:', document.getElementById('page-list') ? '✅ encontrado' : '❌ no encontrado');
-    console.log('notion-container:', document.getElementById('notion-container') ? '✅ encontrado' : '❌ no encontrado');
-  </script>
   <script type="module" src="js/index.js"></script>
 </body>
 </html>

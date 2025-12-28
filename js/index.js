@@ -517,7 +517,7 @@ async function fetchNotionBlocks(pageId, useCache = true) {
       apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(userToken)}`;
     } else {
       // No hay token del usuario → mostrar error
-      throw new Error('No hay token configurado. Ve a Configuración → Token de Notion (botón 🔑) para configurar tu token.');
+      throw new Error('No hay token configurado. Ve a Configuración (botón ⚙️) para configurar tu token de Notion.');
     }
     
     log('🌐 Obteniendo bloques desde la API para:', pageId);
@@ -1495,7 +1495,7 @@ function attachImageClickHandlers() {
       this.style.display = 'none';
       const errorDiv = document.createElement('div');
       errorDiv.className = 'notion-image-error';
-      errorDiv.innerHTML = '⚠️ No se pudo cargar la imagen<br><small>La URL puede haber expirado</small><br><button class="notion-image-error-button">🔄 Recargar página</button>';
+      errorDiv.innerHTML = '⚠️ No se pudo cargar la imagen<br><small>La URL puede haber expirado</small><br><button class="btn btn--sm btn--primary">🔄 Recargar página</button>';
       
       // Agregar event listener al botón de recargar
       const refreshButton = errorDiv.querySelector('button');
@@ -1581,7 +1581,7 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
       <div class="notion-error">
         <strong>Error al cargar el contenido:</strong><br>
         ${error.message}<br><br>
-        <button onclick="window.open('${url}', '_blank')" class="notion-blocked-button-small">Abrir en Notion</button>
+        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary">Abrir en Notion</button>
       </div>
     `;
   }
@@ -1597,7 +1597,7 @@ function showNotionBlockedMessage(container, url) {
         Notion no permite que sus páginas se carguen en iframes por razones de seguridad.<br>
         Puedes abrir la página en una nueva ventana para verla.
       </p>
-      <button id="open-notion-window" class="notion-blocked-button">Abrir en nueva ventana</button>
+      <button id="open-notion-window" class="btn btn--primary">Abrir en nueva ventana</button>
     </div>
   `;
   
@@ -1607,6 +1607,213 @@ function showNotionBlockedMessage(container, url) {
       window.open(url, '_blank', 'noopener,noreferrer');
     });
   }
+}
+
+// ============================================
+// MENÚ CONTEXTUAL PARA TOKENS
+// ============================================
+
+// Namespace para metadatos
+const METADATA_KEY = "com.dmscreen";
+
+// Función para configurar menús contextuales en tokens
+async function setupTokenContextMenus(pagesConfig, roomId) {
+  try {
+    console.log('🎯 Configurando menús contextuales para tokens...');
+    
+    // Obtener la URL base para los iconos (debe ser absoluta)
+    const baseUrl = window.location.origin;
+    
+    // Menú: Vincular página (solo GM)
+    await OBR.contextMenu.create({
+      id: `${METADATA_KEY}/link-page`,
+      icons: [
+        {
+          icon: `${baseUrl}/img/icon-page.svg`,
+          label: "Vincular página",
+          filter: {
+            every: [{ key: "layer", value: "CHARACTER" }],
+            roles: ["GM"]
+          }
+        }
+      ],
+      onClick: async (context) => {
+        const item = context.items[0];
+        if (!item) return;
+        
+        // Primero abrir el panel de la extensión
+        await OBR.action.open();
+        
+        // Pequeña espera para que el panel se abra
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Mostrar selector de páginas
+        showPageSelectorForToken(item.id, pagesConfig, roomId);
+      }
+    });
+    
+    // Menú: Ver página vinculada (todos, si tiene página)
+    await OBR.contextMenu.create({
+      id: `${METADATA_KEY}/view-page`,
+      icons: [
+        {
+          icon: `${baseUrl}/img/icon-view-page.svg`,
+          label: "Ver página vinculada",
+          filter: {
+            every: [
+              { key: "layer", value: "CHARACTER" },
+              { key: ["metadata", `${METADATA_KEY}/pageUrl`], value: undefined, operator: "!=" }
+            ]
+          }
+        }
+      ],
+      onClick: async (context) => {
+        const item = context.items[0];
+        if (!item) return;
+        
+        const pageUrl = item.metadata[`${METADATA_KEY}/pageUrl`];
+        const pageName = item.metadata[`${METADATA_KEY}/pageName`] || "Página vinculada";
+        
+        if (pageUrl) {
+          // Primero abrir el panel de la extensión
+          await OBR.action.open();
+          
+          // Pequeña espera para que el panel se abra
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Abrir la página usando la función existente
+          await loadPageContent(pageUrl, pageName);
+        }
+      }
+    });
+    
+    // Menú: Desvincular página (solo GM)
+    await OBR.contextMenu.create({
+      id: `${METADATA_KEY}/unlink-page`,
+      icons: [
+        {
+          icon: `${baseUrl}/img/icon-trash.svg`,
+          label: "Desvincular página",
+          filter: {
+            every: [
+              { key: "layer", value: "CHARACTER" },
+              { key: ["metadata", `${METADATA_KEY}/pageUrl`], value: undefined, operator: "!=" }
+            ],
+            roles: ["GM"]
+          }
+        }
+      ],
+      onClick: async (context) => {
+        const item = context.items[0];
+        if (!item) return;
+        
+        // Eliminar metadatos de página
+        await OBR.scene.items.updateItems([item], (items) => {
+          delete items[0].metadata[`${METADATA_KEY}/pageUrl`];
+          delete items[0].metadata[`${METADATA_KEY}/pageName`];
+          delete items[0].metadata[`${METADATA_KEY}/pageIcon`];
+        });
+        
+        console.log('🗑️ Página desvinculada del token:', item.name || item.id);
+      }
+    });
+    
+    console.log('✅ Menús contextuales para tokens configurados');
+    
+  } catch (error) {
+    console.error('❌ Error al configurar menús contextuales:', error);
+  }
+}
+
+// Función para mostrar selector de páginas para vincular a un token
+function showPageSelectorForToken(itemId, pagesConfig, roomId) {
+  // Recopilar todas las páginas de la configuración
+  const allPages = [];
+  
+  function collectPages(categories, path = []) {
+    if (!categories) return;
+    
+    for (const category of categories) {
+      const currentPath = [...path, category.name];
+      
+      if (category.pages) {
+        for (const page of category.pages) {
+          if (page.url) {
+            allPages.push({
+              name: page.name,
+              url: page.url,
+              path: currentPath.join(' / '),
+              icon: page.icon || null
+            });
+          }
+        }
+      }
+      
+      if (category.categories) {
+        collectPages(category.categories, currentPath);
+      }
+    }
+  }
+  
+  collectPages(pagesConfig.categories);
+  
+  if (allPages.length === 0) {
+    alert('No hay páginas configuradas. Añade páginas desde el panel principal.');
+    return;
+  }
+  
+  // Crear opciones para el select
+  const pageOptions = allPages.map((page, index) => ({
+    label: `${page.path} → ${page.name}`,
+    value: index.toString()
+  }));
+  
+  // Mostrar modal de selección
+  showModalForm(
+    'Vincular página al token',
+    [
+      {
+        name: 'pageIndex',
+        label: 'Selecciona una página',
+        type: 'select',
+        options: pageOptions,
+        required: true
+      }
+    ],
+    async (data) => {
+      const selectedPage = allPages[parseInt(data.pageIndex)];
+      
+      if (!selectedPage) {
+        alert('Error: página no encontrada');
+        return;
+      }
+      
+      try {
+        // Obtener el item y actualizar sus metadatos
+        const items = await OBR.scene.items.getItems([itemId]);
+        if (items.length === 0) {
+          alert('Error: token no encontrado');
+          return;
+        }
+        
+        await OBR.scene.items.updateItems([items[0]], (updateItems) => {
+          updateItems[0].metadata[`${METADATA_KEY}/pageUrl`] = selectedPage.url;
+          updateItems[0].metadata[`${METADATA_KEY}/pageName`] = selectedPage.name;
+          updateItems[0].metadata[`${METADATA_KEY}/pageIcon`] = selectedPage.icon;
+        });
+        
+        console.log('✅ Página vinculada al token:', selectedPage.name);
+        alert(`✅ Página "${selectedPage.name}" vinculada al token`);
+        
+      } catch (error) {
+        console.error('Error al vincular página:', error);
+        alert('Error al vincular página: ' + error.message);
+      }
+    },
+    () => {
+      // Cancelar - no hacer nada
+    }
+  );
 }
 
 // Intentar inicializar Owlbear con manejo de errores
@@ -1669,18 +1876,74 @@ try {
       
       // Cargar configuración desde JSON (específica para esta room)
       log('🔍 Intentando cargar configuración para room:', roomId);
-      let pagesConfig = getPagesJSON(roomId);
+      
+      // Declarar pagesConfig al inicio para que esté disponible en todo el scope
+      let pagesConfig = null;
+      
+      // Función auxiliar para contar contenido (páginas y carpetas anidadas)
+      const countContent = (config) => {
+        if (!config || !config.categories || !Array.isArray(config.categories)) return 0;
+        let count = 0;
+        const countRecursive = (cats) => {
+          if (!cats || !Array.isArray(cats)) return;
+          cats.forEach(cat => {
+            // Contar páginas válidas (con URL válida)
+            if (cat.pages && Array.isArray(cat.pages)) {
+              const validPages = cat.pages.filter(p => 
+                p && p.url && 
+                !p.url.includes('...') && 
+                p.url.startsWith('http')
+              );
+              count += validPages.length;
+            }
+            // Contar carpetas (solo si tienen nombre)
+            if (cat.categories && Array.isArray(cat.categories)) {
+              const validCategories = cat.categories.filter(c => c && c.name);
+              count += validCategories.length;
+              countRecursive(validCategories);
+            }
+          });
+        };
+        countRecursive(config.categories);
+        return count;
+      };
+      
+      // Obtener ambas configuraciones
+      const currentRoomConfig = getPagesJSON(roomId);
+      const defaultConfig = getPagesJSON('default');
+      
+      // Contar contenido de cada una
+      const currentRoomCount = countContent(currentRoomConfig);
+      const defaultCount = countContent(defaultConfig);
+      
+      console.log('🔍 Configuración roomId:', roomId, '- elementos:', currentRoomCount);
+      console.log('🔍 Configuración default - elementos:', defaultCount);
+      
+      // Usar la que tenga MÁS contenido
+      if (currentRoomCount >= defaultCount && currentRoomCount > 0) {
+        log('✅ Usando configuración del roomId:', roomId, 'con', currentRoomCount, 'elementos');
+        pagesConfig = currentRoomConfig;
+      } else if (defaultCount > 0) {
+        log('✅ Usando configuración "default" con', defaultCount, 'elementos (tiene más contenido)');
+        pagesConfig = defaultConfig;
+        // Copiar la configuración default al roomId actual para futuras ediciones
+        savePagesJSON(defaultConfig, roomId);
+        log('💾 Configuración "default" copiada a roomId:', roomId);
+      } else if (currentRoomConfig) {
+        log('⚠️ Ambas configuraciones vacías, usando la del roomId');
+        pagesConfig = currentRoomConfig;
+      }
+      
+      // Si no hay ninguna configuración, crear una nueva por defecto
       if (!pagesConfig) {
-        log('📝 No se encontró configuración, creando una nueva para room:', roomId);
+        log('📝 No se encontró ninguna configuración, creando una nueva por defecto');
         pagesConfig = await getDefaultJSON();
         savePagesJSON(pagesConfig, roomId);
         log('✅ Configuración por defecto creada para room:', roomId);
-      } else {
-        log('✅ Configuración encontrada para room:', roomId);
       }
 
       console.log('📊 Configuración cargada para room:', roomId);
-      console.log('📊 Número de categorías:', pagesConfig?.categories?.length || 0);
+      console.log('📊 Número de carpetas:', pagesConfig?.categories?.length || 0);
       
       const pageList = document.getElementById("page-list");
       const header = document.getElementById("header");
@@ -1694,55 +1957,113 @@ try {
       const buttonContainer = document.createElement("div");
       buttonContainer.className = "button-container";
       
-      // Botón para limpiar caché
-      const clearCacheButton = document.createElement("button");
-      clearCacheButton.className = "icon-button";
-      const deleteIcon = document.createElement("img");
-      deleteIcon.src = "img/icon-delete.svg";
-      deleteIcon.alt = "Limpiar caché";
-      deleteIcon.className = "icon-button-icon";
-      clearCacheButton.appendChild(deleteIcon);
-      clearCacheButton.title = "Limpiar caché";
-      clearCacheButton.addEventListener("click", () => {
-        if (confirm('¿Limpiar todo el caché? Las páginas se recargarán desde la API la próxima vez.')) {
-          try {
-            clearAllCache();
-            alert('Caché limpiado. Las páginas se recargarán desde la API la próxima vez que las abras.');
-          } catch (e) {
-            console.error('Error al limpiar caché:', e);
-            alert('Error al limpiar el caché. Revisa la consola para más detalles.');
-          }
-        }
-      });
-      // Botón para editar JSON
-      const adminButton = document.createElement("button");
-      adminButton.className = "icon-button admin-button";
-      const jsonIcon = document.createElement("img");
-      jsonIcon.src = "img/icon-json.svg";
-      jsonIcon.alt = "Editar JSON";
-      jsonIcon.className = "icon-button-icon";
-      adminButton.appendChild(jsonIcon);
-      adminButton.title = "Editar JSON";
-      adminButton.addEventListener("click", async () => await showVisualEditor(pagesConfig, roomId));
-      
       // Botón para configurar token de Notion
-      const tokenButton = document.createElement("button");
-      tokenButton.className = "icon-button";
+      const settingsButton = document.createElement("button");
+      settingsButton.className = "icon-button";
       const keyIcon = document.createElement("img");
-      keyIcon.src = "img/icon-key.svg";
-      keyIcon.alt = "Configurar token";
+      keyIcon.src = "img/icon-json.svg";
+      keyIcon.alt = "Configuración";
       keyIcon.className = "icon-button-icon";
-      tokenButton.appendChild(keyIcon);
-      tokenButton.title = hasUserToken() ? "Token configurado - Clic para cambiar" : "Configurar token de Notion";
-      tokenButton.addEventListener("click", () => showTokenConfig());
+      settingsButton.appendChild(keyIcon);
+      settingsButton.title = hasUserToken() ? "Configuración (Token configurado)" : "Configuración";
+      settingsButton.addEventListener("click", () => showSettings());
       
-      buttonContainer.appendChild(tokenButton);
-      buttonContainer.appendChild(clearCacheButton);
-      buttonContainer.appendChild(adminButton);
+      // Botón para agregar (carpeta o página)
+      const addButton = document.createElement("button");
+      addButton.className = "icon-button";
+      const addIcon = document.createElement("img");
+      addIcon.src = "img/icon-add.svg";
+      addIcon.alt = "Agregar";
+      addIcon.className = "icon-button-icon";
+      addButton.appendChild(addIcon);
+      addButton.title = "Agregar carpeta o página";
+      addButton.addEventListener("click", async (e) => {
+        const rect = addButton.getBoundingClientRect();
+        const menuItems = [
+          { 
+            icon: 'img/folder-close.svg', 
+            text: 'Agregar carpeta', 
+            action: async () => {
+              await addCategoryToPageList([], roomId);
+            }
+          },
+          { 
+            icon: 'img/icon-page.svg', 
+            text: 'Agregar página', 
+            action: async () => {
+              await addPageToPageListWithCategorySelector([], roomId);
+            }
+          }
+        ];
+        
+        // Marcar como activo mientras el menú está abierto
+        addButton.classList.add('context-menu-active');
+        
+        // Posicionar el menú a 8px del botón
+        createContextMenu(menuItems, { x: rect.right + 8, y: rect.bottom + 8 }, () => {
+          // Callback cuando se cierra el menú
+          addButton.classList.remove('context-menu-active');
+        });
+      });
+      
+      // Botón para colapsar/expandir todas las carpetas
+      const collapseAllButton = document.createElement("button");
+      collapseAllButton.className = "icon-button";
+      collapseAllButton.id = "collapse-all-button";
+      const collapseIcon = document.createElement("img");
+      collapseIcon.src = "img/icon-collapse-false.svg"; // false = expandidas
+      collapseIcon.alt = "Colapsar todo";
+      collapseIcon.className = "icon-button-icon";
+      collapseAllButton.appendChild(collapseIcon);
+      collapseAllButton.title = "Colapsar todas las carpetas";
+      collapseAllButton.dataset.collapsed = "false";
+      
+      collapseAllButton.addEventListener("click", () => {
+        const isCollapsed = collapseAllButton.dataset.collapsed === "true";
+        const newState = !isCollapsed;
+        
+        // Actualizar icono y estado
+        collapseIcon.src = newState ? "img/icon-collapse-false.svg" : "img/icon-collapse-true.svg";
+        collapseAllButton.dataset.collapsed = newState.toString();
+        collapseAllButton.title = newState ? "Expandir todas las carpetas" : "Colapsar todas las carpetas";
+        
+        // Colapsar o expandir todas las carpetas
+        const categories = document.querySelectorAll('.category-group');
+        categories.forEach(categoryDiv => {
+          const contentContainer = categoryDiv.querySelector('.category-content');
+          const collapseBtn = categoryDiv.querySelector('.category-collapse-button img');
+          const categoryName = categoryDiv.dataset.categoryName;
+          const level = categoryDiv.dataset.level;
+          
+          if (contentContainer && collapseBtn && categoryName) {
+            if (newState) {
+              // Colapsar
+              contentContainer.style.display = 'none';
+              collapseBtn.src = 'img/folder-close.svg';
+            } else {
+              // Expandir
+              contentContainer.style.display = 'block';
+              collapseBtn.src = 'img/folder-open.svg';
+            }
+            
+            // Guardar estado en localStorage (usar la misma clave que renderCategory)
+            const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
+            localStorage.setItem(collapseStateKey, newState.toString());
+          }
+        });
+      });
+      
+      buttonContainer.appendChild(settingsButton);
+      buttonContainer.appendChild(collapseAllButton);
+      buttonContainer.appendChild(addButton);
       header.appendChild(buttonContainer);
 
-      // Renderizar páginas agrupadas por categorías
+      // Renderizar páginas agrupadas por carpetas
       renderPagesByCategories(pagesConfig, pageList, roomId);
+      
+      // Registrar menús contextuales para tokens
+      await setupTokenContextMenus(pagesConfig, roomId);
+      
     } catch (error) {
       console.error('❌ Error dentro de OBR.onReady:', error);
       console.error('Stack:', error.stack);
@@ -1773,13 +2094,11 @@ try {
   }
 }
 
-// Función recursiva para renderizar una categoría (puede tener subcategorías)
-function renderCategory(category, parentElement, level = 0, roomId = null) {
-  // Verificar si la categoría tiene contenido (páginas o subcategorías)
+// Función recursiva para renderizar una carpeta (puede tener subcarpetas)
+function renderCategory(category, parentElement, level = 0, roomId = null, categoryPath = []) {
+  // Verificar si la carpeta tiene contenido (páginas o subcarpetas)
   const hasPages = category.pages && category.pages.length > 0;
   const hasSubcategories = category.categories && category.categories.length > 0;
-  
-  if (!hasPages && !hasSubcategories) return;
   
   // Filtrar páginas válidas (mantener el orden original)
   const categoryPages = hasPages ? category.pages
@@ -1789,21 +2108,24 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
       page.url.startsWith('http')
     ) : [];
   
-  // Si no tiene páginas válidas ni subcategorías, no renderizar
-  if (categoryPages.length === 0 && !hasSubcategories) return;
+  // Renderizar la carpeta incluso si está vacía (para poder agregar contenido)
+  // Solo no renderizar si no tiene nombre
+  if (!category.name) return;
   
   // Calcular indentación basada en el nivel
   const indent = level * 16; // 16px por nivel
   
-  // Crear contenedor de categoría
+  // Crear contenedor de carpeta
   const categoryDiv = document.createElement('div');
-  categoryDiv.className = `category-group category-level-${Math.min(level, 5)}`;
+  categoryDiv.className = 'category-group';
   categoryDiv.dataset.categoryName = category.name;
-  categoryDiv.dataset.level = level;
+  categoryDiv.dataset.level = Math.min(level, 5);
+  categoryDiv.dataset.categoryPath = JSON.stringify(categoryPath);
   
   // Contenedor del título con botón de colapsar
   const titleContainer = document.createElement('div');
   titleContainer.className = 'category-title-container';
+  titleContainer.dataset.categoryPath = JSON.stringify(categoryPath);
   
   // Botón de colapsar/expandir
   const collapseButton = document.createElement('button');
@@ -1817,40 +2139,154 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
   const collapseStateKey = `category-collapsed-${category.name}-level-${level}`;
   const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
   
-  collapseIcon.src = isCollapsed ? 'img/icon-closed.svg' : 'img/icon-open.svg';
+  collapseIcon.src = isCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
   collapseIcon.alt = isCollapsed ? 'Expandir' : 'Colapsar';
   collapseButton.appendChild(collapseIcon);
   
-  // Título de categoría (anidamiento de heading según el nivel)
+  // Título de carpeta (anidamiento de heading según el nivel)
   const headingLevel = Math.min(level + 2, 6); // nivel 0 = h2, nivel 1 = h3, ..., máximo h6
   const categoryTitle = document.createElement(`h${headingLevel}`);
   categoryTitle.className = 'category-title';
   categoryTitle.textContent = category.name;
   
+  // Botón de menú contextual para carpetas
+  const contextMenuButton = document.createElement('button');
+  contextMenuButton.className = 'category-context-menu-button icon-button';
+  // Estilos movidos a CSS - solo opacity se controla dinámicamente
+  const contextMenuIcon = document.createElement('img');
+  contextMenuIcon.src = 'img/icon-contextualmenu.svg';
+  contextMenuIcon.className = 'icon-button-icon';
+  contextMenuButton.appendChild(contextMenuIcon);
+  contextMenuButton.title = 'Menú';
+  
+  // Mostrar menú contextual al hover
+  titleContainer.addEventListener('mouseenter', () => {
+    if (!contextMenuButton.classList.contains('context-menu-active')) {
+      contextMenuButton.style.opacity = '1';
+    }
+  });
+  titleContainer.addEventListener('mouseleave', (e) => {
+    // No ocultar si el menú contextual está activo
+    if (contextMenuButton.classList.contains('context-menu-active')) {
+      return;
+    }
+    // No ocultar si el mouse está sobre el menú contextual
+    if (!e.relatedTarget || (!e.relatedTarget.closest('.category-context-menu-button') && !e.relatedTarget.closest('#context-menu'))) {
+      contextMenuButton.style.opacity = '0';
+    }
+  });
+  
+  // Menú contextual para carpetas
+  contextMenuButton.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const rect = contextMenuButton.getBoundingClientRect();
+    
+    // Obtener información para determinar si se puede mover arriba/abajo (usando orden combinado)
+    const config = getPagesJSON(roomId) || await getDefaultJSON();
+    const parentPath = categoryPath.slice(0, -2);
+    const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
+    const index = categoryPath[categoryPath.length - 1];
+    const combinedOrder = getCombinedOrder(parent);
+    const currentPos = combinedOrder.findIndex(o => o.type === 'category' && o.index === index);
+    const canMoveUp = currentPos > 0;
+    const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
+    
+    const menuItems = [
+      { 
+        icon: 'img/folder-close.svg', 
+        text: 'Agregar carpeta', 
+        action: async () => {
+          await addCategoryToPageList(categoryPath, roomId);
+        }
+      },
+      { 
+        icon: 'img/icon-page.svg', 
+        text: 'Agregar página', 
+        action: async () => {
+          // Pasar categoryPath para que se autocomplete en el modal
+          await addPageToPageListWithCategorySelector(categoryPath, roomId);
+        }
+      },
+      { separator: true },
+      { 
+        icon: 'img/icon-edit.svg', 
+        text: 'Editar', 
+        action: async () => {
+          await editCategoryFromPageList(category, categoryPath, roomId);
+        }
+      },
+      { separator: true },
+    ];
+    
+    // Agregar opciones de mover si es posible
+    if (canMoveUp || canMoveDown) {
+      if (canMoveUp) {
+        menuItems.push({
+          icon: 'img/icon-arrow.svg',
+          text: 'Mover arriba',
+          action: async () => {
+            await moveCategoryUp(category, categoryPath, roomId);
+          }
+        });
+      }
+      if (canMoveDown) {
+        menuItems.push({
+          icon: 'img/icon-arrow.svg',
+          text: 'Mover abajo',
+          action: async () => {
+            await moveCategoryDown(category, categoryPath, roomId);
+          }
+        });
+      }
+      menuItems.push({ separator: true });
+    }
+    
+    menuItems.push({
+      icon: 'img/icon-trash.svg', 
+      text: 'Eliminar', 
+      action: async () => {
+        await deleteCategoryFromPageList(category, categoryPath, roomId);
+      }
+    });
+    
+    // Marcar como activo mientras el menú está abierto
+    contextMenuButton.classList.add('context-menu-active');
+    titleContainer.classList.add('context-menu-open');
+    
+    // Posicionar el menú a 8px del botón
+    createContextMenu(menuItems, { x: rect.right + 8, y: rect.bottom + 4 }, () => {
+      // Callback cuando se cierra el menú
+      contextMenuButton.classList.remove('context-menu-active');
+      titleContainer.classList.remove('context-menu-open');
+      contextMenuButton.style.opacity = '0';
+    });
+  });
+  
   titleContainer.appendChild(collapseButton);
   titleContainer.appendChild(categoryTitle);
+  titleContainer.appendChild(contextMenuButton);
   categoryDiv.appendChild(titleContainer);
   
-  // Contenedor de contenido (páginas y subcategorías)
+  // Contenedor de contenido (páginas y subcarpetas)
   const contentContainer = document.createElement('div');
   contentContainer.className = 'category-content';
+  // Mostrar el contenido si no está colapsado Y si tiene contenido o si está vacía (para poder agregar)
+  const hasContent = hasSubcategories || categoryPages.length > 0;
   contentContainer.style.display = isCollapsed ? 'none' : 'block';
   
-  // Renderizar subcategorías primero (si existen)
-  if (hasSubcategories) {
-    category.categories.forEach(subcategory => {
-      renderCategory(subcategory, contentContainer, level + 1, roomId);
-    });
-  }
-  
-  // Contenedor de páginas de la categoría
-  if (categoryPages.length > 0) {
-    const pagesContainer = document.createElement('div');
-    pagesContainer.className = 'category-pages';
-    
+  // Obtener el orden combinado de elementos (carpetas y páginas mezcladas)
+  const combinedOrder = getCombinedOrder(category);
     const buttonsData = [];
     
-    categoryPages.forEach((page, index) => {
+  // Renderizar elementos según el orden combinado
+  combinedOrder.forEach(item => {
+    if (item.type === 'category' && category.categories && category.categories[item.index]) {
+      const subcategory = category.categories[item.index];
+      const subcategoryPath = [...categoryPath, 'categories', item.index];
+      renderCategory(subcategory, contentContainer, level + 1, roomId, subcategoryPath);
+    } else if (item.type === 'page' && category.pages && category.pages[item.index]) {
+      const page = category.pages[item.index];
+      const index = item.index;
       const pageId = extractNotionPageId(page.url);
       const isNotion = isNotionUrl(page.url);
       const isDndbeyondUrl = isDndbeyond(page.url);
@@ -1869,16 +2305,116 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
       button.className = 'page-button';
       button.dataset.url = page.url;
       button.dataset.selector = page.selector || '';
-      button.style.cssText = `
-        width: 100%;
-        margin-bottom: 8px;
-        background: ${CSS_VARS.bg};
-        border: 1px solid ${CSS_VARS.border};
-      `;
+      button.dataset.pageIndex = index;
+      button.dataset.categoryPath = JSON.stringify(categoryPath);
+      button.className = 'page-button';
+      // background y border son dinámicos (CSS_VARS) - se mantienen inline
+      button.style.background = CSS_VARS.bg;
+      button.style.border = `1px solid ${CSS_VARS.border}`;
+      button.style.position = 'relative';
       
       // Placeholder para el icono (se cargará después)
       const placeholderColor = generateColorFromString(pageId || page.name);
       const placeholderInitial = (page.name || '?')[0].toUpperCase();
+      
+      // Botón de menú contextual para páginas
+      const pageContextMenuButton = document.createElement('button');
+      pageContextMenuButton.className = 'page-context-menu-button icon-button';
+      // Estilos movidos a CSS - solo opacity se controla dinámicamente
+      const pageContextMenuIcon = document.createElement('img');
+      pageContextMenuIcon.src = 'img/icon-contextualmenu.svg';
+      pageContextMenuIcon.className = 'icon-button-icon';
+      pageContextMenuButton.appendChild(pageContextMenuIcon);
+      pageContextMenuButton.title = 'Menú';
+      
+      // Mostrar menú contextual al hover
+      button.addEventListener('mouseenter', () => {
+        if (!pageContextMenuButton.classList.contains('context-menu-active')) {
+          pageContextMenuButton.style.opacity = '1';
+        }
+      });
+      button.addEventListener('mouseleave', (e) => {
+        // No ocultar si el menú contextual está activo
+        if (pageContextMenuButton.classList.contains('context-menu-active')) {
+          return;
+        }
+        // No ocultar si el mouse está sobre el menú contextual
+        if (!e.relatedTarget || (!e.relatedTarget.closest('.page-context-menu-button') && !e.relatedTarget.closest('#context-menu'))) {
+          pageContextMenuButton.style.opacity = '0';
+        }
+      });
+      
+      // Menú contextual para páginas
+      pageContextMenuButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const rect = pageContextMenuButton.getBoundingClientRect();
+        const config = getPagesJSON(roomId) || await getDefaultJSON();
+        // Obtener el path de la carpeta padre para agregar páginas en la misma carpeta
+        const pageCategoryPath = categoryPath; // categoryPath viene del scope de renderCategory
+        
+        // Obtener información para determinar si se puede mover arriba/abajo (usando orden combinado)
+        const parent = navigateConfigPath(config, pageCategoryPath);
+        const pageIndex = parent && parent.pages ? parent.pages.findIndex(p => p.name === page.name && p.url === page.url) : -1;
+        const combinedOrder = getCombinedOrder(parent);
+        const currentPos = combinedOrder.findIndex(o => o.type === 'page' && o.index === pageIndex);
+        const canMoveUp = currentPos > 0;
+        const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
+        
+        const menuItems = [
+          { 
+            icon: 'img/icon-edit.svg', 
+            text: 'Editar', 
+            action: async () => {
+              await editPageFromPageList(page, pageCategoryPath, roomId);
+            }
+          },
+          { separator: true },
+        ];
+        
+        // Agregar opciones de mover si es posible
+        if (canMoveUp || canMoveDown) {
+          if (canMoveUp) {
+            menuItems.push({
+              icon: 'img/icon-arrow.svg',
+              text: 'Mover arriba',
+              action: async () => {
+                await movePageUp(page, pageCategoryPath, roomId);
+              }
+            });
+          }
+          if (canMoveDown) {
+            menuItems.push({
+              icon: 'img/icon-arrow.svg',
+              text: 'Mover abajo',
+              action: async () => {
+                await movePageDown(page, pageCategoryPath, roomId);
+              }
+            });
+          }
+          menuItems.push({ separator: true });
+        }
+        
+        menuItems.push({
+          icon: 'img/icon-trash.svg', 
+          text: 'Eliminar', 
+          action: async () => {
+            await deletePageFromPageList(page, pageCategoryPath, roomId);
+          }
+        });
+        
+        // Marcar como activo mientras el menú está abierto
+        pageContextMenuButton.classList.add('context-menu-active');
+        button.classList.add('context-menu-open');
+        
+        // Posicionar el menú a 8px del botón
+        createContextMenu(menuItems, { x: rect.right + 8, y: rect.bottom + 4 }, () => {
+          // Callback cuando se cierra el menú
+          pageContextMenuButton.classList.remove('context-menu-active');
+          button.classList.remove('context-menu-open');
+          pageContextMenuButton.style.opacity = '0';
+        });
+      });
+      
       button.innerHTML = `
         <div class="page-button-inner">
           <div class="page-icon-placeholder" style="background: ${placeholderColor};">${placeholderInitial}</div>
@@ -1886,6 +2422,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
           ${linkIconHtml}
         </div>
       `;
+      button.appendChild(pageContextMenuButton);
       
       // Hover effect
       button.addEventListener('mouseenter', () => {
@@ -1895,21 +2432,31 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
         button.style.background = CSS_VARS.bg;
       });
       
-      // Click handler
-      button.addEventListener('click', async () => {
+      // Click handler (no ejecutar si se hace click en el menú contextual o el menú está abierto)
+      button.addEventListener('click', async (e) => {
+        // No abrir la página si se hace click en el menú contextual
+        if (e.target.closest('.page-context-menu-button')) {
+          return;
+        }
+        // No abrir la página si el menú contextual está abierto
+        if (button.classList.contains('context-menu-open')) {
+          return;
+        }
         // Obtener blockTypes del objeto page si existe
         const blockTypes = page.blockTypes || null;
         await loadPageContent(page.url, page.name, page.selector || '', blockTypes);
       });
       
-      pagesContainer.appendChild(button);
+      // Agregar la página directamente al contentContainer para mantener el orden combinado
+      contentContainer.appendChild(button);
       
-      buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml });
+      buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml, pageContextMenuButton });
+    }
     });
     
     // Cargar iconos en paralelo después de renderizar todos los botones
     if (buttonsData.length > 0) {
-      Promise.all(buttonsData.map(async ({ button, pageId, pageName, linkIconHtml }) => {
+    Promise.all(buttonsData.map(async ({ button, pageId, pageName, linkIconHtml, pageContextMenuButton }) => {
         // Solo intentar cargar el icono si tenemos un pageId válido
         if (!pageId || pageId === 'null') {
           return; // Saltar si no hay pageId válido
@@ -1917,6 +2464,9 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
         try {
           const icon = await fetchPageIcon(pageId);
           const iconHtml = renderPageIcon(icon, pageName, pageId);
+        // Guardar referencia al botón de menú contextual antes de actualizar HTML
+        const menuButtonParent = pageContextMenuButton ? pageContextMenuButton.parentNode : null;
+        
           button.innerHTML = `
             <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
               ${iconHtml}
@@ -1924,52 +2474,849 @@ function renderCategory(category, parentElement, level = 0, roomId = null) {
               ${linkIconHtml}
             </div>
           `;
+        
+        // Re-agregar el botón de menú contextual después de actualizar el HTML
+        // Asegurarse de que el botón se mantiene visible
+        if (pageContextMenuButton && menuButtonParent === button) {
+          button.appendChild(pageContextMenuButton);
+          // Asegurar que el botón sea visible si el mouse está sobre el botón
+          if (button.matches(':hover')) {
+            pageContextMenuButton.style.opacity = '1';
+          }
+        }
         } catch (e) {
           console.warn('No se pudo obtener el icono para:', pageName, e);
         }
       })).catch(e => {
         console.error('Error al cargar iconos:', e);
       });
-    }
-    
-    contentContainer.appendChild(pagesContainer);
   }
   
   // Manejar colapso/expansión
-  titleContainer.addEventListener('click', () => {
+  // Solo permitir colapsar si tiene contenido
+  // hasContent ya está declarado arriba
+  if (hasContent) {
+    titleContainer.addEventListener('click', (e) => {
+      // No colapsar si se hace click en el menú contextual
+      if (e.target.closest('.category-context-menu-button')) {
+        return;
+      }
+      // No colapsar si el menú contextual está abierto
+      if (titleContainer.classList.contains('context-menu-open')) {
+        return;
+      }
     const newIsCollapsed = contentContainer.style.display === 'none';
-    contentContainer.style.display = newIsCollapsed ? 'block' : 'none';
-    collapseIcon.src = newIsCollapsed ? 'img/icon-open.svg' : 'img/icon-closed.svg';
-    collapseIcon.alt = newIsCollapsed ? 'Colapsar' : 'Expandir';
+      
+      // Aplicar animación suave
+      if (newIsCollapsed) {
+        // Abrir
+        contentContainer.style.display = 'block';
+        contentContainer.style.maxHeight = '0';
+        contentContainer.style.overflow = 'hidden';
+        contentContainer.style.transition = 'max-height 0.3s ease-out, opacity 0.3s ease-out';
+        contentContainer.style.opacity = '0';
+        
+        // Forzar reflow
+        void contentContainer.offsetHeight;
+        
+        // Animar
+        const scrollHeight = contentContainer.scrollHeight;
+        contentContainer.style.maxHeight = scrollHeight + 'px';
+        contentContainer.style.opacity = '1';
+        
+        collapseIcon.src = 'img/folder-open.svg';
+        collapseIcon.alt = 'Colapsar';
+        
+        // Limpiar estilos después de la animación
+        setTimeout(() => {
+          contentContainer.style.maxHeight = '';
+          contentContainer.style.overflow = '';
+          contentContainer.style.transition = '';
+          contentContainer.style.opacity = '';
+        }, 300);
+      } else {
+        // Cerrar
+        const scrollHeight = contentContainer.scrollHeight;
+        contentContainer.style.maxHeight = scrollHeight + 'px';
+        contentContainer.style.overflow = 'hidden';
+        contentContainer.style.transition = 'max-height 0.3s ease-in, opacity 0.3s ease-in';
+        contentContainer.style.opacity = '1';
+        
+        // Forzar reflow
+        void contentContainer.offsetHeight;
+        
+        // Animar
+        contentContainer.style.maxHeight = '0';
+        contentContainer.style.opacity = '0';
+        
+        collapseIcon.src = 'img/folder-close.svg';
+        collapseIcon.alt = 'Expandir';
+        
+        // Ocultar después de la animación
+        setTimeout(() => {
+          contentContainer.style.display = 'none';
+          contentContainer.style.maxHeight = '';
+          contentContainer.style.overflow = '';
+          contentContainer.style.transition = '';
+          contentContainer.style.opacity = '';
+        }, 300);
+      }
+      
     localStorage.setItem(collapseStateKey, (!newIsCollapsed).toString());
   });
+  } else {
+    // Si no tiene contenido, mostrar la carpeta como abierta (sin funcionalidad de colapsar)
+    collapseIcon.src = 'img/folder-open.svg';
+    collapseIcon.alt = 'Carpeta vacía';
+  }
   
   categoryDiv.appendChild(contentContainer);
   parentElement.appendChild(categoryDiv);
 }
 
-// Función para renderizar páginas agrupadas por categorías
+// Función auxiliar para obtener el orden combinado de elementos en un nivel
+// El orden se guarda en parent.order como array de {type: 'category'|'page', index: number}
+function getCombinedOrder(parent) {
+  if (!parent) return [];
+  
+  // Si existe un orden guardado, usarlo
+  if (parent.order && Array.isArray(parent.order)) {
+    // Validar que todos los elementos del orden existen
+    const validOrder = parent.order.filter(item => {
+      if (item.type === 'category') {
+        return parent.categories && parent.categories[item.index];
+      } else if (item.type === 'page') {
+        return parent.pages && parent.pages[item.index];
+      }
+      return false;
+    });
+    
+    // Agregar elementos nuevos que no estén en el orden
+    const categories = parent.categories || [];
+    const pages = parent.pages || [];
+    
+    categories.forEach((cat, index) => {
+      if (!validOrder.some(o => o.type === 'category' && o.index === index)) {
+        validOrder.push({ type: 'category', index });
+      }
+    });
+    
+    pages.forEach((page, index) => {
+      if (!validOrder.some(o => o.type === 'page' && o.index === index)) {
+        validOrder.push({ type: 'page', index });
+      }
+    });
+    
+    return validOrder;
+  }
+  
+  // Si no hay orden guardado, generar uno por defecto (carpetas primero, luego páginas)
+  const order = [];
+  const categories = parent.categories || [];
+  const pages = parent.pages || [];
+  
+  categories.forEach((cat, index) => {
+    order.push({ type: 'category', index });
+  });
+  
+  pages.forEach((page, index) => {
+    order.push({ type: 'page', index });
+  });
+  
+  return order;
+}
+
+// Función para guardar el orden combinado
+function saveCombinedOrder(parent, order) {
+  parent.order = order;
+}
+
+// Función para mover un elemento arriba en el orden combinado
+async function moveItemUp(itemType, itemIndex, parentPath, roomId) {
+  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+  const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
+  
+  if (!parent) return;
+  
+  const order = getCombinedOrder(parent);
+  const currentPos = order.findIndex(o => o.type === itemType && o.index === itemIndex);
+  
+  if (currentPos <= 0) return; // Ya está en la primera posición
+  
+  // Intercambiar con el anterior
+  const temp = order[currentPos];
+  order[currentPos] = order[currentPos - 1];
+  order[currentPos - 1] = temp;
+  
+  saveCombinedOrder(parent, order);
+  savePagesJSON(config, roomId);
+  
+  // Recargar vista
+  const pageList = document.getElementById("page-list");
+  if (pageList) {
+    renderPagesByCategories(config, pageList, roomId);
+  }
+}
+
+// Función para mover un elemento abajo en el orden combinado
+async function moveItemDown(itemType, itemIndex, parentPath, roomId) {
+  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+  const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
+  
+  if (!parent) return;
+  
+  const order = getCombinedOrder(parent);
+  const currentPos = order.findIndex(o => o.type === itemType && o.index === itemIndex);
+  
+  if (currentPos === -1 || currentPos >= order.length - 1) return; // Ya está en la última posición
+  
+  // Intercambiar con el siguiente
+  const temp = order[currentPos];
+  order[currentPos] = order[currentPos + 1];
+  order[currentPos + 1] = temp;
+  
+  saveCombinedOrder(parent, order);
+  savePagesJSON(config, roomId);
+  
+  // Recargar vista
+  const pageList = document.getElementById("page-list");
+  if (pageList) {
+    renderPagesByCategories(config, pageList, roomId);
+  }
+}
+
+// Funciones de compatibilidad (usan las nuevas funciones de orden combinado)
+async function moveCategoryUp(category, categoryPath, roomId) {
+  const index = categoryPath[categoryPath.length - 1];
+  const parentPath = categoryPath.slice(0, -2);
+  await moveItemUp('category', index, parentPath, roomId);
+}
+
+async function moveCategoryDown(category, categoryPath, roomId) {
+  const index = categoryPath[categoryPath.length - 1];
+  const parentPath = categoryPath.slice(0, -2);
+  await moveItemDown('category', index, parentPath, roomId);
+}
+
+async function movePageUp(page, pageCategoryPath, roomId) {
+  const config = getPagesJSON(roomId) || await getDefaultJSON();
+  const parent = navigateConfigPath(config, pageCategoryPath);
+  if (!parent || !parent.pages) return;
+  
+  const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+  if (pageIndex === -1) return;
+  
+  await moveItemUp('page', pageIndex, pageCategoryPath, roomId);
+}
+
+async function movePageDown(page, pageCategoryPath, roomId) {
+  const config = getPagesJSON(roomId) || await getDefaultJSON();
+  const parent = navigateConfigPath(config, pageCategoryPath);
+  if (!parent || !parent.pages) return;
+  
+  const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+  if (pageIndex === -1) return;
+  
+  await moveItemDown('page', pageIndex, pageCategoryPath, roomId);
+}
+
+// Función auxiliar para navegar por el path en la configuración
+function navigateConfigPath(config, path) {
+  let target = config;
+  for (let i = 0; i < path.length; i += 2) {
+    const key = path[i];
+    const index = path[i + 1];
+    if (target[key] && target[key][index]) {
+      target = target[key][index];
+    } else {
+      return null;
+    }
+  }
+  return target;
+}
+
+// Función para agregar carpeta desde la vista de page-list
+async function addCategoryToPageList(categoryPath, roomId) {
+  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  
+  showModalForm(
+    'Agregar Carpeta',
+    [
+      { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la carpeta' }
+    ],
+    async (data) => {
+      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+      const newCategory = { name: data.name, pages: [], categories: [] };
+      
+      if (categoryPath.length === 0) {
+        // Agregar al nivel raíz
+        if (!config.categories) config.categories = [];
+        config.categories.push(newCategory); // Agregar al final
+      } else {
+        // Agregar dentro de una categoría
+        const parent = navigateConfigPath(config, categoryPath);
+        if (parent) {
+          if (!parent.categories) parent.categories = [];
+          parent.categories.push(newCategory); // Agregar al final
+        }
+      }
+      
+      savePagesJSON(config, roomId);
+      
+      // Recargar la vista
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        renderPagesByCategories(config, pageList, roomId);
+      }
+    }
+  );
+}
+
+// Función para editar carpeta desde la vista de page-list
+async function editCategoryFromPageList(category, categoryPath, roomId) {
+  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  const categoryOptions = getCategoryOptions(currentConfig);
+  
+  // Obtener el path del padre (si existe)
+  const parentPath = categoryPath.slice(0, -2);
+  
+  // Buscar el valor correcto del parentPath en las opciones disponibles
+  let parentPathValue = '';
+  if (parentPath.length > 0) {
+    // Buscar en las opciones el path que coincida con el parentPath
+    const matchingOption = categoryOptions.find(opt => {
+      const optPath = JSON.parse(opt.value);
+      return JSON.stringify(optPath) === JSON.stringify(parentPath);
+    });
+    if (matchingOption) {
+      parentPathValue = matchingOption.value;
+    } else {
+      // Si no se encuentra, usar el parentPath directamente
+      parentPathValue = JSON.stringify(parentPath);
+    }
+  }
+  
+  const fields = [
+    { name: 'name', label: 'Nombre', type: 'text', required: true, value: category.name, placeholder: 'Nombre de la carpeta' }
+  ];
+  
+  // Agregar selector de carpeta padre si hay carpetas disponibles
+  if (categoryOptions.length > 0) {
+    fields.push({
+      name: 'parentCategory',
+      label: 'Carpeta padre',
+      type: 'select',
+      required: false,
+      options: [
+        { value: '', label: 'Raíz (sin carpeta padre)' },
+        ...categoryOptions.filter(opt => {
+          // Excluir la carpeta actual y sus hijos
+          const optPath = JSON.parse(opt.value);
+          // No permitir seleccionar la carpeta actual como padre
+          if (JSON.stringify(optPath) === JSON.stringify(categoryPath)) {
+            return false;
+          }
+          // No permitir seleccionar una carpeta que contiene a esta como padre
+          // (evitar crear ciclos)
+          if (categoryPath.length > 0 && optPath.length < categoryPath.length) {
+            // Verificar si optPath es un prefijo de categoryPath
+            const isPrefix = optPath.every((val, idx) => val === categoryPath[idx]);
+            if (isPrefix) {
+              return false;
+            }
+          }
+          return true;
+        })
+      ],
+      value: parentPathValue
+    });
+  }
+  
+  showModalForm(
+    'Editar Carpeta',
+    fields,
+    async (data) => {
+      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+      
+      // Obtener la carpeta actual
+      const key = categoryPath[categoryPath.length - 2];
+      const index = categoryPath[categoryPath.length - 1];
+      const parent = navigateConfigPath(config, parentPath);
+      const currentCategory = parent && parent[key] ? parent[key][index] : null;
+      
+      if (!currentCategory) {
+        alert('Error: No se pudo encontrar la carpeta a editar');
+        return;
+      }
+      
+      // Actualizar nombre
+      currentCategory.name = data.name;
+      
+      // Si se cambió la carpeta padre, mover la carpeta
+      if (data.parentCategory !== undefined) {
+        if (data.parentCategory && data.parentCategory.trim() && data.parentCategory !== 'undefined') {
+          try {
+            const newParentPath = JSON.parse(data.parentCategory);
+            
+            // Verificar que el path es válido
+            if (Array.isArray(newParentPath) && newParentPath.length > 0) {
+              const newParent = navigateConfigPath(config, newParentPath);
+              
+              if (newParent && JSON.stringify(newParentPath) !== JSON.stringify(parentPath)) {
+                // Remover de la ubicación actual
+                parent[key].splice(index, 1);
+                
+                // Agregar a la nueva ubicación
+                if (!newParent.categories) newParent.categories = [];
+                newParent.categories.push(currentCategory);
+              }
+            }
+          } catch (e) {
+            console.error('Error al mover carpeta:', e);
+            console.error('Valor de parentCategory:', data.parentCategory);
+            alert('Error al cambiar la carpeta padre. La carpeta se actualizó pero permanece en su ubicación actual.');
+          }
+        } else if (data.parentCategory === '' && parentPath.length > 0) {
+          // Mover a raíz
+          parent[key].splice(index, 1);
+          if (!config.categories) config.categories = [];
+          config.categories.push(currentCategory);
+        }
+      }
+      
+      savePagesJSON(config, roomId);
+      
+      // Recargar la vista
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        renderPagesByCategories(config, pageList, roomId);
+      }
+    }
+  );
+}
+
+// Función para editar página desde la vista de page-list
+async function editPageFromPageList(page, pageCategoryPath, roomId) {
+  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  const categoryOptions = getCategoryOptions(currentConfig);
+  
+  const pageCategoryPathValue = pageCategoryPath.length > 0 ? JSON.stringify(pageCategoryPath) : '';
+  
+  const fields = [
+    { name: 'name', label: 'Nombre', type: 'text', required: true, value: page.name, placeholder: 'Nombre de la página' },
+    { name: 'url', label: 'URL', type: 'url', required: true, value: page.url, placeholder: 'https://...' }
+  ];
+  
+  // Agregar selector de carpeta si hay carpetas disponibles
+  if (categoryOptions.length > 0) {
+    const defaultValue = pageCategoryPathValue || categoryOptions[0].value;
+    fields.push({
+      name: 'category',
+      label: 'Carpeta',
+      type: 'select',
+      required: true,
+      options: categoryOptions,
+      value: defaultValue
+    });
+  }
+  
+  fields.push(
+    { name: 'selector', label: 'Selector (opcional)', type: 'text', value: page.selector || '', placeholder: '#main-content', help: 'Solo para URLs externas' },
+    { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', value: Array.isArray(page.blockTypes) ? page.blockTypes.join(', ') : (page.blockTypes || ''), placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
+  );
+  
+  showModalForm(
+    'Editar Página',
+    fields,
+    async (data) => {
+      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+      
+      // Encontrar la página actual
+      const parent = navigateConfigPath(config, pageCategoryPath);
+      if (!parent || !parent.pages) {
+        alert('Error: No se pudo encontrar la página a editar');
+        return;
+      }
+      
+      const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+      if (pageIndex === -1) {
+        alert('Error: No se pudo encontrar la página a editar');
+        return;
+      }
+      
+      const currentPage = parent.pages[pageIndex];
+      
+      // Actualizar datos
+      currentPage.name = data.name;
+      currentPage.url = data.url;
+      if (data.selector) {
+        currentPage.selector = data.selector;
+      } else {
+        delete currentPage.selector;
+      }
+      if (data.blockTypes) {
+        currentPage.blockTypes = data.blockTypes.includes(',') 
+          ? data.blockTypes.split(',').map(s => s.trim())
+          : data.blockTypes.trim();
+      } else {
+        delete currentPage.blockTypes;
+      }
+      
+      // Si se cambió la carpeta, mover la página
+      if (data.category && data.category.trim() && data.category !== 'undefined') {
+        try {
+          const newCategoryPath = JSON.parse(data.category);
+          
+          // Verificar que el path es válido
+          if (Array.isArray(newCategoryPath) && newCategoryPath.length > 0) {
+            const newParent = navigateConfigPath(config, newCategoryPath);
+            
+            if (newParent && JSON.stringify(newCategoryPath) !== JSON.stringify(pageCategoryPath)) {
+              // Remover de la ubicación actual
+              parent.pages.splice(pageIndex, 1);
+              
+              // Agregar a la nueva ubicación
+              if (!newParent.pages) newParent.pages = [];
+              newParent.pages.push(currentPage);
+            }
+          }
+        } catch (e) {
+          console.error('Error al mover página:', e);
+          console.error('Valor de category:', data.category);
+          alert('Error al cambiar la carpeta. La página se actualizó pero permanece en su carpeta actual.');
+        }
+      }
+      
+      savePagesJSON(config, roomId);
+      
+      // Recargar la vista
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        renderPagesByCategories(config, pageList, roomId);
+      }
+    }
+  );
+}
+
+// Función para eliminar carpeta desde la vista de page-list
+async function deleteCategoryFromPageList(category, categoryPath, roomId) {
+  try {
+    // Asegurarse de que categoryPath sea un array
+    let path = categoryPath;
+    if (typeof categoryPath === 'string') {
+      try {
+        path = JSON.parse(categoryPath);
+      } catch (e) {
+        console.error('Error al parsear categoryPath:', e);
+        alert('Error: Path de carpeta inválido');
+        return false;
+      }
+    }
+    if (!Array.isArray(path)) {
+      console.error('categoryPath no es un array:', path);
+      alert('Error: Path de carpeta inválido');
+      return false;
+    }
+    
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    
+    if (path.length === 0) {
+      // Si el path está vacío (no debería pasar, pero por si acaso)
+      const index = config.categories.findIndex(cat => cat.name === category.name);
+      if (index !== -1) {
+        config.categories.splice(index, 1);
+      } else {
+        console.error('No se encontró la carpeta en el nivel raíz');
+        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        return false;
+      }
+    } else if (path.length === 2) {
+      // Eliminar del nivel raíz (path es ['categories', index])
+      const key = path[0];
+      const index = parseInt(path[1]);
+      if (config[key] && config[key][index] !== undefined) {
+        config[key].splice(index, 1);
+      } else {
+        console.error('No se encontró la carpeta en el nivel raíz:', key, index);
+        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        return false;
+      }
+    } else {
+      // Eliminar de una carpeta padre (path tiene más de 2 elementos)
+      const key = path[path.length - 2];
+      const index = parseInt(path[path.length - 1]);
+      const parentPath = path.slice(0, -2);
+      const parent = navigateConfigPath(config, parentPath);
+      if (parent && parent[key] && parent[key][index] !== undefined) {
+        parent[key].splice(index, 1);
+      } else {
+        console.error('No se encontró la carpeta en el path:', path);
+        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        return false;
+      }
+    }
+    
+    savePagesJSON(config, roomId);
+    
+    // Recargar la vista
+    const pageList = document.getElementById("page-list");
+    if (pageList) {
+      renderPagesByCategories(config, pageList, roomId);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error al eliminar carpeta:', error);
+    alert('Error al eliminar la carpeta: ' + error.message);
+    return false;
+  }
+}
+
+// Función para eliminar página desde la vista de page-list
+async function deletePageFromPageList(page, pageCategoryPath, roomId) {
+  try {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    
+    // Encontrar la página actual
+    const parent = navigateConfigPath(config, pageCategoryPath);
+    if (!parent || !parent.pages) {
+      console.error('No se encontró el parent o pages en:', pageCategoryPath);
+      alert('Error: No se pudo encontrar la página a eliminar');
+      return false;
+    }
+    
+    const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+    if (pageIndex === -1) {
+      console.error('No se encontró la página:', page.name, page.url);
+      alert('Error: No se pudo encontrar la página a eliminar');
+      return false;
+    }
+    
+    parent.pages.splice(pageIndex, 1);
+    
+    savePagesJSON(config, roomId);
+    
+    // Recargar la vista
+    const pageList = document.getElementById("page-list");
+    if (pageList) {
+      renderPagesByCategories(config, pageList, roomId);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error al eliminar página:', error);
+    alert('Error al eliminar la página: ' + error.message);
+    return false;
+  }
+}
+
+// Función auxiliar para obtener todas las carpetas como opciones
+function getCategoryOptions(config, currentPath = [], level = 0) {
+  const options = [];
+  if (!config.categories) return options;
+  
+  config.categories.forEach((category, index) => {
+    const categoryPath = ['categories', index];
+    const fullPath = [...currentPath, ...categoryPath];
+    const indent = '  '.repeat(level);
+    options.push({
+      value: JSON.stringify(fullPath),
+      label: `${indent}${category.name}`
+    });
+    
+    // Agregar subcarpetas recursivamente
+    if (category.categories && category.categories.length > 0) {
+      const subOptions = getCategoryOptions({ categories: category.categories }, fullPath, level + 1);
+      options.push(...subOptions);
+    }
+  });
+  
+  return options;
+}
+
+// Función para agregar página desde la vista de page-list con selector de carpeta
+async function addPageToPageListWithCategorySelector(defaultCategoryPath, roomId) {
+  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  const categoryOptions = getCategoryOptions(currentConfig);
+  
+  // Preparar campos del formulario
+  const fields = [
+    { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la página' },
+    { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' }
+  ];
+  
+  // Agregar selector de carpeta si hay carpetas disponibles
+  if (categoryOptions.length > 0) {
+    const defaultCategoryValue = defaultCategoryPath.length > 0 ? JSON.stringify(defaultCategoryPath) : categoryOptions[0].value;
+    fields.push({
+      name: 'category',
+      label: 'Carpeta',
+      type: 'select',
+      required: true,
+      options: categoryOptions,
+      value: defaultCategoryValue
+    });
+  }
+  
+  fields.push(
+    { name: 'selector', label: 'Selector (opcional)', type: 'text', placeholder: '#main-content', help: 'Solo para URLs externas' },
+    { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
+  );
+  
+  showModalForm(
+    'Agregar Página',
+    fields,
+    async (data) => {
+      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+      const newPage = {
+        name: data.name,
+        url: data.url
+      };
+      if (data.selector) newPage.selector = data.selector;
+      if (data.blockTypes) {
+        newPage.blockTypes = data.blockTypes.includes(',') 
+          ? data.blockTypes.split(',').map(s => s.trim())
+          : data.blockTypes.trim();
+      }
+      
+      // Determinar el path de la carpeta
+      let targetCategoryPath = defaultCategoryPath;
+      if (data.category && data.category.trim()) {
+        try {
+          targetCategoryPath = JSON.parse(data.category);
+        } catch (e) {
+          console.error('Error al parsear carpeta:', e);
+          console.error('Valor recibido:', data.category);
+        }
+      }
+      
+      if (targetCategoryPath.length === 0) {
+        // Si no hay carpetas, crear una
+        if (!config.categories || config.categories.length === 0) {
+          config.categories = [{ name: 'General', pages: [], categories: [] }];
+        }
+        if (!config.categories[0].pages) config.categories[0].pages = [];
+        config.categories[0].pages.unshift(newPage); // Agregar al final
+      } else {
+        // Agregar dentro de la carpeta seleccionada
+        const parent = navigateConfigPath(config, targetCategoryPath);
+        if (parent) {
+          if (!parent.pages) parent.pages = [];
+          parent.pages.push(newPage); // Agregar al final
+        }
+      }
+      
+      savePagesJSON(config, roomId);
+      
+      // Recargar la vista
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        renderPagesByCategories(config, pageList, roomId);
+      }
+    }
+  );
+}
+
+// Función para agregar página desde la vista de page-list
+async function addPageToPageList(categoryPath, roomId) {
+  // Si categoryPath está definido, usar la versión simple (sin selector)
+  // Si no, usar la versión con selector
+  if (categoryPath && categoryPath.length > 0) {
+    await addPageToPageListSimple(categoryPath, roomId);
+  } else {
+    await addPageToPageListWithCategorySelector(categoryPath, roomId);
+  }
+}
+
+// Función simple para agregar página en una carpeta específica (sin selector)
+async function addPageToPageListSimple(categoryPath, roomId) {
+  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  
+  showModalForm(
+    'Agregar Página',
+    [
+      { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la página' },
+      { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' },
+      { name: 'selector', label: 'Selector (opcional)', type: 'text', placeholder: '#main-content', help: 'Solo para URLs externas' },
+      { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
+    ],
+    async (data) => {
+      const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+      const newPage = {
+        name: data.name,
+        url: data.url
+      };
+      if (data.selector) newPage.selector = data.selector;
+      if (data.blockTypes) {
+        newPage.blockTypes = data.blockTypes.includes(',') 
+          ? data.blockTypes.split(',').map(s => s.trim())
+          : data.blockTypes.trim();
+      }
+      
+      if (categoryPath.length === 0) {
+        // Si no hay carpetas, crear una
+        if (!config.categories || config.categories.length === 0) {
+          config.categories = [{ name: 'General', pages: [], categories: [] }];
+        }
+        if (!config.categories[0].pages) config.categories[0].pages = [];
+        config.categories[0].pages.unshift(newPage); // Agregar al final
+      } else {
+        // Agregar dentro de una categoría
+        const parent = navigateConfigPath(config, categoryPath);
+        if (parent) {
+          if (!parent.pages) parent.pages = [];
+          parent.pages.push(newPage); // Agregar al final
+        }
+      }
+      
+      savePagesJSON(config, roomId);
+      
+      // Recargar la vista
+      const pageList = document.getElementById("page-list");
+      if (pageList) {
+        renderPagesByCategories(config, pageList, roomId);
+      }
+    }
+  );
+}
+
+// Función para renderizar páginas agrupadas por carpetas
 function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
   // Mostrar loading
-  pageList.innerHTML = '<div class="loading-state" style="text-align: center; padding: 40px; color: #999;"><div style="font-size: 24px; margin-bottom: 12px;">⏳</div><div>Cargando páginas...</div></div>';
+  pageList.innerHTML = '<div class="loading-state"><div class="loading-state-icon">⏳</div><div>Cargando páginas...</div></div>';
   
   // Usar setTimeout para permitir que el DOM se actualice con el loading
   setTimeout(() => {
     pageList.innerHTML = '';
     
     if (!pagesConfig || !pagesConfig.categories || pagesConfig.categories.length === 0) {
-      pageList.innerHTML = `
-        <div class="empty-state">
+      const emptyState = document.createElement('div');
+      emptyState.className = 'empty-state';
+      emptyState.innerHTML = `
           <p>No hay páginas configuradas</p>
-          <p>Clic en ⚙️ para editar el JSON</p>
-        </div>
+        <button id="add-first-category" class="btn btn--primary add-first-category-button">➕ Agregar primera carpeta</button>
       `;
+      pageList.appendChild(emptyState);
+      
+      // Botón para agregar primera carpeta
+      const addFirstCategoryBtn = emptyState.querySelector('#add-first-category');
+      if (addFirstCategoryBtn) {
+        addFirstCategoryBtn.addEventListener('click', async () => {
+          await addCategoryToPageList([], roomId);
+        });
+        // Hover styles movidos a CSS con :hover
+      }
       return;
     }
   
-    // Mantener el orden original del JSON (sin ordenar)
-    pagesConfig.categories.forEach(category => {
-      renderCategory(category, pageList, 0, roomId);
+    // Usar el orden combinado para el nivel raíz
+    const rootOrder = getCombinedOrder(pagesConfig);
+    rootOrder.forEach(item => {
+      if (item.type === 'category' && pagesConfig.categories && pagesConfig.categories[item.index]) {
+        const categoryPath = ['categories', item.index];
+        renderCategory(pagesConfig.categories[item.index], pageList, 0, roomId, categoryPath);
+      }
+      // En el nivel raíz normalmente solo hay categorías, pero esto permite páginas sueltas en el futuro
     });
   }, 0); // Permitir que el DOM se actualice
 }
@@ -2028,6 +3375,7 @@ function getLinkType(url) {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
+    const pathname = urlObj.pathname.toLowerCase();
     
     // Detectar tipos de links
     if (hostname.includes('notion.so') || hostname.includes('notion.site')) {
@@ -2037,15 +3385,355 @@ function getLinkType(url) {
     if (hostname.includes('dndbeyond.com')) {
       return { type: 'dndbeyond', icon: 'icon-dnd.svg' };
     }
-    // if (hostname.includes('roll20.net')) {
-    //   return { type: 'roll20', icon: 'icon-roll20.svg' };
+    
+    // Google Drive
+    if (hostname.includes('drive.google.com')) {
+      return { type: 'google-drive', icon: 'icon-google-drive.svg' };
+    }
+    
+    // Google Docs/Sheets/Slides
+    if (hostname.includes('docs.google.com')) {
+      if (pathname.includes('/document/')) {
+        return { type: 'google-docs', icon: 'icon-google-docs.svg' };
+      }
+      if (pathname.includes('/spreadsheets/')) {
+        return { type: 'google-sheets', icon: 'icon-google-sheets.svg' };
+      }
+      if (pathname.includes('/presentation/')) {
+        return { type: 'google-slides', icon: 'icon-google-slides.svg' };
+      }
+    }
+    
+    // YouTube
+    if (hostname.includes('youtube.com') || hostname === 'youtu.be') {
+      return { type: 'youtube', icon: 'icon-youtube.svg' };
+    }
+    
+    // Vimeo
+    if (hostname.includes('vimeo.com')) {
+      return { type: 'vimeo', icon: 'icon-vimeo.svg' };
+    }
+    
+    // Figma
+    if (hostname.includes('figma.com')) {
+      return { type: 'figma', icon: 'icon-figma.svg' };
+    }
+    
+    // Dropbox
+    if (hostname.includes('dropbox.com')) {
+      return { type: 'dropbox', icon: 'icon-dropbox.svg' };
+    }
+    
+    // OneDrive
+    if (hostname.includes('onedrive.live.com') || hostname.includes('1drv.ms')) {
+      return { type: 'onedrive', icon: 'icon-onedrive.svg' };
+    }
+    
+    // CodePen - COMENTADO
+    // if (hostname.includes('codepen.io')) {
+    //   return { type: 'codepen', icon: 'icon-codepen.svg' };
     // }
+    
+    // JSFiddle - COMENTADO
+    // if (hostname.includes('jsfiddle.net')) {
+    //   return { type: 'jsfiddle', icon: 'icon-jsfiddle.svg' };
+    // }
+    
+    // GitHub - COMENTADO
+    // if (hostname.includes('github.com') || hostname.includes('gist.github.com')) {
+    //   return { type: 'github', icon: 'icon-github.svg' };
+    // }
+    
+    // PDF
+    if (pathname.endsWith('.pdf')) {
+      return { type: 'pdf', icon: 'icon-pdf.svg' };
+    }
+    
+    // Imágenes
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
+    const lowercasePath = pathname.toLowerCase();
+    if (imageExtensions.some(ext => lowercasePath.endsWith(ext))) {
+      return { type: 'image', icon: 'icon-image.svg' };
+    }
     
     // Por defecto, link genérico
     return { type: 'generic', icon: 'icon-link.svg' };
   } catch (e) {
     return { type: 'generic', icon: 'icon-link.svg' };
   }
+}
+
+// Función para convertir URLs de servicios externos a formato embed
+// Soporta: Google Drive, Google Docs/Sheets/Slides, Dropbox, OneDrive, YouTube, Vimeo, Figma, CodePen, JSFiddle
+function convertToEmbedUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return { url, converted: false, service: null };
+  }
+
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    const pathname = urlObj.pathname;
+
+    // Google Drive
+    if (hostname.includes('drive.google.com') && pathname.includes('/file/d/')) {
+      const match = pathname.match(/\/file\/d\/([^/]+)/);
+      if (match) {
+        const fileId = match[1];
+        return {
+          url: `https://drive.google.com/file/d/${fileId}/preview`,
+          converted: true,
+          service: 'Google Drive'
+        };
+      }
+    }
+
+    // Google Docs
+    if (hostname.includes('docs.google.com') && pathname.includes('/document/d/')) {
+      const match = pathname.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+      if (match) {
+        const docId = match[1];
+        return {
+          url: `https://docs.google.com/document/d/${docId}/preview`,
+          converted: true,
+          service: 'Google Docs'
+        };
+      }
+    }
+
+    // Google Sheets
+    if (hostname.includes('docs.google.com') && pathname.includes('/spreadsheets/d/')) {
+      const match = pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (match) {
+        const sheetId = match[1];
+        return {
+          url: `https://docs.google.com/spreadsheets/d/${sheetId}/preview`,
+          converted: true,
+          service: 'Google Sheets'
+        };
+      }
+    }
+
+    // Google Slides
+    if (hostname.includes('docs.google.com') && pathname.includes('/presentation/d/')) {
+      const match = pathname.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+      if (match) {
+        const slideId = match[1];
+        return {
+          url: `https://docs.google.com/presentation/d/${slideId}/embed`,
+          converted: true,
+          service: 'Google Slides'
+        };
+      }
+    }
+
+    // Dropbox - convertir ?dl=0 a ?raw=1
+    if (hostname.includes('dropbox.com')) {
+      const newUrl = url.replace('?dl=0', '?raw=1').replace('&dl=0', '&raw=1');
+      if (newUrl !== url) {
+        return {
+          url: newUrl,
+          converted: true,
+          service: 'Dropbox'
+        };
+      }
+    }
+
+    // OneDrive
+    if (hostname.includes('onedrive.live.com') && url.includes('resid=')) {
+      // Ya es formato embed o lo convertimos
+      if (!url.includes('/embed')) {
+        const resid = urlObj.searchParams.get('resid');
+        if (resid) {
+          return {
+            url: `https://onedrive.live.com/embed?resid=${resid}`,
+            converted: true,
+            service: 'OneDrive'
+          };
+        }
+      }
+    }
+
+    // YouTube
+    if (hostname.includes('youtube.com') && pathname.includes('/watch')) {
+      const videoId = urlObj.searchParams.get('v');
+      if (videoId) {
+        return {
+          url: `https://www.youtube.com/embed/${videoId}`,
+          converted: true,
+          service: 'YouTube'
+        };
+      }
+    }
+
+    // YouTube corto (youtu.be)
+    if (hostname === 'youtu.be') {
+      const videoId = pathname.substring(1);
+      if (videoId) {
+        return {
+          url: `https://www.youtube.com/embed/${videoId}`,
+          converted: true,
+          service: 'YouTube'
+        };
+      }
+    }
+
+    // Vimeo
+    if (hostname.includes('vimeo.com') && !pathname.includes('/video/')) {
+      const videoId = pathname.match(/\/(\d+)/);
+      if (videoId) {
+        return {
+          url: `https://player.vimeo.com/video/${videoId[1]}`,
+          converted: true,
+          service: 'Vimeo'
+        };
+      }
+    }
+
+    // Figma
+    if (hostname.includes('figma.com') && (pathname.includes('/file/') || pathname.includes('/design/'))) {
+      return {
+        url: `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`,
+        converted: true,
+        service: 'Figma'
+      };
+    }
+
+    // CodePen - COMENTADO
+    // if (hostname.includes('codepen.io') && pathname.includes('/pen/')) {
+    //   const parts = pathname.split('/');
+    //   const userIndex = parts.indexOf('pen') - 1;
+    //   const penIndex = parts.indexOf('pen') + 1;
+    //   if (userIndex >= 0 && penIndex < parts.length) {
+    //     const user = parts[userIndex];
+    //     const penId = parts[penIndex];
+    //     return {
+    //       url: `https://codepen.io/${user}/embed/${penId}?default-tab=result`,
+    //       converted: true,
+    //       service: 'CodePen'
+    //     };
+    //   }
+    // }
+
+    // JSFiddle - COMENTADO
+    // if (hostname.includes('jsfiddle.net') && !pathname.includes('/embedded/')) {
+    //   const cleanPath = pathname.replace(/\/$/, '');
+    //   return {
+    //     url: `https://jsfiddle.net${cleanPath}/embedded/result/`,
+    //     converted: true,
+    //     service: 'JSFiddle'
+    //   };
+    // }
+
+    // PDF directo - no necesita conversión pero lo marcamos
+    if (pathname.endsWith('.pdf')) {
+      return {
+        url: url,
+        converted: false,
+        service: 'PDF'
+      };
+    }
+
+    // No se necesita conversión
+    return { url, converted: false, service: null };
+
+  } catch (e) {
+    console.warn('Error al convertir URL:', e);
+    return { url, converted: false, service: null };
+  }
+}
+
+// Función para cargar imagen en viewer dedicado
+async function loadImageContent(url, container, name) {
+  const contentDiv = container.querySelector('#notion-content');
+  const iframe = container.querySelector('#notion-iframe');
+  
+  // Ocultar iframe
+  if (iframe) {
+    iframe.style.display = 'none';
+  }
+  
+  // Mostrar contenido
+  if (contentDiv) {
+    contentDiv.style.display = 'block';
+    container.classList.add('show-content');
+    
+    // Convertir URL si es de Google Drive
+    let imageUrl = url;
+    if (url.includes('drive.google.com') && url.includes('/file/d/')) {
+      const match = url.match(/\/file\/d\/([^/]+)/);
+      if (match) {
+        // Usar formato de thumbnail grande para mejor calidad
+        imageUrl = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w2000`;
+      }
+    }
+    
+    contentDiv.innerHTML = `
+      <div class="image-viewer-container" style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        padding: 16px;
+        gap: 16px;
+      ">
+        <img 
+          src="${imageUrl}" 
+          alt="${name || 'Imagen'}"
+          class="notion-image-clickable"
+          style="
+            max-width: 100%;
+            max-height: calc(100vh - 150px);
+            object-fit: contain;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+          "
+        />
+        <p style="color: var(--color-text-secondary); font-size: 14px;">Haz clic en la imagen para verla a tamaño completo</p>
+      </div>
+    `;
+    
+    // Añadir handler para abrir en modal al hacer click
+    const img = contentDiv.querySelector('img');
+    if (img) {
+      img.addEventListener('click', () => {
+        showImageModal(imageUrl, name);
+      });
+    }
+  }
+}
+
+// Función para cargar video en player dedicado
+async function loadVideoContent(url, container, videoType) {
+  const contentDiv = container.querySelector('#notion-content');
+  const iframe = container.querySelector('#notion-iframe');
+  
+  // Ocultar contenido de Notion
+  if (contentDiv) {
+    contentDiv.style.display = 'none';
+  }
+  
+  // Convertir URL a formato embed
+  const embedResult = convertToEmbedUrl(url);
+  const embedUrl = embedResult.url;
+  
+  // Mostrar video en iframe con estilo mejorado
+  if (iframe) {
+    // Configurar el iframe para video
+    iframe.src = embedUrl;
+    iframe.style.display = 'block';
+    iframe.style.visibility = 'visible';
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = 'none';
+    iframe.style.borderRadius = '8px';
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    iframe.allowFullscreen = true;
+  }
+  
+  container.classList.remove('show-content');
 }
 
 // Función para cargar contenido en iframe (para URLs no-Notion)
@@ -2149,15 +3837,26 @@ async function loadIframeContent(url, container, selector = null) {
     } catch (error) {
       console.warn('⚠️ No se pudo cargar elemento específico (posible CORS):', error.message);
       console.log('📄 Cargando URL completa como fallback:', url);
-      // Fallback: cargar la URL completa
-      iframe.src = url;
+      // Fallback: cargar la URL completa con conversión
+      const embedResult = convertToEmbedUrl(url);
+      if (embedResult.converted) {
+        console.log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
+      }
+      iframe.src = embedResult.url;
       iframe.style.display = 'block';
       iframe.style.visibility = 'visible';
     }
   } else {
     // Sin selector: cargar la URL completa
-    console.log('📄 Cargando URL completa en iframe:', url);
-    iframe.src = url;
+    // Convertir URL si es de un servicio soportado
+    const embedResult = convertToEmbedUrl(url);
+    if (embedResult.converted) {
+      console.log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
+    } else if (embedResult.service) {
+      console.log(`📄 URL de ${embedResult.service} (sin conversión necesaria)`);
+    }
+    console.log('📄 Cargando URL en iframe:', embedResult.url);
+    iframe.src = embedResult.url;
     iframe.style.display = 'block';
     iframe.style.visibility = 'visible';
   }
@@ -2175,6 +3874,12 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
   if (pageList && notionContainer && backButton && pageTitle && notionContent && header) {
     pageList.classList.add("hidden");
     notionContainer.classList.remove("hidden");
+      
+      // Ocultar el button-container cuando se está en la vista de detalle
+      const buttonContainer = document.querySelector('.button-container');
+      if (buttonContainer) {
+        buttonContainer.classList.add("hidden");
+      }
     backButton.classList.remove("hidden");
     pageTitle.textContent = name;
     
@@ -2207,23 +3912,10 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
     const reloadIcon = document.createElement("img");
     reloadIcon.src = "img/icon-reload.svg";
     reloadIcon.alt = "Recargar contenido";
-    reloadIcon.style.cssText = "width: 20px; height: 20px; display: block;";
+    reloadIcon.className = "icon-button-icon";
     refreshButton.appendChild(reloadIcon);
     refreshButton.title = "Recargar contenido";
-    refreshButton.style.cssText = `
-      background: transparent;
-      border: none;
-      border-radius: 50%;
-      width: 32px;
-      height: 32px;
-      padding: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-left: 8px;
-    `;
+    // Estilos movidos a CSS - solo background se controla dinámicamente en hover
     
     // Remover listeners anteriores si existen
     const newRefreshButton = refreshButton.cloneNode(true);
@@ -2237,19 +3929,8 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       delete refreshButton.dataset.blockTypes;
     }
     
-      refreshButton.addEventListener('mouseenter', () => {
-        refreshButton.style.background = CSS_VARS.bgHover;
-        refreshButton.style.borderRadius = '50%';
-      });
-      refreshButton.addEventListener('mouseleave', () => {
-        refreshButton.style.background = 'transparent';
-      });
-      refreshButton.addEventListener('mousedown', () => {
-        refreshButton.style.background = CSS_VARS.bgActive;
-      });
-      refreshButton.addEventListener('mouseup', () => {
-        refreshButton.style.background = CSS_VARS.bgHover;
-      });
+      // Hover styles movidos a CSS con :hover y :active
+      // Solo se mantiene el background dinámico si es necesario, pero CSS ya lo maneja
     
     refreshButton.addEventListener('click', async () => {
       // Obtener la URL actual del botón
@@ -2307,8 +3988,9 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       
       await loadNotionContent(url, notionContainer, false, blockTypes);
     } else {
-      // No es una URL de Notion → cargar en iframe
-      console.log('🌐 URL genérica detectada, usando iframe');
+      // No es una URL de Notion → detectar tipo de contenido
+      const linkType = getLinkType(url);
+      console.log('🌐 URL detectada:', linkType.type);
       
       // Ocultar botón de recargar si existe (solo para Notion)
       let refreshButton = document.getElementById("refresh-page-button");
@@ -2316,16 +3998,113 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         refreshButton.classList.add("hidden");
       }
       
-      // Cargar en iframe (con selector opcional)
-      await loadIframeContent(url, notionContainer, selector);
+      // Manejar según el tipo de contenido
+      if (linkType.type === 'image') {
+        // Es una imagen → abrir en image viewer
+        console.log('🖼️ Imagen detectada, abriendo en viewer');
+        await loadImageContent(url, notionContainer, name);
+      } else if (linkType.type === 'youtube' || linkType.type === 'vimeo') {
+        // Es un video → abrir en video player
+        console.log('🎬 Video detectado, abriendo en player');
+        await loadVideoContent(url, notionContainer, linkType.type);
+      } else {
+        // Cargar en iframe (con selector opcional)
+        await loadIframeContent(url, notionContainer, selector);
+      }
     }
     
     if (!backButton.dataset.listenerAdded) {
       backButton.addEventListener("click", () => {
-        pageList.classList.remove("hidden");
+        const settingsContainer = document.getElementById("settings-container");
+        const isSettingsVisible = settingsContainer && !settingsContainer.classList.contains('hidden');
+        
+        if (isSettingsVisible) {
+          // Cerrar token config
+          settingsContainer.classList.add("hidden");
+        } else {
+          // Volver a la vista principal desde notion-container
         notionContainer.classList.add("hidden");
+        notionContainer.classList.remove("show-content");
+        if (notionContent) {
+          notionContent.innerHTML = "";
+        }
+        // Limpiar iframe
+        const iframe = notionContainer.querySelector('#notion-iframe');
+        if (iframe) {
+          iframe.src = '';
+          iframe.style.display = 'none';
+        }
+        // Ocultar botón de recargar
+        const refreshButton = document.getElementById("refresh-page-button");
+        if (refreshButton) {
+          refreshButton.classList.add("hidden");
+          }
+        }
+        
+        // Restaurar vista principal
+        pageList.classList.remove("hidden");
         backButton.classList.add("hidden");
-        pageTitle.textContent = "Context";
+        pageTitle.textContent = "DM screen";
+        // Mostrar el button-container cuando se vuelve a la vista principal
+        const buttonContainer = document.querySelector('.button-container');
+        if (buttonContainer) {
+          buttonContainer.classList.remove("hidden");
+        }
+      });
+      backButton.dataset.listenerAdded = "true";
+    }
+  }
+}
+
+// Función para mostrar configuración de token
+async function showSettings() {
+  // Obtener roomId de forma segura
+  let roomId = null;
+  try {
+    if (typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
+      roomId = await OBR.room.getId();
+    }
+  } catch (e) {
+    console.warn('No se pudo obtener roomId:', e);
+  }
+  const pageList = document.getElementById("page-list");
+  const notionContainer = document.getElementById("notion-container");
+  const settingsContainer = document.getElementById("settings-container");
+  const backButton = document.getElementById("back-button");
+  const pageTitle = document.getElementById("page-title");
+  const header = document.getElementById("header");
+  
+  // Ocultar otros contenedores pero mantener el container visible
+  if (pageList) pageList.classList.add('hidden');
+  if (notionContainer) notionContainer.classList.add('hidden');
+  if (settingsContainer) settingsContainer.classList.remove('hidden');
+  
+  // Actualizar header como en loadPageContent
+  if (backButton) {
+    backButton.classList.remove('hidden');
+  }
+  if (pageTitle) {
+    pageTitle.textContent = 'Configuración';
+  }
+  
+  // Asegurar que el listener esté configurado (se agrega en loadPageContent o aquí si es necesario)
+  if (backButton && !backButton.dataset.listenerAdded) {
+    backButton.addEventListener("click", () => {
+      const settingsContainer = document.getElementById("settings-container");
+      const notionContainer = document.getElementById("notion-container");
+      const pageList = document.getElementById("page-list");
+      const pageTitle = document.getElementById("page-title");
+      const notionContent = document.getElementById("notion-content");
+      
+      const isSettingsVisible = settingsContainer && !settingsContainer.classList.contains('hidden');
+      const isNotionContainerVisible = notionContainer && !notionContainer.classList.contains('hidden');
+      
+      if (isSettingsVisible) {
+        // Cerrar token config
+        settingsContainer.classList.add("hidden");
+      } else if (isNotionContainerVisible) {
+        // Volver a la vista principal desde notion-container
+        notionContainer.classList.add("hidden");
         notionContainer.classList.remove("show-content");
         if (notionContent) {
           notionContent.innerHTML = "";
@@ -2341,53 +4120,181 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         if (refreshButton) {
           refreshButton.classList.add("hidden");
         }
-      });
-      backButton.dataset.listenerAdded = "true";
-    }
+      }
+      
+      // Restaurar vista principal
+      if (pageList) pageList.classList.remove("hidden");
+      if (backButton) backButton.classList.add("hidden");
+      if (pageTitle) pageTitle.textContent = "DM screen";
+      // Mostrar el button-container cuando se vuelve a la vista principal
+      const buttonContainer = document.querySelector('.button-container');
+      if (buttonContainer) {
+        buttonContainer.classList.remove("hidden");
+      }
+    });
+    backButton.dataset.listenerAdded = "true";
   }
-}
-
-// Función para mostrar configuración de token
-function showTokenConfig() {
-  const mainContainer = document.querySelector('.container');
-  const pageList = document.getElementById("page-list");
-  const notionContainer = document.getElementById("notion-container");
   
-  if (mainContainer) mainContainer.classList.add('hidden');
-  if (pageList) pageList.classList.add('hidden');
-  if (notionContainer) notionContainer.classList.add('hidden');
+  // Ocultar el button-container cuando se está en la vista de token config
+  const buttonContainer = document.querySelector('.button-container');
+  if (buttonContainer) {
+    buttonContainer.classList.add('hidden');
+  }
   
   const currentToken = getUserToken() || '';
   const maskedToken = currentToken ? currentToken.substring(0, 8) + '...' + currentToken.substring(currentToken.length - 4) : '';
   
-  const tokenContainer = document.createElement('div');
-  tokenContainer.id = 'token-config-container';
-  tokenContainer.style.cssText = `
+  // Llenar el contenido dinámicamente
+  const tokenInput = document.getElementById('token-input');
+  const tokenMasked = document.getElementById('token-masked');
+  const errorDiv = document.getElementById('token-error');
+  const saveBtn = document.getElementById('save-token');
+  const clearBtn = document.getElementById('clear-token');
+  const viewJsonBtn = document.getElementById('view-json-btn');
+  const loadJsonBtn = document.getElementById('load-json-btn');
+  const downloadJsonBtn = document.getElementById('download-json-btn');
+  
+  // Mostrar botón "Ver JSON" solo en modo debug
+  if (viewJsonBtn && DEBUG_MODE) {
+    viewJsonBtn.classList.remove('hidden');
+  }
+  
+  if (tokenInput) {
+    tokenInput.value = currentToken;
+  }
+  
+  if (tokenMasked) {
+    if (currentToken) {
+      tokenMasked.textContent = `Token actual: ${maskedToken}`;
+    } else {
+      tokenMasked.textContent = '';
+    }
+  }
+  
+  if (errorDiv) {
+    errorDiv.classList.remove('form__error--visible');
+    errorDiv.textContent = '';
+  }
+  
+  // Cerrar
+  const closeSettings = () => {
+    if (settingsContainer) settingsContainer.classList.add('hidden');
+    if (pageList) pageList.classList.remove('hidden');
+    if (backButton) backButton.classList.add('hidden');
+    if (pageTitle) pageTitle.textContent = 'DM screen';
+    // Mostrar el button-container cuando se vuelve a la vista principal
+    const buttonContainer = document.querySelector('.button-container');
+    if (buttonContainer) {
+      buttonContainer.classList.remove('hidden');
+    }
+  };
+  
+  // Guardar token - evitar múltiples listeners
+  if (saveBtn && !saveBtn.dataset.listenerAdded) {
+    saveBtn.dataset.listenerAdded = 'true';
+    saveBtn.addEventListener('click', () => {
+      const token = tokenInput ? tokenInput.value.trim() : '';
+      
+      if (!token) {
+        if (errorDiv) {
+          errorDiv.textContent = 'Por favor, ingresa un token de Notion';
+          errorDiv.classList.add('form__error--visible');
+        }
+        return;
+      }
+      
+      if (saveUserToken(token)) {
+        if (errorDiv) errorDiv.classList.remove('form__error--visible');
+        alert('✅ Token guardado exitosamente. Ahora puedes usar tus propias páginas de Notion.');
+        closeSettings();
+        // Actualizar el título del botón de token sin recargar la página
+        const settingsButton = document.querySelector('.icon-button[title*="Token"]');
+        if (settingsButton) {
+          settingsButton.title = "Configuración (Token configurado)";
+        }
+        // No recargar la página para preservar la configuración actual
+      } else {
+        if (errorDiv) {
+          errorDiv.textContent = 'Error al guardar el token. Revisa la consola para más detalles.';
+          errorDiv.classList.add('form__error--visible');
+        }
+      }
+    });
+  }
+  
+  // Eliminar token - evitar múltiples listeners
+  if (clearBtn && !clearBtn.dataset.listenerAdded) {
+    clearBtn.dataset.listenerAdded = 'true';
+    clearBtn.addEventListener('click', () => {
+      if (confirm('¿Eliminar el token? Volverás a usar el token del servidor (si está configurado).')) {
+        if (saveUserToken('')) {
+          alert('Token eliminado. Se usará el token del servidor.');
+          closeSettings();
+          // Actualizar el título del botón de token sin recargar la página
+          const settingsButton = document.querySelector('.icon-button[title*="Token"]');
+          if (settingsButton) {
+            settingsButton.title = "Configuración";
+          }
+          // No recargar la página para preservar la configuración actual
+        }
+      }
+    });
+  }
+  
+  // El back-button ya tiene un listener que maneja el cierre de settings-container
+  // No necesitamos agregar otro listener aquí
+  
+  // Ver JSON - evitar múltiples listeners
+  if (viewJsonBtn && !viewJsonBtn.dataset.listenerAdded) {
+    viewJsonBtn.dataset.listenerAdded = 'true';
+    viewJsonBtn.addEventListener('click', async () => {
+      try {
+        // Usar el roomId obtenido al inicio de la función, o intentar obtenerlo de nuevo
+        let currentRoomId = roomId;
+        if (!currentRoomId) {
+          try {
+            if (typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
+              currentRoomId = await OBR.room.getId();
+            }
+          } catch (e) {
+            console.warn('No se pudo obtener roomId:', e);
+          }
+        }
+        const config = getPagesJSON(currentRoomId) || await getDefaultJSON();
+        const jsonStr = JSON.stringify(config, null, 2);
+        
+        // Crear un modal para mostrar el JSON
+        const jsonModal = document.createElement('div');
+        jsonModal.style.cssText = `
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: ${CSS_VARS.bgPrimary};
-    z-index: 1000;
+          background: rgba(0, 0, 0, 0.8);
+          z-index: 10001;
     display: flex;
-    flex-direction: column;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
-  
-  const header = document.createElement('div');
-  header.style.cssText = `
-    background: ${CSS_VARS.bgPrimary};
-    border-bottom: 1px solid ${CSS_VARS.borderPrimary};
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  `;
-  
-  header.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <button id="back-from-token" style="
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        `;
+        
+        const jsonContent = document.createElement('div');
+        jsonContent.style.cssText = `
+          background: #1a1a1a;
+          border: 1px solid ${CSS_VARS.borderPrimary};
+          border-radius: 8px;
+          padding: 24px;
+          max-width: 90%;
+          max-height: 90vh;
+          overflow: auto;
+          position: relative;
+        `;
+        
+        jsonContent.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h2 style="color: #fff; font-size: 18px; font-weight: 700; margin: 0; font-family: Roboto, Helvetica, Arial, sans-serif;">JSON de Configuración</h2>
+            <button id="close-json-modal" style="
         background: ${CSS_VARS.bgPrimary};
         border: 1px solid ${CSS_VARS.borderPrimary};
         border-radius: 6px;
@@ -2395,218 +4302,150 @@ function showTokenConfig() {
         color: #e0e0e0;
         cursor: pointer;
         font-size: 14px;
-        transition: all 0.2s;
-      ">← Volver</button>
-      <div>
-        <h1 style="font-family: Roboto, Helvetica, Arial, sans-serif; color: #fff; font-size: 18px; line-height: 24px; font-weight: 700; margin: 0;">🔑 Configurar Token de Notion</h1>
+              font-family: Roboto, Helvetica, Arial, sans-serif;
+            ">Cerrar</button>
       </div>
-    </div>
-  `;
-  
-  const contentArea = document.createElement('div');
-  contentArea.style.cssText = `
-    flex: 1;
-    padding: 24px;
-    overflow-y: auto;
-    max-width: 600px;
-    margin: 0 auto;
-    width: 100%;
-  `;
-  
-  contentArea.innerHTML = `
-    <div style="margin-bottom: 24px;">
-      <p style="color: #999; font-size: 14px; margin-bottom: 16px; line-height: 1.6;">
-        Configura tu token de Notion para usar tus propias páginas. Este token es global para toda la extensión (todas las rooms).
-      </p>
-      
-      <div style="background: ${CSS_VARS.bgPrimary}; border: 1px solid ${CSS_VARS.borderPrimary}; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-        <h3 style="color: #fff; font-size: 14px; font-weight: 700; margin-bottom: 12px; font-family: Roboto, Helvetica, Arial, sans-serif;">📝 Cómo obtener tu token:</h3>
-        <ol style="color: #ccc; font-size: 13px; line-height: 1.8; margin-left: 20px; padding-left: 0; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">
-          <li>Ve a <a href="https://www.notion.so/my-integrations" target="_blank" style="color: #4a9eff; text-decoration: none;">notion.so/my-integrations</a></li>
-          <li><strong>Crea una nueva integración:</strong>
-            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
-              <li>Clic en <strong>"+ Nueva integración"</strong></li>
-              <li>Dale un nombre (ej: "Owlbear Notion")</li>
-              <li>Selecciona el workspace donde están tus páginas</li>
-              <li>Clic en <strong>"Enviar"</strong></li>
-            </ul>
-          </li>
-          <li><strong>Copia el token:</strong>
-            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
-              <li>En la página de la integración, busca <strong>"Internal Integration Token"</strong></li>
-              <li>Clic en <strong>"Mostrar"</strong> y copia el token completo</li>
-            </ul>
-          </li>
-          <li><strong>Comparte tus páginas:</strong>
-            <ul style="margin-top: 8px; margin-left: 20px; padding-left: 0;">
-              <li>En Notion, abre cada página que quieres usar</li>
-              <li>Clic en <strong>"Compartir"</strong> (arriba a la derecha)</li>
-              <li>Busca el nombre de tu integración y dale acceso</li>
-            </ul>
-          </li>
-          <li>Pega el token en el campo de abajo y guarda</li>
-        </ol>
-      </div>
-      
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; color: #fff; font-size: 14px; font-weight: 400; margin-bottom: 8px; font-family: Roboto, Helvetica, Arial, sans-serif;">
-          Token de Notion:
-        </label>
-        <input 
-          type="password" 
-          id="token-input" 
-          placeholder="ntn_... o secret_..." 
-          value="${currentToken}"
-          style="
-            width: 100%;
-            padding: 12px;
+          <pre id="json-display" style="
             background: ${CSS_VARS.bgPrimary};
             border: 1px solid ${CSS_VARS.borderPrimary};
             border-radius: 6px;
-            color: #fff;
-            font-size: 14px;
-            font-family: monospace;
-            box-sizing: border-box;
-          "
-        />
-        ${currentToken ? `<p style="color: #888; font-size: 12px; margin-top: 8px; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">Token actual: ${maskedToken}</p>` : ''}
-      </div>
-      
-      <div id="token-error" style="
-        display: none;
-        background: #4a2d2d;
-        border: 1px solid #6a4040;
-        border-radius: 6px;
-        padding: 12px;
-        color: #ff6b6b;
-        font-size: 13px;
-        margin-bottom: 16px;
-      "></div>
-      
-      <div style="display: flex; gap: 16px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid ${CSS_VARS.borderPrimary};">
-        <button id="clear-token" style="
-          background: ${CSS_VARS.bgPrimary};
-          border: 1px solid ${CSS_VARS.borderPrimary};
-          border-radius: 6px;
-          padding: 10px 20px;
+            padding: 16px;
           color: #e0e0e0;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 400;
-          font-family: Roboto, Helvetica, Arial, sans-serif;
-          transition: all 0.2s;
-          flex: 1;
-        ">Eliminar Token</button>
-        <button id="save-token" style="
-          background: #4a9eff;
-          border: none;
-          border-radius: 6px;
-          padding: 10px 20px;
-          color: #fff;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 700;
-          font-family: Roboto, Helvetica, Arial, sans-serif;
-          transition: all 0.2s;
-          flex: 1;
-        ">Guardar Token</button>
-      </div>
-    </div>
-  `;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-x: auto;
+            white-space: pre;
+            margin: 0;
+          ">${jsonStr}</pre>
+        `;
+        
+        jsonModal.appendChild(jsonContent);
+        document.body.appendChild(jsonModal);
+        
+        const closeBtn = jsonContent.querySelector('#close-json-modal');
+        const closeModal = () => {
+          document.body.removeChild(jsonModal);
+        };
+        
+        closeBtn.addEventListener('click', closeModal);
+        jsonModal.addEventListener('click', (e) => {
+          if (e.target === jsonModal) {
+            closeModal();
+          }
+        });
+      } catch (e) {
+        console.error('Error al mostrar JSON:', e);
+        alert('❌ Error al mostrar JSON: ' + e.message);
+      }
+    });
+  }
   
-  tokenContainer.appendChild(header);
-  tokenContainer.appendChild(contentArea);
-  document.body.appendChild(tokenContainer);
-  
-  const tokenInput = contentArea.querySelector('#token-input');
-  const errorDiv = contentArea.querySelector('#token-error');
-  const saveBtn = contentArea.querySelector('#save-token');
-  const clearBtn = contentArea.querySelector('#clear-token');
-  const backBtn = header.querySelector('#back-from-token');
-  
-  // Estilos hover
-  saveBtn.addEventListener('mouseenter', () => {
-    saveBtn.style.background = '#5aaeff';
-  });
-  saveBtn.addEventListener('mouseleave', () => {
-    saveBtn.style.background = '#4a9eff';
-  });
-  
-  clearBtn.addEventListener('mouseenter', () => {
-    clearBtn.style.background = CSS_VARS.bgHover;
-    clearBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  clearBtn.addEventListener('mouseleave', () => {
-    clearBtn.style.background = CSS_VARS.bgPrimary;
-    clearBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  clearBtn.addEventListener('mousedown', () => {
-    clearBtn.style.background = CSS_VARS.bgActive;
-    clearBtn.style.borderColor = CSS_VARS.borderActive;
-  });
-  clearBtn.addEventListener('mouseup', () => {
-    clearBtn.style.background = CSS_VARS.bgHover;
-    clearBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  
-  backBtn.addEventListener('mouseenter', () => {
-    backBtn.style.background = CSS_VARS.bgHover;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  backBtn.addEventListener('mouseleave', () => {
-    backBtn.style.background = CSS_VARS.bgPrimary;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  backBtn.addEventListener('mousedown', () => {
-    backBtn.style.background = CSS_VARS.bgActive;
-    backBtn.style.borderColor = CSS_VARS.borderActive;
-  });
-  backBtn.addEventListener('mouseup', () => {
-    backBtn.style.background = CSS_VARS.bgHover;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  
-  // Guardar token
-  saveBtn.addEventListener('click', () => {
-    const token = tokenInput.value.trim();
-    
-    if (!token) {
-      errorDiv.textContent = 'Por favor, ingresa un token de Notion';
-      errorDiv.style.display = 'block';
+  // Cargar JSON - evitar múltiples listeners
+  if (loadJsonBtn && !loadJsonBtn.dataset.listenerAdded) {
+    loadJsonBtn.dataset.listenerAdded = 'true';
+    loadJsonBtn.addEventListener('click', async () => {
+      try {
+        // Crear input de archivo oculto
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            
+            // Validar estructura básica
+            if (!parsed.categories || !Array.isArray(parsed.categories)) {
+              alert('❌ El JSON debe tener un array "categories"');
       return;
     }
     
-    if (saveUserToken(token)) {
-      errorDiv.style.display = 'none';
-      alert('✅ Token guardado exitosamente. Ahora puedes usar tus propias páginas de Notion.');
-      closeTokenConfig();
-      // Recargar la página para aplicar el nuevo token
+            // Usar el roomId obtenido al inicio de la función, o intentar obtenerlo de nuevo
+            let currentRoomId = roomId;
+            if (!currentRoomId) {
+              try {
+                if (typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
+                  currentRoomId = await OBR.room.getId();
+                }
+              } catch (e) {
+                console.warn('No se pudo obtener roomId:', e);
+              }
+            }
+            
+            // Guardar la nueva configuración
+            if (savePagesJSON(parsed, currentRoomId)) {
+              alert('✅ JSON cargado exitosamente. La configuración ha sido actualizada.');
+              closeSettings();
+              
+              // Actualizar la vista principal directamente sin recargar la página
+              const pageList = document.getElementById("page-list");
+              if (pageList) {
+                renderPagesByCategories(parsed, pageList, currentRoomId);
+              } else {
+                // Si no se encuentra el pageList, recargar la página como fallback
       window.location.reload();
+              }
     } else {
-      errorDiv.textContent = 'Error al guardar el token. Revisa la consola para más detalles.';
-      errorDiv.style.display = 'block';
-    }
-  });
-  
-  // Eliminar token
-  clearBtn.addEventListener('click', () => {
-    if (confirm('¿Eliminar el token? Volverás a usar el token del servidor (si está configurado).')) {
-      if (saveUserToken('')) {
-        alert('Token eliminado. Se usará el token del servidor.');
-        closeTokenConfig();
-        window.location.reload();
+              alert('❌ Error al guardar el JSON. Revisa la consola para más detalles.');
+            }
+          } catch (e) {
+            console.error('Error al cargar JSON:', e);
+            alert('❌ Error al cargar JSON: ' + e.message);
+          }
+          
+          // Limpiar el input
+          document.body.removeChild(fileInput);
+        }, { once: true }); // El listener del change solo se ejecuta una vez
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+      } catch (e) {
+        console.error('Error al cargar JSON:', e);
+        alert('❌ Error al cargar JSON: ' + e.message);
       }
-    }
-  });
+    });
+  }
   
-  // Cerrar
-  const closeTokenConfig = () => {
-    document.body.removeChild(tokenContainer);
-    if (mainContainer) mainContainer.classList.remove('hidden');
-    if (pageList) pageList.classList.remove('hidden');
-  };
-  
-  backBtn.addEventListener('click', closeTokenConfig);
+  // Descargar JSON - evitar múltiples listeners
+  if (downloadJsonBtn && !downloadJsonBtn.dataset.listenerAdded) {
+    downloadJsonBtn.dataset.listenerAdded = 'true';
+    downloadJsonBtn.addEventListener('click', async () => {
+      try {
+        // Usar el roomId obtenido al inicio de la función, o intentar obtenerlo de nuevo
+        let currentRoomId = roomId;
+        if (!currentRoomId) {
+          try {
+            if (typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
+              currentRoomId = await OBR.room.getId();
+            }
+          } catch (e) {
+            console.warn('No se pudo obtener roomId:', e);
+          }
+        }
+        const config = getPagesJSON(currentRoomId) || await getDefaultJSON();
+        const jsonStr = JSON.stringify(config, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `notion-pages-config-${currentRoomId ? getFriendlyRoomId(currentRoomId) : 'default'}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert('✅ JSON descargado exitosamente');
+      } catch (e) {
+        console.error('Error al descargar JSON:', e);
+        alert('❌ Error al descargar JSON: ' + e.message);
+      }
+    });
+  }
 }
 
 // ============================================
@@ -2623,70 +4462,9 @@ function createContextMenu(items, position, onClose) {
 
   const menu = document.createElement('div');
   menu.id = 'context-menu';
-  menu.style.cssText = `
-    position: fixed;
-    left: ${position.x}px;
-    top: ${position.y}px;
-    background: rgba(30, 30, 30, 0.95);
-    backdrop-filter: blur(10px);
-    border-radius: 8px;
-    padding: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    min-width: 180px;
-    z-index: 10000;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-    font-size: 14px;
-  `;
-
-  items.forEach((item, index) => {
-    if (item.separator) {
-      const separator = document.createElement('div');
-      separator.style.cssText = `
-        height: 1px;
-        background: rgba(255, 255, 255, 0.1);
-        margin: 4px 0;
-      `;
-      menu.appendChild(separator);
-      return;
-    }
-
-    const menuItem = document.createElement('div');
-    menuItem.className = 'context-menu-item';
-    menuItem.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      color: #e0e0e0;
-      transition: background 0.15s;
-    `;
-
-    menuItem.innerHTML = `
-      <span style="font-size: 16px; width: 20px; text-align: center;">${item.icon || ''}</span>
-      <span>${item.text}</span>
-    `;
-
-    menuItem.addEventListener('mouseenter', () => {
-      menuItem.style.background = 'rgba(255, 255, 255, 0.1)';
-    });
-
-    menuItem.addEventListener('mouseleave', () => {
-      menuItem.style.background = 'transparent';
-    });
-
-    menuItem.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (item.action) {
-        item.action();
-      }
-      if (onClose) onClose();
-      menu.remove();
-    });
-
-    menu.appendChild(menuItem);
-  });
+  // left y top son dinámicos (position.x, position.y) - se mantienen inline
+  menu.style.left = `${position.x}px`;
+  menu.style.top = `${position.y}px`;
 
   // Cerrar al hacer click fuera
   const closeMenu = (e) => {
@@ -2696,6 +4474,59 @@ function createContextMenu(items, position, onClose) {
       if (onClose) onClose();
     }
   };
+
+  items.forEach((item, index) => {
+    if (item.separator) {
+      const separator = document.createElement('div');
+      separator.className = 'context-menu-separator';
+      menu.appendChild(separator);
+      return;
+    }
+
+    const menuItem = document.createElement('div');
+    menuItem.className = 'context-menu-item';
+    // Estilos movidos a CSS
+
+    // Si el icon es una ruta de imagen, usar img, sino usar emoji/texto
+    let iconHtml = '';
+    if (item.icon && (item.icon.startsWith('img/') || item.icon.startsWith('/img/'))) {
+      // Detectar si necesita rotación (para flechas arriba/abajo)
+      let rotation = '';
+      if (item.text === 'Mover arriba') {
+        rotation = 'transform: rotate(90deg);';
+      } else if (item.text === 'Mover abajo') {
+        rotation = 'transform: rotate(-90deg);';
+      }
+      iconHtml = `<img src="${item.icon}" alt="" style="width: 16px; height: 16px; display: block; ${rotation}" />`;
+    } else {
+      iconHtml = `<span style="font-size: 16px; width: 20px; text-align: center;">${item.icon || ''}</span>`;
+    }
+
+    menuItem.innerHTML = `
+      ${iconHtml}
+      <span>${item.text}</span>
+    `;
+
+    // Hover styles movidos a CSS con :hover
+
+    menuItem.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      // Cerrar el menú primero
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+      if (onClose) onClose();
+      // Ejecutar la acción después de cerrar el menú
+      if (item.action) {
+        try {
+          await item.action();
+        } catch (error) {
+          console.error('Error ejecutando acción del menú:', error);
+      }
+      }
+    });
+
+    menu.appendChild(menuItem);
+  });
 
   // Usar setTimeout para evitar que el click que abrió el menú lo cierre inmediatamente
   setTimeout(() => {
@@ -2720,105 +4551,65 @@ function createContextMenu(items, position, onClose) {
 function showModalForm(title, fields, onSubmit, onCancel) {
   const overlay = document.createElement('div');
   overlay.id = 'modal-overlay';
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    z-index: 10001;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
+  overlay.className = 'modal';
 
   const modal = document.createElement('div');
-  modal.style.cssText = `
-    background: rgba(30, 30, 30, 0.95);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    padding: 24px;
-    min-width: 400px;
-    max-width: 500px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  `;
+  modal.className = 'modal__content';
 
   modal.innerHTML = `
-    <h2 style="color: #fff; font-size: 20px; font-weight: 700; margin-bottom: 20px;">${title}</h2>
-    <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+    <h2 class="modal__title">${title}</h2>
+    <form id="modal-form" class="form">
       ${fields.map(field => `
-        <div>
-          <label style="display: block; color: #999; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">
+        <div class="form__field">
+          <label class="form__label">
             ${field.label}${field.required ? ' *' : ''}
           </label>
           ${field.type === 'textarea' ? `
             <textarea 
               id="field-${field.name}" 
               name="${field.name}"
+              class="textarea"
               ${field.required ? 'required' : ''}
               placeholder="${field.placeholder || ''}"
-              style="
-                width: 100%;
-                padding: 10px 12px;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 6px;
-                color: #e0e0e0;
-                font-size: 14px;
-                font-family: Roboto, Helvetica, Arial, sans-serif;
-                resize: vertical;
-                min-height: 60px;
-              "
             >${field.value || ''}</textarea>
+          ` : field.type === 'select' ? `
+            <select 
+              id="field-${field.name}" 
+              name="${field.name}"
+              class="select"
+              ${field.required ? 'required' : ''}
+            >
+              ${(field.options || []).map(opt => {
+                // Escapar el valor para HTML (especialmente importante para JSON con corchetes y comillas)
+                // Usar HTML entities para todos los caracteres especiales
+                const optValue = String(opt.value)
+                  .replace(/&/g, '&amp;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#39;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;');
+                const fieldValue = String(field.value || '');
+                const isSelected = fieldValue === String(opt.value);
+                return `<option value="${optValue}" ${isSelected ? 'selected' : ''}>${opt.label}</option>`;
+              }).join('')}
+            </select>
           ` : `
             <input 
               type="${field.type || 'text'}" 
               id="field-${field.name}" 
               name="${field.name}"
+              class="input"
               ${field.required ? 'required' : ''}
               placeholder="${field.placeholder || ''}"
               value="${field.value || ''}"
-              style="
-                width: 100%;
-                padding: 10px 12px;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 6px;
-                color: #e0e0e0;
-                font-size: 14px;
-                font-family: Roboto, Helvetica, Arial, sans-serif;
-              "
             />
           `}
-          ${field.help ? `<div style="color: #666; font-size: 12px; margin-top: 4px;">${field.help}</div>` : ''}
+          ${field.help ? `<div class="form__help">${field.help}</div>` : ''}
         </div>
       `).join('')}
-      <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 8px;">
-        <button type="button" id="modal-cancel" style="
-          padding: 10px 20px;
-          background: transparent;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          border-radius: 6px;
-          color: #e0e0e0;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-        ">Cancelar</button>
-        <button type="submit" id="modal-submit" style="
-          padding: 10px 20px;
-          background: #4a9eff;
-          border: none;
-          border-radius: 6px;
-          color: #fff;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 700;
-          transition: all 0.2s;
-        ">Guardar</button>
+      <div class="form__actions">
+        <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">Cancelar</button>
+        <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">Guardar</button>
       </div>
     </form>
   `;
@@ -2832,6 +4623,13 @@ function showModalForm(title, fields, onSubmit, onCancel) {
 
   const close = () => {
     overlay.remove();
+    // Asegurarse de que todos los menús contextuales estén cerrados
+    const existingMenus = document.querySelectorAll('#context-menu');
+    existingMenus.forEach(menu => menu.remove());
+    // Restaurar opacidad de todos los botones de menú contextual
+    document.querySelectorAll('.category-context-menu-button, .page-context-menu-button').forEach(btn => {
+      btn.style.opacity = '0';
+    });
     if (onCancel) onCancel();
   };
 
@@ -2845,306 +4643,42 @@ function showModalForm(title, fields, onSubmit, onCancel) {
     const formData = {};
     fields.forEach(field => {
       const input = modal.querySelector(`#field-${field.name}`);
+      if (input) {
+        // Para selects, obtener el valor directamente sin trim
+        if (field.type === 'select') {
+          const selectedIndex = input.selectedIndex;
+          if (selectedIndex >= 0 && input.options[selectedIndex]) {
+            // Obtener el valor del option seleccionado
+            const selectedOption = input.options[selectedIndex];
+            formData[field.name] = selectedOption.getAttribute('value') || selectedOption.value || '';
+          } else {
+            formData[field.name] = '';
+          }
+        } else {
       formData[field.name] = input.value.trim();
+        }
+      }
     });
+    console.log('📝 Datos del formulario:', formData); // Debug
     if (onSubmit) onSubmit(formData);
     close();
   });
 
-  // Focus en el primer campo
-  const firstInput = modal.querySelector('input, textarea');
+  // Focus en el primer campo (con manejo de errores para evitar conflictos con extensiones)
+  const firstInput = modal.querySelector('input[type="text"], input[type="url"], textarea');
   if (firstInput) {
-    setTimeout(() => firstInput.focus(), 100);
+    setTimeout(() => {
+      try {
+        firstInput.focus();
+    } catch (e) {
+        // Ignorar errores de focus (pueden ser causados por extensiones del navegador)
+        console.debug('No se pudo hacer focus en el campo:', e);
+      }
+    }, 100);
   }
 }
 
 // Función para mostrar el editor de JSON
-async function showJSONEditor(pagesConfig, roomId = null) {
-  // SIEMPRE leer desde localStorage para obtener la versión más actualizada
-  // El parámetro pagesConfig puede estar desactualizado
-  const currentConfig = getPagesJSON(roomId) || pagesConfig || await getDefaultJSON();
-  console.log('📖 Abriendo editor JSON - Configuración cargada desde localStorage:', currentConfig);
-  
-  // Ocultar el contenedor principal y mostrar el editor
-  const mainContainer = document.querySelector('.container');
-  const pageList = document.getElementById("page-list");
-  const notionContainer = document.getElementById("notion-container");
-  
-  if (mainContainer) mainContainer.classList.add('hidden');
-  if (pageList) pageList.classList.add('hidden');
-  if (notionContainer) notionContainer.classList.add('hidden');
-  
-  // Crear contenedor del editor (estilo Notion)
-  const editorContainer = document.createElement('div');
-  editorContainer.id = 'json-editor-container';
-  editorContainer.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: ${CSS_VARS.bgPrimary};
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
-  
-  // Header estilo Notion
-  const header = document.createElement('div');
-  header.style.cssText = `
-    background: ${CSS_VARS.bgPrimary};
-    border-bottom: 1px solid ${CSS_VARS.borderPrimary};
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  `;
-  
-  header.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <button id="back-from-editor" style="
-        background: ${CSS_VARS.bgPrimary};
-        border: 1px solid ${CSS_VARS.borderPrimary};
-        border-radius: 6px;
-        padding: 6px 12px;
-        color: #e0e0e0;
-        cursor: pointer;
-        font-size: 14px;
-        transition: all 0.2s;
-      ">← Volver</button>
-      <div>
-        <h1 style="font-family: Roboto, Helvetica, Arial, sans-serif; color: #fff; font-size: 18px; line-height: 24px; font-weight: 700; margin: 0;">📝 Editar Configuración</h1>
-        ${roomId ? `<p style="color: #999; font-size: 11px; margin: 2px 0 0 0;">Room: ${getFriendlyRoomId(roomId)}</p>` : ''}
-      </div>
-    </div>
-  `;
-  
-  // Área de contenido
-  const contentArea = document.createElement('div');
-  contentArea.style.cssText = `
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 24px;
-    max-width: 900px;
-    margin: 0 auto;
-    width: 100%;
-    overflow: hidden;
-  `;
-  
-  contentArea.innerHTML = `
-    <div style="margin-bottom: 16px;">
-      <p style="color: #999; font-size: 14px; margin-bottom: 12px; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 400;">
-        Edita el JSON para gestionar tus categorías y páginas. La estructura debe tener un array "categories" con objetos que contengan "name" y "pages".
-      </p>
-    </div>
-    <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
-      <textarea id="json-textarea" style="
-        background: ${CSS_VARS.bgPrimary};
-        border: 1px solid ${CSS_VARS.borderPrimary};
-        border-radius: 8px;
-        padding: 20px;
-        color: #e0e0e0;
-        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
-        font-size: 13px;
-        line-height: 1.6;
-        flex: 1;
-        resize: none;
-        white-space: pre;
-        overflow-wrap: normal;
-        overflow-x: auto;
-        overflow-y: auto;
-        transition: border-color 0.2s;
-      ">${JSON.stringify(currentConfig, null, 2)}</textarea>
-      <div id="json-error" style="
-        color: #ff6b6b;
-        font-size: 13px;
-        display: none;
-        padding: 12px 16px;
-        background: rgba(255, 107, 107, 0.1);
-        border: 1px solid rgba(255, 107, 107, 0.3);
-        border-radius: 6px;
-      "></div>
-      <div style="display: flex; gap: 16px; justify-content: flex-end; padding-top: 16px;">
-        <button id="reset-json" style="
-          background: ${CSS_VARS.bgPrimary};
-          border: 1px solid ${CSS_VARS.borderPrimary};
-          border-radius: 6px;
-          padding: 10px 20px;
-          color: #e0e0e0;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 400;
-          font-family: Roboto, Helvetica, Arial, sans-serif;
-          transition: all 0.2s;
-          flex:1;
-        ">Resetear</button>
-        <button id="save-json" style="
-          background: #4a9eff;
-          border: none;
-          border-radius: 6px;
-          padding: 10px 24px;
-          color: #fff;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 700;
-          font-family: Roboto, Helvetica, Arial, sans-serif;
-          transition: all 0.2s;
-          flex:1;
-        ">Guardar</button>
-      </div>
-    </div>
-  `;
-  
-  editorContainer.appendChild(header);
-  editorContainer.appendChild(contentArea);
-  document.body.appendChild(editorContainer);
-  
-  const textarea = contentArea.querySelector('#json-textarea');
-  const errorDiv = contentArea.querySelector('#json-error');
-  
-  // Estilos hover para botones
-  const resetBtn = contentArea.querySelector('#reset-json');
-  const saveBtn = contentArea.querySelector('#save-json');
-  const backBtn = header.querySelector('#back-from-editor');
-  
-  resetBtn.addEventListener('mouseenter', () => {
-    resetBtn.style.background = CSS_VARS.bgHover;
-    resetBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  resetBtn.addEventListener('mouseleave', () => {
-    resetBtn.style.background = CSS_VARS.bgPrimary;
-    resetBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  resetBtn.addEventListener('mousedown', () => {
-    resetBtn.style.background = CSS_VARS.bgActive;
-    resetBtn.style.borderColor = CSS_VARS.borderActive;
-  });
-  resetBtn.addEventListener('mouseup', () => {
-    resetBtn.style.background = CSS_VARS.bgHover;
-    resetBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  
-  saveBtn.addEventListener('mouseenter', () => {
-    saveBtn.style.background = '#5aaeff';
-  });
-  saveBtn.addEventListener('mouseleave', () => {
-    saveBtn.style.background = '#4a9eff';
-  });
-  
-  backBtn.addEventListener('mouseenter', () => {
-    backBtn.style.background = CSS_VARS.bgHover;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  backBtn.addEventListener('mouseleave', () => {
-    backBtn.style.background = CSS_VARS.bgPrimary;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  backBtn.addEventListener('mousedown', () => {
-    backBtn.style.background = CSS_VARS.bgActive;
-    backBtn.style.borderColor = CSS_VARS.borderActive;
-  });
-  backBtn.addEventListener('mouseup', () => {
-    backBtn.style.background = CSS_VARS.bgHover;
-    backBtn.style.borderColor = CSS_VARS.borderPrimary;
-  });
-  
-  // Función para cerrar el editor
-  const closeEditor = () => {
-    document.body.removeChild(editorContainer);
-    if (mainContainer) mainContainer.classList.remove('hidden');
-    if (pageList) pageList.classList.remove('hidden');
-  };
-  
-  // Guardar JSON
-  saveBtn.addEventListener('click', async () => {
-    try {
-      console.log('💾 Guardando JSON para roomId:', roomId);
-      const jsonText = textarea.value.trim();
-      const parsed = JSON.parse(jsonText);
-      
-      // Validar estructura básica
-      if (!parsed.categories || !Array.isArray(parsed.categories)) {
-        throw new Error('El JSON debe tener un array "categories"');
-      }
-      
-      // Verificar que roomId esté disponible
-      if (!roomId) {
-        console.error('❌ ERROR: roomId es null/undefined al guardar');
-        throw new Error('No se pudo identificar la room. Recarga la extensión.');
-      }
-      
-      // Guardar (con roomId)
-      console.log('💾 Llamando a savePagesJSON con roomId:', roomId);
-      savePagesJSON(parsed, roomId);
-      errorDiv.style.display = 'none';
-      textarea.style.borderColor = CSS_VARS.borderPrimary;
-      
-      // Obtener el JSON guardado desde localStorage para asegurar que coincida exactamente
-      console.log('📖 Obteniendo JSON guardado desde localStorage...');
-      // Leer inmediatamente desde localStorage (es síncrono, no necesita delay)
-      const savedConfig = getPagesJSON(roomId);
-      if (savedConfig) {
-        // Actualizar el textarea con el JSON guardado (formateado) desde localStorage
-        const formattedJSON = JSON.stringify(savedConfig, null, 2);
-        textarea.value = formattedJSON;
-        // Forzar actualización visual del textarea
-        textarea.scrollTop = 0; // Resetear scroll
-        console.log('✅ Textarea actualizado con el JSON guardado desde localStorage');
-      } else {
-        // Fallback: usar el parsed si no se puede obtener de localStorage
-        const formattedJSON = JSON.stringify(parsed, null, 2);
-        textarea.value = formattedJSON;
-        textarea.scrollTop = 0;
-        console.log('⚠️ Usando JSON parsed como fallback');
-      }
-      
-      // Recargar la lista de páginas sin cerrar el editor
-      console.log('🔄 Recargando configuración para roomId:', roomId);
-      const savedConfigForList = getPagesJSON(roomId);
-      const newConfig = savedConfigForList || await getDefaultJSON();
-      const pageListEl = document.getElementById("page-list");
-      if (pageListEl) {
-        renderPagesByCategories(newConfig, pageListEl, roomId);
-      }
-    } catch (e) {
-      console.error('❌ Error al guardar:', e);
-      errorDiv.textContent = `Error: ${e.message}`;
-      errorDiv.style.display = 'block';
-      textarea.style.borderColor = '#ff6b6b';
-    }
-  });
-  
-  // Resetear JSON
-  resetBtn.addEventListener('click', async () => {
-    if (confirm('¿Resetear al JSON por defecto? Se perderán todos los cambios para esta room.')) {
-      const defaultConfig = await getDefaultJSON();
-      textarea.value = JSON.stringify(defaultConfig, null, 2);
-      errorDiv.style.display = 'none';
-      textarea.style.borderColor = CSS_VARS.borderPrimary;
-    }
-  });
-  
-  // Validar JSON en tiempo real
-  textarea.addEventListener('input', () => {
-    try {
-      JSON.parse(textarea.value);
-      errorDiv.style.display = 'none';
-      textarea.style.borderColor = CSS_VARS.borderPrimary;
-    } catch (e) {
-      textarea.style.borderColor = '#ff6b6b';
-    }
-  });
-  
-  // Volver
-  backBtn.addEventListener('click', closeEditor);
-  
-  // Auto-focus
-  textarea.focus();
-  // Scroll al inicio
-  textarea.scrollTop = 0;
-}
 
 // Función para mostrar el editor visual tipo Notion
 async function showVisualEditor(pagesConfig, roomId = null) {
@@ -3163,60 +4697,33 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   // Crear contenedor del editor
   const editorContainer = document.createElement('div');
   editorContainer.id = 'visual-editor-container';
-  editorContainer.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: ${CSS_VARS.bgPrimary};
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    font-family: Roboto, Helvetica, Arial, sans-serif;
-  `;
+  // Estilos movidos a CSS
 
   // Header
   const header = document.createElement('div');
-  header.style.cssText = `
-    background: ${CSS_VARS.bgPrimary};
-    border-bottom: 1px solid ${CSS_VARS.borderPrimary};
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  `;
+  header.className = 'visual-editor-header';
 
   header.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <button id="back-from-visual-editor" style="
-        background: ${CSS_VARS.bgPrimary};
-        border: 1px solid ${CSS_VARS.borderPrimary};
-        border-radius: 6px;
-        padding: 6px 12px;
-        color: #e0e0e0;
-        cursor: pointer;
-        font-size: 14px;
-        transition: all 0.2s;
-      ">← Volver</button>
-      <h1 style="margin: 0; font-size: 18px; font-weight: 700; color: #fff;">Editor de Configuración</h1>
+    <h1>Editor de Configuración</h1>
+    <div class="visual-editor-header-buttons">
+      <button id="editor-filter-btn" class="icon-button" title="Filtros">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 6H20M7 12H17M10 18H14" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button id="editor-add-btn" class="icon-button" title="Agregar">
+        <img src="img/icon-add.svg" alt="Agregar" class="icon-button-icon" />
+      </button>
     </div>
   `;
 
   // Área de contenido (sidebar tipo Notion)
   const contentArea = document.createElement('div');
   contentArea.id = 'visual-editor-content';
-  contentArea.style.cssText = `
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px;
-    max-width: 800px;
-    margin: 0 auto;
-    width: 100%;
-  `;
+  // Estilos movidos a CSS
 
   // Función para renderizar items recursivamente
-  const renderEditorItem = (item, parentElement, level = 0, path = []) => {
+  const renderEditorItem = (item, parentElement, level = 0, path = [], isExpanded = false) => {
     const itemDiv = document.createElement('div');
     itemDiv.className = 'editor-item';
     itemDiv.dataset.level = level;
@@ -3226,11 +4733,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     const isCategory = item.pages !== undefined || item.categories !== undefined;
     const hasChildren = (item.pages && item.pages.length > 0) || (item.categories && item.categories.length > 0);
 
-    itemDiv.style.cssText = `
-      margin-left: ${indent}px;
-      margin-bottom: 2px;
-      position: relative;
-    `;
+    itemDiv.className = 'editor-item';
+    // margin-left se calcula dinámicamente según el nivel - NO se puede mover a CSS
+    itemDiv.style.marginLeft = `${indent}px`;
 
     const itemRow = document.createElement('div');
     itemRow.className = 'editor-item-row';
@@ -3238,18 +4743,19 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 8px;
+      padding: 8px 12px;
       border-radius: 4px;
       cursor: pointer;
       transition: background 0.15s;
       position: relative;
+      background: rgba(255, 255, 255, 0.02);
+      margin-bottom: 2px;
     `;
 
-    // Toggle para categorías con hijos
+    // Toggle para carpetas con hijos
     if (isCategory && hasChildren) {
       const toggle = document.createElement('button');
       toggle.className = 'editor-toggle';
-      toggle.innerHTML = '▶';
       toggle.style.cssText = `
         background: transparent;
         border: none;
@@ -3261,9 +4767,13 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 10px;
         transition: transform 0.2s;
       `;
+      const toggleIcon = document.createElement('img');
+      toggleIcon.src = isExpanded ? 'img/folder-open.svg' : 'img/folder-close.svg';
+      toggleIcon.style.width = '16px';
+      toggleIcon.style.height = '16px';
+      toggle.appendChild(toggleIcon);
       itemRow.appendChild(toggle);
     } else {
       const spacer = document.createElement('div');
@@ -3271,48 +4781,94 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       itemRow.appendChild(spacer);
     }
 
-    // Icono
-    const icon = document.createElement('span');
-    icon.textContent = isCategory ? '📁' : '📄';
-    icon.style.fontSize = '16px';
-    itemRow.appendChild(icon);
+    // Icono - carpeta o círculo con inicial
+    if (isCategory) {
+      const folderIcon = document.createElement('img');
+      folderIcon.src = (isExpanded && hasChildren) ? 'img/folder-open.svg' : 'img/folder-close.svg';
+      folderIcon.style.width = '20px';
+      folderIcon.style.height = '20px';
+      itemRow.appendChild(folderIcon);
+    } else {
+      // Icono circular con inicial
+      const circleIcon = document.createElement('div');
+      const initial = item.name ? item.name.charAt(0).toUpperCase() : '?';
+      circleIcon.style.cssText = `
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #4a4a4a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 12px;
+        flex-shrink: 0;
+      `;
+      circleIcon.textContent = initial;
+      itemRow.appendChild(circleIcon);
+    }
 
     // Nombre
     const name = document.createElement('span');
     name.textContent = item.name;
-    name.style.cssText = `
-      flex: 1;
-      color: #e0e0e0;
-      font-size: 14px;
-    `;
+    name.className = 'editor-item-name';
+    // Estilos movidos a CSS
     itemRow.appendChild(name);
 
-    // Botón de menú contextual (•••)
+    // Icono a la derecha (Notion o ampersand)
+    if (!isCategory) {
+      const rightIcon = document.createElement('div');
+      // Detectar si es URL de Notion
+      const isNotionUrl = item.url && (item.url.includes('notion.so') || item.url.includes('notion.site'));
+      if (isNotionUrl) {
+        const notionIcon = document.createElement('div');
+        notionIcon.style.cssText = `
+          width: 20px;
+          height: 20px;
+      border-radius: 4px;
+          background: #4a4a4a;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          font-weight: 700;
+          font-size: 11px;
+          flex-shrink: 0;
+        `;
+        notionIcon.textContent = 'N';
+        rightIcon.appendChild(notionIcon);
+      } else {
+        const ampersandIcon = document.createElement('div');
+        ampersandIcon.style.cssText = `
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #999;
+          font-size: 16px;
+          font-weight: 400;
+          flex-shrink: 0;
+        `;
+        ampersandIcon.textContent = '&';
+        rightIcon.appendChild(ampersandIcon);
+      }
+      itemRow.appendChild(rightIcon);
+    }
+
+    // Botón de menú contextual
     const menuBtn = document.createElement('button');
     menuBtn.className = 'editor-menu-btn';
-    menuBtn.innerHTML = '⋯';
-    menuBtn.style.cssText = `
-      background: transparent;
-      border: none;
-      color: #666;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 18px;
-      line-height: 1;
-      opacity: 0;
-      transition: all 0.15s;
-    `;
+    // Estilos movidos a CSS - solo opacity se controla dinámicamente en hover
+    const menuIcon = document.createElement('img');
+    menuIcon.src = 'img/icon-contextualmenu.svg';
+    menuIcon.style.width = '16px';
+    menuIcon.style.height = '16px';
+    menuBtn.appendChild(menuIcon);
 
-    itemRow.addEventListener('mouseenter', () => {
-      itemRow.style.background = 'rgba(255, 255, 255, 0.05)';
-      menuBtn.style.opacity = '1';
-    });
-
-    itemRow.addEventListener('mouseleave', () => {
-      itemRow.style.background = 'transparent';
-      menuBtn.style.opacity = '0';
-    });
+    // Hover styles movidos a CSS con :hover
+    // Solo se mantiene el control dinámico de opacity si es necesario
 
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3321,7 +4877,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 
       if (isCategory) {
         menuItems.push(
-          { icon: '➕', text: 'Agregar categoría', action: () => addCategory(path) },
+          { icon: '➕', text: 'Agregar carpeta', action: () => addCategory(path) },
           { icon: '➕', text: 'Agregar página', action: () => addPage(path) },
           { separator: true },
           { icon: '✏️', text: 'Editar', action: () => editCategory(item, path) },
@@ -3334,7 +4890,8 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         );
       }
 
-      createContextMenu(menuItems, { x: rect.right, y: rect.top });
+      // Posicionar el menú a 8px del botón
+      createContextMenu(menuItems, { x: rect.right + 8, y: rect.bottom + 4 });
     });
 
     itemRow.appendChild(menuBtn);
@@ -3344,16 +4901,17 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     const childrenContainer = document.createElement('div');
     childrenContainer.className = 'editor-children';
     childrenContainer.style.cssText = `
-      display: ${hasChildren ? 'block' : 'none'};
-      margin-left: 24px;
+      display: ${isExpanded && hasChildren ? 'block' : 'none'};
+      margin-left: 20px;
+      margin-top: 2px;
     `;
 
     if (isCategory && hasChildren) {
-      // Renderizar subcategorías primero
+      // Renderizar subcarpetas primero
       if (item.categories && item.categories.length > 0) {
         item.categories.forEach((subcat, index) => {
           const newPath = path.length > 0 ? [...path, 'categories', index] : ['categories', index];
-          renderEditorItem(subcat, childrenContainer, level + 1, newPath);
+          renderEditorItem(subcat, childrenContainer, level + 1, newPath, false);
         });
       }
 
@@ -3361,7 +4919,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       if (item.pages && item.pages.length > 0) {
         item.pages.forEach((page, index) => {
           const newPath = path.length > 0 ? [...path, 'pages', index] : ['pages', index];
-          renderEditorItem(page, childrenContainer, level + 1, newPath);
+          renderEditorItem(page, childrenContainer, level + 1, newPath, false);
         });
       }
 
@@ -3370,9 +4928,18 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       if (toggle) {
         toggle.addEventListener('click', (e) => {
           e.stopPropagation();
-          const isExpanded = childrenContainer.style.display === 'block';
-          childrenContainer.style.display = isExpanded ? 'none' : 'block';
-          toggle.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+          const currentlyExpanded = childrenContainer.style.display === 'block';
+          childrenContainer.style.display = currentlyExpanded ? 'none' : 'block';
+          // Actualizar icono de carpeta
+          const folderIcon = itemRow.querySelector('img[src*="folder"]');
+          if (folderIcon) {
+            folderIcon.src = currentlyExpanded ? 'img/folder-close.svg' : 'img/folder-open.svg';
+          }
+          // Actualizar icono del toggle
+          const toggleIcon = toggle.querySelector('img');
+          if (toggleIcon) {
+            toggleIcon.src = currentlyExpanded ? 'img/folder-close.svg' : 'img/folder-open.svg';
+          }
         });
       }
     }
@@ -3399,9 +4966,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   // Funciones CRUD
   const addCategory = (parentPath = []) => {
     showModalForm(
-      'Agregar Categoría',
+      'Agregar Carpeta',
       [
-        { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la categoría' }
+        { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la carpeta' }
       ],
       (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -3412,7 +4979,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
           if (!config.categories) config.categories = [];
           config.categories.push(newCategory);
         } else {
-          // Agregar dentro de una categoría
+          // Agregar dentro de una carpeta
           const parent = navigatePath(config, parentPath);
           if (parent) {
             if (!parent.categories) parent.categories = [];
@@ -3449,14 +5016,14 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         }
         
         if (parentPath.length === 0) {
-          // Si no hay categorías, crear una
+          // Si no hay carpetas, crear una
           if (!config.categories || config.categories.length === 0) {
             config.categories = [{ name: 'General', pages: [], categories: [] }];
           }
           if (!config.categories[0].pages) config.categories[0].pages = [];
           config.categories[0].pages.push(newPage);
         } else {
-          // Agregar dentro de una categoría
+          // Agregar dentro de una carpeta
           const parent = navigatePath(config, parentPath);
           if (parent) {
             if (!parent.pages) parent.pages = [];
@@ -3472,7 +5039,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 
   const editCategory = (category, path) => {
     showModalForm(
-      'Editar Categoría',
+      'Editar Carpeta',
       [
         { name: 'name', label: 'Nombre', type: 'text', required: true, value: category.name }
       ],
@@ -3523,7 +5090,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   };
 
   const deleteCategory = (path) => {
-    if (!confirm('¿Eliminar esta categoría y todo su contenido?')) return;
+    if (!confirm('¿Eliminar esta carpeta y todo su contenido?')) return;
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
     const key = path[path.length - 2];
     const index = path[path.length - 1];
@@ -3553,34 +5120,10 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     const config = getPagesJSON(roomId) || currentConfig;
     contentArea.innerHTML = '';
     
-    // Botón para agregar categoría en nivel raíz
-    const addRootCategoryBtn = document.createElement('button');
-    addRootCategoryBtn.textContent = '➕ Nueva categoría';
-    addRootCategoryBtn.style.cssText = `
-      margin-bottom: 16px;
-      padding: 8px 16px;
-      background: rgba(74, 158, 255, 0.2);
-      border: 1px solid rgba(74, 158, 255, 0.3);
-      border-radius: 6px;
-      color: #4a9eff;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.2s;
-    `;
-    addRootCategoryBtn.addEventListener('mouseenter', () => {
-      addRootCategoryBtn.style.background = 'rgba(74, 158, 255, 0.3)';
-    });
-    addRootCategoryBtn.addEventListener('mouseleave', () => {
-      addRootCategoryBtn.style.background = 'rgba(74, 158, 255, 0.2)';
-    });
-    addRootCategoryBtn.addEventListener('click', () => addCategory());
-    contentArea.appendChild(addRootCategoryBtn);
-
-    // Renderizar categorías
+    // Renderizar carpetas
     if (config.categories && config.categories.length > 0) {
       config.categories.forEach((category, index) => {
-        renderEditorItem(category, contentArea, 0, ['categories', index]);
+        renderEditorItem(category, contentArea, 0, ['categories', index], false);
       });
     } else {
       const emptyState = document.createElement('div');
@@ -3590,8 +5133,8 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         color: #666;
       `;
       emptyState.innerHTML = `
-        <p style="margin-bottom: 12px;">No hay categorías</p>
-        <p style="font-size: 12px; color: #555;">Haz clic en "➕ Nueva categoría" para comenzar</p>
+        <p style="margin-bottom: 12px;">No hay carpetas</p>
+        <p style="font-size: 12px; color: #555;">Haz clic en el botón + para agregar una carpeta</p>
       `;
       contentArea.appendChild(emptyState);
     }
@@ -3601,19 +5144,33 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   editorContainer.appendChild(contentArea);
   document.body.appendChild(editorContainer);
 
-  // Botón volver
-  const backBtn = header.querySelector('#back-from-visual-editor');
-  backBtn.addEventListener('click', () => {
-    document.body.removeChild(editorContainer);
-    if (mainContainer) mainContainer.classList.remove('hidden');
-    if (pageList) pageList.classList.remove('hidden');
-    
-    // Recargar la lista de páginas
-    const savedConfig = getPagesJSON(roomId);
-    if (savedConfig && pageList) {
-      renderPagesByCategories(savedConfig, pageList, roomId);
-    }
-  });
+  // Event listeners para botones del header
+  const filterBtn = header.querySelector('#editor-filter-btn');
+  if (filterBtn) {
+    filterBtn.addEventListener('mouseenter', () => {
+      filterBtn.style.background = CSS_VARS.bgHover;
+    });
+    filterBtn.addEventListener('mouseleave', () => {
+      filterBtn.style.background = 'transparent';
+    });
+    filterBtn.addEventListener('click', () => {
+      // TODO: Implementar funcionalidad de filtros
+      console.log('Filtros - funcionalidad pendiente');
+    });
+  }
+
+  const addBtn = header.querySelector('#editor-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('mouseenter', () => {
+      addBtn.style.background = CSS_VARS.bgHover;
+    });
+    addBtn.addEventListener('mouseleave', () => {
+      addBtn.style.background = 'transparent';
+    });
+    addBtn.addEventListener('click', () => {
+      addCategory();
+    });
+  }
 
   // Inicializar editor
   refreshEditor();

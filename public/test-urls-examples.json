@@ -1,0 +1,50 @@
+{
+  "categories": [
+    {
+      "name": "Ejemplos de Prueba",
+      "pages": [
+        {
+          "name": "Google Drive - PDF",
+          "url": "https://drive.google.com/file/d/1M0HU86cyjBS0iySF64atkbRtaROpqxq_/view?usp=drive_link"
+        },
+        {
+          "name": "YouTube - Video",
+          "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        },
+        {
+          "name": "YouTube - Corto",
+          "url": "https://youtu.be/dQw4w9WgXcQ"
+        },
+        {
+          "name": "Vimeo - Video",
+          "url": "https://vimeo.com/76979871"
+        },
+        {
+          "name": "PDF Público - W3C",
+          "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+        },
+        {
+          "name": "PDF Público - Mozilla",
+          "url": "https://www.mozilla.org/en-US/foundation/documents/foundation-articles-of-incorporation.pdf"
+        },
+        {
+          "name": "CodePen - Ejemplo",
+          "url": "https://codepen.io/team/codepen/pen/ExaKmjw"
+        },
+        {
+          "name": "JSFiddle - Ejemplo",
+          "url": "https://jsfiddle.net/gh/get/library/pure/highcharts/highcharts/tree/master/samples/highcharts/demo/line-basic/"
+        },
+        {
+          "name": "GitHub - Gist",
+          "url": "https://gist.github.com/paulirish/5d52fb081b3570c81e3a"
+        },
+        {
+          "name": "GitHub - Repositorio",
+          "url": "https://github.com/octocat/Hello-World"
+        }
+      ]
+    }
+  ]
+}
+

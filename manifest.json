@@ -1,17 +1,16 @@
 {
-  "name": "Context panel",
-  "version": "2.0.0",
+  "name": "DM screen",
+  "version": "1.0.0",
   "manifest_version": 1,
   "author": "Lole",
-  "description": "Panel de contexto para organizar tu homebrew en Owlbear Rodeo",
+  "description": "A digital DM screen for Owlbear Rodeo. Keep notes, NPCs, and references inside the VTT during play.",
   "homepage_url": "https://github.com/lolergb/owlbear-notion-embed",
   "icon": "/icon.svg",
   "action": {
-    "title": "Context panel",
+    "title": "DM screen",
     "icon": "/icon.svg",
     "popover": "/index.html",
     "height": 800,
     "width": 600
   }
 }
-
