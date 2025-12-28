@@ -5215,7 +5215,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       [
         { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Folder name' }
       ],
-      (data) => {
+      async (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
         const newCategory = { name: data.name, pages: [], categories: [] };
         
@@ -5248,7 +5248,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' },
         { name: 'visibleToPlayers', label: 'Visible to all players', type: 'checkbox', value: false, help: 'Allow all players to see this page' }
       ],
-      (data) => {
+      async (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
         const newPage = {
           name: data.name,
@@ -5293,7 +5293,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       [
         { name: 'name', label: 'Nombre', type: 'text', required: true, value: category.name }
       ],
-      (data) => {
+      async (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
         const target = navigatePath(config, path);
         if (target) {
@@ -5315,7 +5315,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         { name: 'blockTypes', label: 'Block types (optional)', type: 'text', value: Array.isArray(page.blockTypes) ? page.blockTypes.join(', ') : (page.blockTypes || ''), help: 'Only for Notion URLs' },
         { name: 'visibleToPlayers', label: 'Visible to all players', type: 'checkbox', value: page.visibleToPlayers === true, help: 'Allow all players to see this page' }
       ],
-      (data) => {
+      async (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
         const target = navigatePath(config, path);
         if (target) {
@@ -5346,7 +5346,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     );
   };
 
-  const deleteCategory = (path) => {
+  const deleteCategory = async (path) => {
     if (!confirm('Delete this folder and all its content?')) return;
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
     const key = path[path.length - 2];
@@ -5359,7 +5359,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     }
   };
 
-  const deletePage = (path) => {
+  const deletePage = async (path) => {
     if (!confirm('Delete this page?')) return;
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
     const key = path[path.length - 2];
