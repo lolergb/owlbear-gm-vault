@@ -381,7 +381,7 @@ async function fetchPageInfo(pageId) {
       // Usar proxy de Netlify Function para evitar CORS
       apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page&token=${encodeURIComponent(userToken)}`;
     } else {
-      throw new Error('No hay token configurado. Configura tu token de Notion en la extensión (botón 🔑).');
+      throw new Error('No token configured. Configure your Notion token in the extension (🔑 button).');
     }
     
     const response = await fetch(apiUrl, {
@@ -498,7 +498,7 @@ async function fetchNotionBlocks(pageId, useCache = true) {
       apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(userToken)}`;
     } else {
       // No hay token del usuario → mostrar error
-      throw new Error('No hay token configurado. Ve a Configuración (botón ⚙️) para configurar tu token de Notion.');
+      throw new Error('No token configured. Go to Settings (⚙️ button) to configure your Notion token.');
     }
     
     log('🌐 Obteniendo bloques desde la API para:', pageId);
@@ -511,7 +511,7 @@ async function fetchNotionBlocks(pageId, useCache = true) {
       const errorData = await response.json().catch(() => ({}));
       
       if (response.status === 401) {
-        throw new Error('Token inválido o sin permisos. Verifica que el token configurado (botón 🔑) sea correcto y que la integración tenga acceso a esta página.');
+        throw new Error('Invalid token or no permissions. Verify that the configured token (🔑 button) is correct and that the integration has access to this page.');
       } else if (response.status === 404) {
         throw new Error('Página no encontrada. Verifica que la URL sea correcta y que la integración tenga acceso.');
       } else {
@@ -767,7 +767,7 @@ async function fetchBlockChildren(blockId, useCache = true) {
       // Usar proxy de Netlify Function para evitar CORS
       apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}&token=${encodeURIComponent(userToken)}`;
     } else {
-      throw new Error('No hay token configurado. Configura tu token de Notion en la extensión (botón 🔑).');
+      throw new Error('No token configured. Configure your Notion token in the extension (🔑 button).');
     }
     
     const response = await fetch(apiUrl, {
@@ -1044,7 +1044,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         continue;
       } catch (error) {
         console.error('Error al renderizar column_list:', error);
-        html += '<div class="notion-column-list">[Error al cargar columnas]</div>';
+        html += '<div class="notion-column-list">[Error loading columns]</div>';
         continue;
       }
     }
@@ -1067,7 +1067,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         // Fallback: renderizar sin contenido
         const toggle = block.toggle;
         const toggleText = renderRichText(toggle?.rich_text);
-        html += `<details class="notion-toggle"><summary class="notion-toggle-summary">${toggleText}</summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
+        html += `<details class="notion-toggle"><summary class="notion-toggle-summary">${toggleText}</summary><div class="notion-toggle-content">[Error loading content]</div></details>`;
         continue;
       }
     }
@@ -1087,7 +1087,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         const adjustedLevel = Math.min(headingLevel + headingLevelOffset, 6);
         const headingTag = `h${adjustedLevel}`;
         const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text || block.toggle?.rich_text);
-        html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} class="notion-toggle-heading-inline-error">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error al cargar contenido]</div></details>`;
+        html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} class="notion-toggle-heading-inline-error">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error loading content]</div></details>`;
         continue;
       }
     }
@@ -1340,7 +1340,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           console.log(`    ✅ Tabla [${index}] renderizada`);
         } catch (error) {
           console.error('Error al renderizar tabla:', error);
-          html += '<div class="notion-table-placeholder">[Error al cargar tabla]</div>';
+          html += '<div class="notion-table-placeholder">[Error loading table]</div>';
         }
       } else {
         // Verificar si el bloque coincide con el filtro antes de renderizar
@@ -1421,7 +1421,7 @@ async function renderTable(tableBlock) {
     return tableHtml;
   } catch (error) {
     console.error('Error al renderizar tabla:', error);
-    return '<div class="notion-table-placeholder">[Error al cargar tabla: ' + error.message + ']</div>';
+    return '<div class="notion-table-placeholder">[Error loading table: ' + error.message + ']</div>';
   }
 }
 
@@ -1476,7 +1476,7 @@ function attachImageClickHandlers() {
       this.style.display = 'none';
       const errorDiv = document.createElement('div');
       errorDiv.className = 'notion-image-error';
-      errorDiv.innerHTML = '⚠️ No se pudo cargar la imagen<br><small>La URL puede haber expirado</small><br><button class="btn btn--sm btn--primary">🔄 Recargar página</button>';
+      errorDiv.innerHTML = '⚠️ Could not load image<br><small>The URL may have expired</small><br><button class="btn btn--sm btn--primary">🔄 Reload page</button>';
       
       // Agregar event listener al botón de recargar
       const refreshButton = errorDiv.querySelector('button');
@@ -1542,7 +1542,7 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     console.log('Bloques obtenidos:', blocks.length);
     
     if (blocks.length === 0) {
-      contentDiv.innerHTML = '<div class="notion-loading">No se encontró contenido en esta página.</div>';
+      contentDiv.innerHTML = '<div class="notion-loading">No content found on this page.</div>';
       return;
     }
     
@@ -1560,9 +1560,9 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     console.error('Error al cargar contenido de Notion:', error);
     contentDiv.innerHTML = `
       <div class="notion-error">
-        <strong>Error al cargar el contenido:</strong><br>
+        <strong>Error loading content:</strong><br>
         ${error.message}<br><br>
-        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary">Abrir en Notion</button>
+        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary">Open in Notion</button>
       </div>
     `;
   }
@@ -1578,7 +1578,7 @@ function showNotionBlockedMessage(container, url) {
         Notion no permite que sus páginas se carguen en iframes por razones de seguridad.<br>
         Puedes abrir la página en una nueva ventana para verla.
       </p>
-      <button id="open-notion-window" class="btn btn--primary">Abrir en nueva ventana</button>
+      <button id="open-notion-window" class="btn btn--primary">Open in new window</button>
     </div>
   `;
   
@@ -1611,7 +1611,7 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
       icons: [
         {
           icon: `${baseUrl}/img/icon-page.svg`,
-          label: "Vincular página",
+          label: "Link page",
           filter: {
             every: [{ key: "layer", value: "CHARACTER" }],
             roles: ["GM"]
@@ -1639,7 +1639,7 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
       icons: [
         {
           icon: `${baseUrl}/img/icon-view-page.svg`,
-          label: "Ver página vinculada",
+          label: "View linked page",
           filter: {
             every: [
               { key: "layer", value: "CHARACTER" },
@@ -1653,7 +1653,7 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
         if (!item) return;
         
         const pageUrl = item.metadata[`${METADATA_KEY}/pageUrl`];
-        const pageName = item.metadata[`${METADATA_KEY}/pageName`] || "Página vinculada";
+        const pageName = item.metadata[`${METADATA_KEY}/pageName`] || "Linked page";
         
         if (pageUrl) {
           // Primero abrir el panel de la extensión
@@ -1674,7 +1674,7 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
       icons: [
         {
           icon: `${baseUrl}/img/icon-trash.svg`,
-          label: "Desvincular página",
+          label: "Unlink page",
           filter: {
             every: [
               { key: "layer", value: "CHARACTER" },
@@ -1739,7 +1739,7 @@ function showPageSelectorForToken(itemId, pagesConfig, roomId) {
   collectPages(pagesConfig.categories);
   
   if (allPages.length === 0) {
-    alert('No hay páginas configuradas. Añade páginas desde el panel principal.');
+    alert('No pages configured. Add pages from the main panel.');
     return;
   }
   
@@ -1751,11 +1751,11 @@ function showPageSelectorForToken(itemId, pagesConfig, roomId) {
   
   // Mostrar modal de selección
   showModalForm(
-    'Vincular página al token',
+    'Link page to token',
     [
       {
         name: 'pageIndex',
-        label: 'Selecciona una página',
+        label: 'Select a page',
         type: 'select',
         options: pageOptions,
         required: true
@@ -1765,7 +1765,7 @@ function showPageSelectorForToken(itemId, pagesConfig, roomId) {
       const selectedPage = allPages[parseInt(data.pageIndex)];
       
       if (!selectedPage) {
-        alert('Error: página no encontrada');
+        alert('Error: page not found');
         return;
       }
       
@@ -1773,7 +1773,7 @@ function showPageSelectorForToken(itemId, pagesConfig, roomId) {
         // Obtener el item y actualizar sus metadatos
         const items = await OBR.scene.items.getItems([itemId]);
         if (items.length === 0) {
-          alert('Error: token no encontrado');
+          alert('Error: token not found');
           return;
         }
         
@@ -1784,11 +1784,11 @@ function showPageSelectorForToken(itemId, pagesConfig, roomId) {
         });
         
         console.log('✅ Página vinculada al token:', selectedPage.name);
-        alert(`✅ Página "${selectedPage.name}" vinculada al token`);
+        alert(`✅ Page "${selectedPage.name}" linked to token`);
         
       } catch (error) {
         console.error('Error al vincular página:', error);
-        alert('Error al vincular página: ' + error.message);
+        alert('Error linking page: ' + error.message);
       }
     },
     () => {
@@ -1943,10 +1943,10 @@ try {
       settingsButton.className = "icon-button";
       const keyIcon = document.createElement("img");
       keyIcon.src = "img/icon-json.svg";
-      keyIcon.alt = "Configuración";
+      keyIcon.alt = "Settings";
       keyIcon.className = "icon-button-icon";
       settingsButton.appendChild(keyIcon);
-      settingsButton.title = hasUserToken() ? "Configuración (Token configurado)" : "Configuración";
+      settingsButton.title = hasUserToken() ? "Settings (Token configured)" : "Settings";
       settingsButton.addEventListener("click", () => showSettings());
       
       // Botón para agregar (carpeta o página)
@@ -1954,23 +1954,23 @@ try {
       addButton.className = "icon-button";
       const addIcon = document.createElement("img");
       addIcon.src = "img/icon-add.svg";
-      addIcon.alt = "Agregar";
+      addIcon.alt = "Add";
       addIcon.className = "icon-button-icon";
       addButton.appendChild(addIcon);
-      addButton.title = "Agregar carpeta o página";
+      addButton.title = "Add folder or page";
       addButton.addEventListener("click", async (e) => {
         const rect = addButton.getBoundingClientRect();
         const menuItems = [
           { 
             icon: 'img/folder-close.svg', 
-            text: 'Agregar carpeta', 
+            text: 'Add folder', 
             action: async () => {
               await addCategoryToPageList([], roomId);
             }
           },
           { 
             icon: 'img/icon-page.svg', 
-            text: 'Agregar página', 
+            text: 'Add page', 
             action: async () => {
               await addPageToPageListWithCategorySelector([], roomId);
             }
@@ -1993,10 +1993,10 @@ try {
       collapseAllButton.id = "collapse-all-button";
       const collapseIcon = document.createElement("img");
       collapseIcon.src = "img/icon-collapse-false.svg"; // false = expandidas
-      collapseIcon.alt = "Colapsar todo";
+      collapseIcon.alt = "Collapse all";
       collapseIcon.className = "icon-button-icon";
       collapseAllButton.appendChild(collapseIcon);
-      collapseAllButton.title = "Colapsar todas las carpetas";
+      collapseAllButton.title = "Collapse all folders";
       collapseAllButton.dataset.collapsed = "false";
       
       collapseAllButton.addEventListener("click", () => {
@@ -2006,7 +2006,7 @@ try {
         // Actualizar icono y estado
         collapseIcon.src = newState ? "img/icon-collapse-false.svg" : "img/icon-collapse-true.svg";
         collapseAllButton.dataset.collapsed = newState.toString();
-        collapseAllButton.title = newState ? "Expandir todas las carpetas" : "Colapsar todas las carpetas";
+        collapseAllButton.title = newState ? "Expand all folders" : "Collapse all folders";
         
         // Colapsar o expandir todas las carpetas
         const categories = document.querySelectorAll('.category-group');
@@ -2052,7 +2052,7 @@ try {
       if (pageList) {
         pageList.innerHTML = `
           <div class="empty-state">
-            <p>Error al cargar la extensión</p>
+            <p>Error loading extension</p>
             <p>Verifica la consola para más detalles</p>
             <p class="error-text">${error.message || 'Error desconocido'}</p>
           </div>
@@ -2121,7 +2121,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
   
   collapseIcon.src = isCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
-  collapseIcon.alt = isCollapsed ? 'Expandir' : 'Colapsar';
+  collapseIcon.alt = isCollapsed ? 'Expand' : 'Collapse';
   collapseButton.appendChild(collapseIcon);
   
   // Título de carpeta (anidamiento de heading según el nivel)
@@ -2191,7 +2191,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       { separator: true },
       { 
         icon: 'img/icon-edit.svg', 
-        text: 'Editar', 
+        text: 'Edit', 
         action: async () => {
           await editCategoryFromPageList(category, categoryPath, roomId);
         }
@@ -2204,7 +2204,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       if (canMoveUp) {
         menuItems.push({
           icon: 'img/icon-arrow.svg',
-          text: 'Mover arriba',
+          text: 'Move up',
           action: async () => {
             await moveCategoryUp(category, categoryPath, roomId);
           }
@@ -2213,7 +2213,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       if (canMoveDown) {
         menuItems.push({
           icon: 'img/icon-arrow.svg',
-          text: 'Mover abajo',
+          text: 'Move down',
           action: async () => {
             await moveCategoryDown(category, categoryPath, roomId);
           }
@@ -2224,7 +2224,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
     
     menuItems.push({
       icon: 'img/icon-trash.svg', 
-      text: 'Eliminar', 
+      text: 'Delete', 
       action: async () => {
         await deleteCategoryFromPageList(category, categoryPath, roomId);
       }
@@ -2344,7 +2344,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         const menuItems = [
           { 
             icon: 'img/icon-edit.svg', 
-            text: 'Editar', 
+            text: 'Edit', 
             action: async () => {
               await editPageFromPageList(page, pageCategoryPath, roomId);
             }
@@ -2357,7 +2357,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           if (canMoveUp) {
             menuItems.push({
               icon: 'img/icon-arrow.svg',
-              text: 'Mover arriba',
+              text: 'Move up',
               action: async () => {
                 await movePageUp(page, pageCategoryPath, roomId);
               }
@@ -2366,7 +2366,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           if (canMoveDown) {
             menuItems.push({
               icon: 'img/icon-arrow.svg',
-              text: 'Mover abajo',
+              text: 'Move down',
               action: async () => {
                 await movePageDown(page, pageCategoryPath, roomId);
               }
@@ -2377,7 +2377,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         
         menuItems.push({
           icon: 'img/icon-trash.svg', 
-          text: 'Eliminar', 
+          text: 'Delete', 
           action: async () => {
             await deletePageFromPageList(page, pageCategoryPath, roomId);
           }
@@ -2506,7 +2506,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         contentContainer.style.opacity = '1';
         
         collapseIcon.src = 'img/folder-open.svg';
-        collapseIcon.alt = 'Colapsar';
+        collapseIcon.alt = 'Collapse';
         
         // Limpiar estilos después de la animación
         setTimeout(() => {
@@ -2531,7 +2531,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         contentContainer.style.opacity = '0';
         
         collapseIcon.src = 'img/folder-close.svg';
-        collapseIcon.alt = 'Expandir';
+        collapseIcon.alt = 'Expand';
         
         // Ocultar después de la animación
         setTimeout(() => {
@@ -2721,9 +2721,9 @@ async function addCategoryToPageList(categoryPath, roomId) {
   const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
   
   showModalForm(
-    'Agregar Carpeta',
+    'Add Folder',
     [
-      { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la carpeta' }
+      { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Folder name' }
     ],
     async (data) => {
       const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -2778,18 +2778,18 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
   }
   
   const fields = [
-    { name: 'name', label: 'Nombre', type: 'text', required: true, value: category.name, placeholder: 'Nombre de la carpeta' }
+    { name: 'name', label: 'Name', type: 'text', required: true, value: category.name, placeholder: 'Folder name' }
   ];
   
   // Agregar selector de carpeta padre si hay carpetas disponibles
   if (categoryOptions.length > 0) {
     fields.push({
       name: 'parentCategory',
-      label: 'Carpeta padre',
+      label: 'Parent folder',
       type: 'select',
       required: false,
       options: [
-        { value: '', label: 'Raíz (sin carpeta padre)' },
+        { value: '', label: 'Root (no parent folder)' },
         ...categoryOptions.filter(opt => {
           // Excluir la carpeta actual y sus hijos
           const optPath = JSON.parse(opt.value);
@@ -2814,7 +2814,7 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
   }
   
   showModalForm(
-    'Editar Carpeta',
+    'Edit Folder',
     fields,
     async (data) => {
       const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -2826,7 +2826,7 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
       const currentCategory = parent && parent[key] ? parent[key][index] : null;
       
       if (!currentCategory) {
-        alert('Error: No se pudo encontrar la carpeta a editar');
+        alert('Error: Could not find folder to edit');
         return;
       }
       
@@ -2855,7 +2855,7 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
           } catch (e) {
             console.error('Error al mover carpeta:', e);
             console.error('Valor de parentCategory:', data.parentCategory);
-            alert('Error al cambiar la carpeta padre. La carpeta se actualizó pero permanece en su ubicación actual.');
+            alert('Error changing parent folder. The folder was updated but remains in its current location.');
           }
         } else if (data.parentCategory === '' && parentPath.length > 0) {
           // Mover a raíz
@@ -2884,7 +2884,7 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
   const pageCategoryPathValue = pageCategoryPath.length > 0 ? JSON.stringify(pageCategoryPath) : '';
   
   const fields = [
-    { name: 'name', label: 'Nombre', type: 'text', required: true, value: page.name, placeholder: 'Nombre de la página' },
+    { name: 'name', label: 'Name', type: 'text', required: true, value: page.name, placeholder: 'Page name' },
     { name: 'url', label: 'URL', type: 'url', required: true, value: page.url, placeholder: 'https://...' }
   ];
   
@@ -2893,7 +2893,7 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
     const defaultValue = pageCategoryPathValue || categoryOptions[0].value;
     fields.push({
       name: 'category',
-      label: 'Carpeta',
+      label: 'Folder',
       type: 'select',
       required: true,
       options: categoryOptions,
@@ -2902,12 +2902,12 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
   }
   
   fields.push(
-    { name: 'selector', label: 'Selector (opcional)', type: 'text', value: page.selector || '', placeholder: '#main-content', help: 'Solo para URLs externas' },
-    { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', value: Array.isArray(page.blockTypes) ? page.blockTypes.join(', ') : (page.blockTypes || ''), placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
+    { name: 'selector', label: 'Selector (optional)', type: 'text', value: page.selector || '', placeholder: '#main-content', help: 'Only for external URLs' },
+    { name: 'blockTypes', label: 'Block types (optional)', type: 'text', value: Array.isArray(page.blockTypes) ? page.blockTypes.join(', ') : (page.blockTypes || ''), placeholder: 'quote, callout', help: 'Only for Notion URLs. E.g: "quote" or "quote,callout"' }
   );
   
   showModalForm(
-    'Editar Página',
+    'Edit Page',
     fields,
     async (data) => {
       const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -2915,13 +2915,13 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
       // Encontrar la página actual
       const parent = navigateConfigPath(config, pageCategoryPath);
       if (!parent || !parent.pages) {
-        alert('Error: No se pudo encontrar la página a editar');
+        alert('Error: Could not find page to edit');
         return;
       }
       
       const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
       if (pageIndex === -1) {
-        alert('Error: No se pudo encontrar la página a editar');
+        alert('Error: Could not find page to edit');
         return;
       }
       
@@ -2964,7 +2964,7 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
         } catch (e) {
           console.error('Error al mover página:', e);
           console.error('Valor de category:', data.category);
-          alert('Error al cambiar la carpeta. La página se actualizó pero permanece en su carpeta actual.');
+          alert('Error changing folder. The page was updated but remains in its current folder.');
         }
       }
       
@@ -2989,7 +2989,7 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
         path = JSON.parse(categoryPath);
       } catch (e) {
         console.error('Error al parsear categoryPath:', e);
-        alert('Error: Path de carpeta inválido');
+        alert('Error: Invalid folder path');
         return false;
       }
     }
@@ -3008,7 +3008,7 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
         config.categories.splice(index, 1);
       } else {
         console.error('No se encontró la carpeta en el nivel raíz');
-        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        alert('Error: Could not find folder to delete');
         return false;
       }
     } else if (path.length === 2) {
@@ -3019,7 +3019,7 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
         config[key].splice(index, 1);
       } else {
         console.error('No se encontró la carpeta en el nivel raíz:', key, index);
-        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        alert('Error: Could not find folder to delete');
         return false;
       }
     } else {
@@ -3032,7 +3032,7 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
         parent[key].splice(index, 1);
       } else {
         console.error('No se encontró la carpeta en el path:', path);
-        alert('Error: No se pudo encontrar la carpeta a eliminar');
+        alert('Error: Could not find folder to delete');
         return false;
       }
     }
@@ -3048,7 +3048,7 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
     return true;
   } catch (error) {
     console.error('Error al eliminar carpeta:', error);
-    alert('Error al eliminar la carpeta: ' + error.message);
+    alert('Error deleting folder: ' + error.message);
     return false;
   }
 }
@@ -3062,14 +3062,14 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
     const parent = navigateConfigPath(config, pageCategoryPath);
     if (!parent || !parent.pages) {
       console.error('No se encontró el parent o pages en:', pageCategoryPath);
-      alert('Error: No se pudo encontrar la página a eliminar');
+      alert('Error: Could not find page to delete');
       return false;
     }
     
     const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
     if (pageIndex === -1) {
       console.error('No se encontró la página:', page.name, page.url);
-      alert('Error: No se pudo encontrar la página a eliminar');
+      alert('Error: Could not find page to delete');
       return false;
     }
     
@@ -3086,7 +3086,7 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
     return true;
   } catch (error) {
     console.error('Error al eliminar página:', error);
-    alert('Error al eliminar la página: ' + error.message);
+    alert('Error deleting page: ' + error.message);
     return false;
   }
 }
@@ -3122,7 +3122,7 @@ async function addPageToPageListWithCategorySelector(defaultCategoryPath, roomId
   
   // Preparar campos del formulario
   const fields = [
-    { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la página' },
+    { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Page name' },
     { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' }
   ];
   
@@ -3131,7 +3131,7 @@ async function addPageToPageListWithCategorySelector(defaultCategoryPath, roomId
     const defaultCategoryValue = defaultCategoryPath.length > 0 ? JSON.stringify(defaultCategoryPath) : categoryOptions[0].value;
     fields.push({
       name: 'category',
-      label: 'Carpeta',
+      label: 'Folder',
       type: 'select',
       required: true,
       options: categoryOptions,
@@ -3140,12 +3140,12 @@ async function addPageToPageListWithCategorySelector(defaultCategoryPath, roomId
   }
   
   fields.push(
-    { name: 'selector', label: 'Selector (opcional)', type: 'text', placeholder: '#main-content', help: 'Solo para URLs externas' },
-    { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
+    { name: 'selector', label: 'Selector (optional)', type: 'text', placeholder: '#main-content', help: 'Only for external URLs' },
+    { name: 'blockTypes', label: 'Block types (optional)', type: 'text', placeholder: 'quote, callout', help: 'Only for Notion URLs. E.g: "quote" or "quote,callout"' }
   );
   
   showModalForm(
-    'Agregar Página',
+    'Add Page',
     fields,
     async (data) => {
       const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -3214,9 +3214,9 @@ async function addPageToPageListSimple(categoryPath, roomId) {
   const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
   
   showModalForm(
-    'Agregar Página',
+    'Add Page',
     [
-      { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la página' },
+      { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Page name' },
       { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' },
       { name: 'selector', label: 'Selector (opcional)', type: 'text', placeholder: '#main-content', help: 'Solo para URLs externas' },
       { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
@@ -3274,8 +3274,8 @@ function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       const emptyState = document.createElement('div');
       emptyState.className = 'empty-state';
       emptyState.innerHTML = `
-          <p>No hay páginas configuradas</p>
-        <button id="add-first-category" class="btn btn--primary add-first-category-button">➕ Agregar primera carpeta</button>
+          <p>No pages configured</p>
+        <button id="add-first-category" class="btn btn--primary add-first-category-button">➕ Add first folder</button>
       `;
       pageList.appendChild(emptyState);
       
@@ -3759,7 +3759,7 @@ async function loadIframeContent(url, container, selector = null) {
       });
       
       if (!response.ok) {
-        throw new Error(`Error al cargar: ${response.status}`);
+        throw new Error(`Error loading: ${response.status}`);
       }
       
       const html = await response.text();
@@ -3770,7 +3770,7 @@ async function loadIframeContent(url, container, selector = null) {
       const element = doc.querySelector(selector);
       
       if (!element) {
-        throw new Error(`No se encontró el elemento con selector: ${selector}`);
+        throw new Error(`Element with selector not found: ${selector}`);
       }
       
       // Obtener todos los estilos de la página original
@@ -4078,7 +4078,7 @@ async function showSettings() {
     backButton.classList.remove('hidden');
   }
   if (pageTitle) {
-    pageTitle.textContent = 'Configuración';
+    pageTitle.textContent = 'Settings';
   }
   
   // Asegurar que el listener esté configurado (se agrega en loadPageContent o aquí si es necesario)
@@ -4200,7 +4200,7 @@ async function showSettings() {
       
       if (saveUserToken(token)) {
         if (errorDiv) errorDiv.classList.remove('form__error--visible');
-        alert('✅ Token guardado exitosamente. Ahora puedes usar tus propias páginas de Notion.');
+        alert('✅ Token saved successfully. You can now use your own Notion pages.');
         // Actualizar el modo debug con el nuevo token
         await initDebugMode();
         // Actualizar visibilidad del botón "Ver JSON" si es necesario
@@ -4215,7 +4215,7 @@ async function showSettings() {
         // Actualizar el título del botón de token sin recargar la página
         const settingsButton = document.querySelector('.icon-button[title*="Token"]');
         if (settingsButton) {
-          settingsButton.title = "Configuración (Token configurado)";
+            settingsButton.title = "Settings (Token configured)";
         }
         // No recargar la página para preservar la configuración actual
       } else {
@@ -4231,7 +4231,7 @@ async function showSettings() {
   if (clearBtn && !clearBtn.dataset.listenerAdded) {
     clearBtn.dataset.listenerAdded = 'true';
     clearBtn.addEventListener('click', async () => {
-      if (confirm('¿Eliminar el token? Volverás a usar el token del servidor (si está configurado).')) {
+      if (confirm('Delete token? You will go back to using the server token (if configured).')) {
         if (saveUserToken('')) {
           // Actualizar el modo debug después de eliminar el token
           await initDebugMode();
@@ -4239,12 +4239,12 @@ async function showSettings() {
           if (viewJsonBtn) {
             viewJsonBtn.classList.add('hidden');
           }
-          alert('Token eliminado. Se usará el token del servidor.');
+          alert('Token deleted. Server token will be used.');
           closeSettings();
           // Actualizar el título del botón de token sin recargar la página
           const settingsButton = document.querySelector('.icon-button[title*="Token"]');
           if (settingsButton) {
-            settingsButton.title = "Configuración";
+            settingsButton.title = "Settings";
           }
           // No recargar la página para preservar la configuración actual
         }
@@ -4304,7 +4304,7 @@ async function showSettings() {
         
         jsonContent.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h2 style="color: #fff; font-size: 18px; font-weight: 700; margin: 0; font-family: Roboto, Helvetica, Arial, sans-serif;">JSON de Configuración</h2>
+            <h2 style="color: #fff; font-size: 18px; font-weight: 700; margin: 0; font-family: Roboto, Helvetica, Arial, sans-serif;">Configuration JSON</h2>
             <button id="close-json-modal" style="
         background: ${CSS_VARS.bgPrimary};
         border: 1px solid ${CSS_VARS.borderPrimary};
@@ -4347,7 +4347,7 @@ async function showSettings() {
         });
       } catch (e) {
         console.error('Error al mostrar JSON:', e);
-        alert('❌ Error al mostrar JSON: ' + e.message);
+        alert('❌ Error displaying JSON: ' + e.message);
       }
     });
   }
@@ -4373,7 +4373,7 @@ async function showSettings() {
             
             // Validar estructura básica
             if (!parsed.categories || !Array.isArray(parsed.categories)) {
-              alert('❌ El JSON debe tener un array "categories"');
+              alert('❌ JSON must have a "categories" array');
       return;
     }
     
@@ -4391,7 +4391,7 @@ async function showSettings() {
             
             // Guardar la nueva configuración
             if (savePagesJSON(parsed, currentRoomId)) {
-              alert('✅ JSON cargado exitosamente. La configuración ha sido actualizada.');
+              alert('✅ JSON loaded successfully. Configuration has been updated.');
               closeSettings();
               
               // Actualizar la vista principal directamente sin recargar la página
@@ -4403,11 +4403,11 @@ async function showSettings() {
       window.location.reload();
               }
     } else {
-              alert('❌ Error al guardar el JSON. Revisa la consola para más detalles.');
+              alert('❌ Error saving JSON. Check the console for details.');
             }
           } catch (e) {
             console.error('Error al cargar JSON:', e);
-            alert('❌ Error al cargar JSON: ' + e.message);
+            alert('❌ Error loading JSON: ' + e.message);
           }
           
           // Limpiar el input
@@ -4450,10 +4450,10 @@ async function showSettings() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        alert('✅ JSON descargado exitosamente');
+        alert('✅ JSON downloaded successfully');
       } catch (e) {
         console.error('Error al descargar JSON:', e);
-        alert('❌ Error al descargar JSON: ' + e.message);
+        alert('❌ Error downloading JSON: ' + e.message);
       }
     });
   }
@@ -4503,9 +4503,9 @@ function createContextMenu(items, position, onClose) {
     if (item.icon && (item.icon.startsWith('img/') || item.icon.startsWith('/img/'))) {
       // Detectar si necesita rotación (para flechas arriba/abajo)
       let rotation = '';
-      if (item.text === 'Mover arriba') {
+      if (item.text === 'Move up') {
         rotation = 'transform: rotate(90deg);';
-      } else if (item.text === 'Mover abajo') {
+      } else if (item.text === 'Move down') {
         rotation = 'transform: rotate(-90deg);';
       }
       iconHtml = `<img src="${item.icon}" alt="" style="width: 16px; height: 16px; display: block; ${rotation}" />`;
@@ -4620,7 +4620,7 @@ function showModalForm(title, fields, onSubmit, onCancel) {
       `).join('')}
       <div class="form__actions">
         <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">Cancelar</button>
-        <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">Guardar</button>
+        <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">Save</button>
       </div>
     </form>
   `;
@@ -4715,15 +4715,15 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   header.className = 'visual-editor-header';
 
   header.innerHTML = `
-    <h1>Editor de Configuración</h1>
+    <h1>Configuration Editor</h1>
     <div class="visual-editor-header-buttons">
       <button id="editor-filter-btn" class="icon-button" title="Filtros">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 6H20M7 12H17M10 18H14" stroke="white" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </button>
-      <button id="editor-add-btn" class="icon-button" title="Agregar">
-        <img src="img/icon-add.svg" alt="Agregar" class="icon-button-icon" />
+      <button id="editor-add-btn" class="icon-button" title="Add">
+        <img src="img/icon-add.svg" alt="Add" class="icon-button-icon" />
       </button>
     </div>
   `;
@@ -4896,8 +4896,8 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         );
       } else {
         menuItems.push(
-          { icon: '✏️', text: 'Editar', action: () => editPage(item, path) },
-          { icon: '🗑️', text: 'Eliminar', action: () => deletePage(path) }
+          { icon: '✏️', text: 'Edit', action: () => editPage(item, path) },
+          { icon: '🗑️', text: 'Delete', action: () => deletePage(path) }
         );
       }
 
@@ -4977,9 +4977,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   // Funciones CRUD
   const addCategory = (parentPath = []) => {
     showModalForm(
-      'Agregar Carpeta',
+      'Add Folder',
       [
-        { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la carpeta' }
+        { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Folder name' }
       ],
       (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -5006,9 +5006,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 
   const addPage = (parentPath = []) => {
     showModalForm(
-      'Agregar Página',
+      'Add Page',
       [
-        { name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Nombre de la página' },
+        { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Page name' },
         { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' },
         { name: 'selector', label: 'Selector (opcional)', type: 'text', placeholder: '#main-content', help: 'Solo para URLs externas' },
         { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', placeholder: 'quote, callout', help: 'Solo para URLs de Notion. Ej: "quote" o "quote,callout"' }
@@ -5050,7 +5050,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 
   const editCategory = (category, path) => {
     showModalForm(
-      'Editar Carpeta',
+      'Edit Folder',
       [
         { name: 'name', label: 'Nombre', type: 'text', required: true, value: category.name }
       ],
@@ -5068,12 +5068,12 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 
   const editPage = (page, path) => {
     showModalForm(
-      'Editar Página',
+      'Edit Page',
       [
         { name: 'name', label: 'Nombre', type: 'text', required: true, value: page.name },
         { name: 'url', label: 'URL', type: 'url', required: true, value: page.url },
-        { name: 'selector', label: 'Selector (opcional)', type: 'text', value: page.selector || '', help: 'Solo para URLs externas' },
-        { name: 'blockTypes', label: 'Tipos de bloques (opcional)', type: 'text', value: Array.isArray(page.blockTypes) ? page.blockTypes.join(', ') : (page.blockTypes || ''), help: 'Solo para URLs de Notion' }
+        { name: 'selector', label: 'Selector (optional)', type: 'text', value: page.selector || '', help: 'Only for external URLs' },
+        { name: 'blockTypes', label: 'Block types (optional)', type: 'text', value: Array.isArray(page.blockTypes) ? page.blockTypes.join(', ') : (page.blockTypes || ''), help: 'Only for Notion URLs' }
       ],
       (data) => {
         const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
@@ -5101,7 +5101,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   };
 
   const deleteCategory = (path) => {
-    if (!confirm('¿Eliminar esta carpeta y todo su contenido?')) return;
+    if (!confirm('Delete this folder and all its content?')) return;
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
     const key = path[path.length - 2];
     const index = path[path.length - 1];
@@ -5114,7 +5114,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
   };
 
   const deletePage = (path) => {
-    if (!confirm('¿Eliminar esta página?')) return;
+    if (!confirm('Delete this page?')) return;
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
     const key = path[path.length - 2];
     const index = path[path.length - 1];
@@ -5144,7 +5144,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         color: #666;
       `;
       emptyState.innerHTML = `
-        <p style="margin-bottom: 12px;">No hay carpetas</p>
+        <p style="margin-bottom: 12px;">No folders</p>
         <p style="font-size: 12px; color: #555;">Haz clic en el botón + para agregar una carpeta</p>
       `;
       contentArea.appendChild(emptyState);

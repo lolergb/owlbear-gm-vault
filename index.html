@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,54 +12,54 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header global -->
+    <!-- Global header -->
     <header id="header" class="header">
       <button id="back-button" class="btn btn--sm hidden">
-        <img src="img/icon-arrow.svg" alt="Volver" class="btn__icon">
-        Volver
+        <img src="img/icon-arrow.svg" alt="Back" class="btn__icon">
+        Back
       </button>
       <h1 id="page-title" class="header__title">DM screen</h1>
     </header>
 
-    <!-- Lista de páginas -->
+    <!-- Page list -->
     <div id="page-list" class="page-list"></div>
 
-    <!-- Contenedor de Notion -->
+    <!-- Notion container -->
     <div id="notion-container" class="notion-container hidden">
       <iframe id="notion-iframe" class="notion-container__iframe" src="" frameborder="0" allowfullscreen></iframe>
       <div id="notion-content" class="notion-container__content notion-content"></div>
     </div>
 
-    <!-- Panel de configuración -->
+    <!-- Settings panel -->
     <div id="settings-container" class="settings hidden">
       <div class="settings__content">
         
         <div class="form">
           <div class="form__field">
-            <label class="form__label" for="token-input">Token de Notion</label>
+            <label class="form__label" for="token-input">Notion Token</label>
             <p class="settings__description">
-              Configura tu token de Notion <a href="https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion" class="link">siguiendo este tutorial</a> para usar tus propias páginas. Este token es global para toda la extensión (todas las rooms). 
+              Configure your Notion token <a href="https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion" class="link">following this tutorial</a> to use your own pages. This token is global for the entire extension (all rooms). 
             </p>
-            <input type="password" id="token-input" placeholder="ntn_... o secret_..." class="input input--mono">
+            <input type="password" id="token-input" placeholder="ntn_... or secret_..." class="input input--mono">
             <p id="token-masked" class="form__help"></p>
           </div>
           
           <div id="token-error" class="form__error"></div>
           
           <div class="form__actions">
-            <button id="clear-token" class="btn btn--ghost btn--flex">Eliminar Token</button>
-            <button id="save-token" class="btn btn--primary btn--flex">Guardar Token</button>
+            <button id="clear-token" class="btn btn--ghost btn--flex">Delete Token</button>
+            <button id="save-token" class="btn btn--primary btn--flex">Save Token</button>
           </div>
         </div>
 
         <div class="form form--separated">
-          <label class="form__label">Configuración JSON</label>
+          <label class="form__label">JSON Configuration</label>
           <div class="form__actions form__actions--single">
-            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">Ver JSON</button>
+            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">View JSON</button>
           </div>
           <div class="form__actions form__actions--double">
-            <button id="load-json-btn" class="btn btn--primary btn--flex">Cargar JSON</button>
-            <button id="download-json-btn" class="btn btn--ghost btn--flex">Descargar JSON</button>
+            <button id="load-json-btn" class="btn btn--primary btn--flex">Load JSON</button>
+            <button id="download-json-btn" class="btn btn--ghost btn--flex">Download JSON</button>
           </div>
         </div>
       </div>

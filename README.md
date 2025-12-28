@@ -1,114 +1,114 @@
 # 📚 DM screen for Owlbear Rodeo
 
-Esta es una extensión para [Owlbear Rodeo](https://www.owlbear.rodeo/) que permite incrustar páginas de Notion y contenido externo directamente en Owlbear Rodeo. Te permite compartir hojas de personaje, documentación adicional y más con los jugadores, proporcionando acceso rápido a información vital y recursos para todos los involucrados.
+This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you to embed Notion pages and external content directly in Owlbear Rodeo. It lets you share character sheets, additional documentation, and more with players, providing quick access to vital information and resources for everyone involved.
 
-## ✨ Características
+## ✨ Features
 
-- 🎯 Abrir páginas de Notion en modales dentro de Owlbear
-- 📝 Gestión de páginas por carpetas desde la interfaz
-- 🎨 Interfaz limpia y oscura
-- 💾 Caché persistente para carga rápida
-- 🏠 Configuración independiente por sala de Owlbear
-- 🖼️ Visualización de imágenes a tamaño completo en modal
-- 📥 Importar/Exportar configuración JSON
-- 🔑 Gestión de token de usuario (global para todas las salas)
-- 🌐 Soporte para URLs externas con selectores CSS
-- 🎛️ Filtrado de tipos de bloques para páginas de Notion
-- 📊 Carpetas anidadas con profundidad ilimitada
-- 🎨 Iconos automáticos de páginas desde Notion
-- 🗑️ Gestión de caché (limpiar todo o por página)
-- 📄 **Soporte para PDFs:** Cualquier archivo PDF accesible públicamente
-- 📁 **Gestión de carpetas:** Colapsar/expandir todas las carpetas, reordenar elementos
-- ⚙️ **Panel de configuración:** Interfaz de configuración unificada
-- 🎯 **Integración con tokens:** Vincular páginas a tokens de escena mediante menú contextual
+- 🎯 Open Notion pages in modals within Owlbear
+- 📝 Page management by folders from the interface
+- 🎨 Clean and dark interface
+- 💾 Persistent cache for fast loading
+- 🏠 Independent configuration per Owlbear room
+- 🖼️ Full-size image viewing in modal
+- 📥 Import/Export JSON configuration
+- 🔑 User token management (global for all rooms)
+- 🌐 Support for external URLs with CSS selectors
+- 🎛️ Block type filtering for Notion pages
+- 📊 Nested folders with unlimited depth
+- 🎨 Automatic page icons from Notion
+- 🗑️ Cache management (clear all or per page)
+- 📄 **PDF support:** Any publicly accessible PDF file
+- 📁 **Folder management:** Collapse/expand all folders, reorder items
+- ⚙️ **Settings panel:** Unified configuration interface
+- 🎯 **Token integration:** Link pages to scene tokens via context menu
 
-## 🚀 Instalación
+## 🚀 Installation
 
-La extensión se puede instalar manualmente pegando la URL del manifiesto a continuación en el diálogo "Add Extension".
+The extension can be installed manually by pasting the manifest URL below in the "Add Extension" dialog.
 
 ```
 https://owlbear-notion-embed.netlify.app/manifest.json
 ```
 
-O usa la URL proporcionada por el desarrollador de la extensión.
+Or use the URL provided by the extension developer.
 
-## 📖 Cómo usar DM screen
+## 📖 How to use DM screen
 
-### Configuración inicial
+### Initial setup
 
-**Cada usuario usa su propia cuenta de Notion.** Solo necesitas configurar tu token una vez.
+**Each user uses their own Notion account!** You only need to configure your token once.
 
-#### 1. Obtener tu token de Notion
+#### 1. Get your Notion token
 
-**Paso 1: Crear la integración**
-1. Ve a https://www.notion.so/my-integrations
-2. Haz clic en **"+ New integration"**
-3. Dale un nombre (por ejemplo, "Owlbear Notion")
-4. Selecciona tu espacio de trabajo
-5. Haz clic en **"Submit"**
+**Step 1: Create the integration**
+1. Go to https://www.notion.so/my-integrations
+2. Click **"+ New integration"**
+3. Give it a name (e.g., "Owlbear Notion")
+4. Select your workspace
+5. Click **"Submit"**
 
-**Paso 2: Copiar el token**
-1. En la página de integración, encuentra **"Internal Integration Token"**
-2. Haz clic en **"Show"** y copia el token (comienza con `secret_`)
+**Step 2: Copy the token**
+1. On the integration page, find **"Internal Integration Token"**
+2. Click **"Show"** and copy the token (starts with `secret_`)
 
-**Paso 3: Compartir tus páginas**
-1. En Notion, abre cada página que quieras usar
-2. Haz clic en **"Share"** (arriba a la derecha)
-3. Encuentra el nombre de tu integración y dale acceso
+**Step 3: Share your pages**
+1. In Notion, open each page you want to use
+2. Click **"Share"** (top right)
+3. Find your integration name and give it access
 
-**Paso 4: Configurar en la extensión**
-1. En la extensión: **🔑** → Pega el token → **Guardar**
-2. ¡Listo! Ya puedes usar tus páginas
+**Step 4: Configure in the extension**
+1. In the extension: **🔑** → Paste the token → **Save**
+2. Done! You can now use your pages
 
-### Uso diario
+### Daily usage
 
-1. **Abre Owlbear Rodeo** y entra a tu sala de juego
-2. **Abre la extensión** desde el menú de extensiones (icono en la barra superior)
-3. **Verás una lista** de páginas de Notion organizadas por categorías
-4. **Haz clic en una página** para abrirla y ver su contenido
-5. **Usa el botón ← Atrás** para volver a la lista
+1. **Open Owlbear Rodeo** and enter your game room
+2. **Open the extension** from the extensions menu (icon in the top bar)
+3. **You'll see a list** of Notion pages organized by categories
+4. **Click on a page** to open it and view its content
+5. **Use the ← Back button** to return to the list
 
-### Gestionar tus páginas
+### Manage your pages
 
-**Cada sala tiene su propia configuración:**
+**Each room has its own configuration:**
 
-1. Haz clic en el botón **⚙️** (arriba a la derecha) para abrir Configuración
-2. Desde la vista principal, puedes:
-   - Haz clic en **➕** para agregar nuevas carpetas o páginas
-   - Usa el menú **⋯** en cualquier elemento para:
-     - Editar nombre y URL
-     - Mover arriba/abajo para reordenar
-     - Eliminar elementos
-   - Haz clic en las carpetas para colapsar/expandirlas
-   - Usa el botón **📁** para colapsar/expandir todas las carpetas a la vez
-3. En Configuración, puedes:
-   - Configurar tu token de Notion
-   - Ver la configuración JSON actual
-   - Cargar JSON desde archivo
-   - Descargar configuración JSON
+1. Click the **⚙️** button (top right) to open Settings
+2. From the main view, you can:
+   - Click **➕** to add new folders or pages
+   - Use the **⋯** menu on any item to:
+     - Edit name and URL
+     - Move up/down to reorder
+     - Delete items
+   - Click on folders to collapse/expand them
+   - Use the **📁** button to collapse/expand all folders at once
+3. In Settings, you can:
+   - Configure your Notion token
+   - View current JSON configuration
+   - Load JSON from file
+   - Download JSON configuration
 
-### Estructura de configuración JSON
+### JSON configuration structure
 
 ```json
 {
   "categories": [
     {
-      "name": "Nombre de carpeta",
+      "name": "Folder name",
       "pages": [
         {
-          "name": "Nombre de página",
-          "url": "URL de la página",
-          "selector": "selector-opcional",
-          "blockTypes": ["tipos", "opcionales", "de", "bloques"]
+          "name": "Page name",
+          "url": "Page URL",
+          "selector": "optional-selector",
+          "blockTypes": ["optional", "block", "types"]
         }
       ],
       "categories": [
         {
-          "name": "Subcarpeta",
+          "name": "Subfolder",
           "pages": [
             {
-              "name": "Página en subcarpeta",
-              "url": "URL de la página"
+              "name": "Page in subfolder",
+              "url": "Page URL"
             }
           ]
         }
@@ -118,145 +118,145 @@ O usa la URL proporcionada por el desarrollador de la extensión.
 }
 ```
 
-#### Propiedades de configuración
+#### Configuration properties
 
-**Carpetas (`categories`)**
-- **Tipo:** Array de objetos
-- **Requerido:** Sí
-- **Descripción:** Lista de carpetas que agrupan páginas
+**Folders (`categories`)**
+- **Type:** Array of objects
+- **Required:** Yes
+- **Description:** List of folders that group pages
 
-**Páginas (`categories[].pages`)**
-- **Tipo:** Array de objetos
-- **Requerido:** No (opcional si hay subcarpetas)
-- **Descripción:** Lista de páginas dentro de la carpeta
+**Pages (`categories[].pages`)**
+- **Type:** Array of objects
+- **Required:** No (optional if there are subfolders)
+- **Description:** List of pages within the folder
 
-**Subcarpetas (`categories[].categories`)**
-- **Tipo:** Array de objetos
-- **Requerido:** No (opcional)
-- **Descripción:** Lista de subcarpetas anidadas dentro de la carpeta
-- **Nota:** Las subcarpetas pueden tener sus propias páginas y subcarpetas (anidamiento ilimitado)
+**Subfolders (`categories[].categories`)**
+- **Type:** Array of objects
+- **Required:** No (optional)
+- **Description:** List of nested subfolders within the folder
+- **Note:** Subfolders can have their own pages and subfolders (unlimited nesting)
 
-**Página (`categories[].pages[].name`)**
-- **Tipo:** String
-- **Requerido:** Sí
-- **Descripción:** Nombre mostrado en el botón de la página
+**Page (`categories[].pages[].name`)**
+- **Type:** String
+- **Required:** Yes
+- **Description:** Name displayed on the page button
 
-**Página (`categories[].pages[].url`)**
-- **Tipo:** String (URL)
-- **Requerido:** Sí
-- **Descripción:** URL completa de la página.
-- **Ejemplos:**
+**Page (`categories[].pages[].url`)**
+- **Type:** String (URL)
+- **Required:** Yes
+- **Description:** Complete page URL.
+- **Examples:**
   - Notion: `https://your-workspace.notion.site/Title-2d0d4856c90e80f6801dcafb6b7366e6`
   - PDF: `https://example.com/document.pdf`
-  - URL externa: `https://5e.tools/book.html#mm,1`
+  - External URL: `https://5e.tools/book.html#mm,1`
 
-**Página (`categories[].pages[].selector`)**
-- **Tipo:** String (selector CSS)
-- **Requerido:** No (opcional)
-- **Descripción:** Selector CSS (ID o clase) para cargar solo un elemento específico de la página
-- **Cuándo usar:** Solo para URLs que NO son de Notion (URLs externas)
-- **Ejemplos:**
-  - Por ID: `"#main-content"`
-  - Por clase: `".article-body"`
+**Page (`categories[].pages[].selector`)**
+- **Type:** String (CSS selector)
+- **Required:** No (optional)
+- **Description:** CSS selector (ID or class) to load only a specific element from the page
+- **When to use:** Only for URLs that are NOT from Notion (external URLs)
+- **Examples:**
+  - By ID: `"#main-content"`
+  - By class: `".article-body"`
 
-**Página (`categories[].pages[].blockTypes`)**
-- **Tipo:** String o Array de strings
-- **Requerido:** No (opcional)
-- **Descripción:** Filtro de tipo de bloque para mostrar solo ciertos tipos de contenido en páginas de Notion
-- **Cuándo usar:** Solo para URLs de Notion (ignorado en URLs externas)
-- **Ejemplos:**
-  - Tipo único: `"quote"` (solo mostrar citas)
-  - Múltiples tipos: `["quote", "callout"]` (solo mostrar citas y callouts)
+**Page (`categories[].pages[].blockTypes`)**
+- **Type:** String or Array of strings
+- **Required:** No (optional)
+- **Description:** Block type filter to show only certain types of content in Notion pages
+- **When to use:** Only for Notion URLs (ignored in external URLs)
+- **Examples:**
+  - Single type: `"quote"` (only show quotes)
+  - Multiple types: `["quote", "callout"]` (only show quotes and callouts)
 
-### Actualizar contenido
+### Update content
 
-- **Recarga automática:** El contenido se almacena en caché para carga rápida
-- **Botón 🔄:** Fuerza la recarga de una página específica (útil si actualizaste Notion)
-- **Gestión de caché:** Disponible en el panel de Configuración
+- **Automatic reload:** Content is cached for fast loading
+- **🔄 Button:** Forces reload of a specific page (useful if you updated Notion)
+- **Cache management:** Available in the Settings panel
 
-### Integración con tokens
+### Token integration
 
-Puedes vincular páginas directamente a tokens/personajes en la escena:
+You can link pages directly to tokens/characters in the scene:
 
-1. **Haz clic derecho en cualquier token** en la escena
-2. Selecciona **"Vincular página"**
-3. Elige una página de tu configuración
-4. La página ahora está vinculada a ese token
+1. **Right-click on any token** in the scene
+2. Select **"Link page"**
+3. Choose a page from your configuration
+4. The page is now linked to that token
 
-**Para ver una página vinculada:**
-- Haz clic derecho en el token → **"Ver página vinculada"**
+**To view a linked page:**
+- Right-click on the token → **"View linked page"**
 
-**Para desvincular:**
-- Haz clic derecho en el token → **"Desvincular página"** - Solo GM
+**To unlink:**
+- Right-click on the token → **"Unlink page"** - GM only
 
-**Nota:** Solo el GM puede vincular/desvincular páginas. Todos los jugadores pueden ver páginas vinculadas.
+**Note:** Only the GM can link/unlink pages. All players can view linked pages.
 
-### Contenido soportado
+### Supported content
 
-- **Páginas de Notion** - Páginas privadas o públicas (compartidas con tu integración)
-- **PDFs** - Cualquier archivo PDF accesible públicamente
-- **URLs externas** - Cualquier página web (con selectores CSS opcionales)
+- **Notion pages** - Private or public pages (shared with your integration)
+- **PDFs** - Any publicly accessible PDF file
+- **External URLs** - Any web page (with optional CSS selectors)
 
-### 💡 Consejos
+### 💡 Tips
 
-- **Cada usuario tiene su propio token:** Configura tu token una vez y úsalo en todas las salas
-- **Cada sala es independiente:** Las páginas se configuran por sala, pero el token se comparte
-- **Token privado:** Tu token se almacena localmente en tu navegador, solo tú puedes verlo
-- **URLs de Notion:** Puedes usar páginas privadas (no necesitan ser públicas) si las compartes con tu integración
-- **Iconos:** Las páginas muestran automáticamente su icono de Notion
-- **Imágenes:** Haz clic en cualquier imagen para verla a tamaño completo
-- **Cambiar token:** Haz clic en **🔑** → Eliminar Token para volver a usar el token del servidor (si está configurado)
+- **Each user has their own token:** Configure your token once and use it in all rooms
+- **Each room is independent:** Pages are configured per room, but the token is shared
+- **Private token:** Your token is stored locally in your browser, only you can see it
+- **Notion URLs:** You can use private pages (they don't need to be public) if you share them with your integration
+- **Icons:** Pages automatically show their Notion icon
+- **Images:** Click on any image to view it at full size
+- **Change token:** Click **🔑** → Delete Token to go back to using the server token (if configured)
 
-## 🐛 Solución de problemas
+## 🐛 Troubleshooting
 
-**La página no se abre:**
-- Verifica que la URL de Notion sea correcta
-- Asegúrate de que la URL esté completa (sin parámetros `?source=...`)
-- Verifica que la página esté compartida con tu integración
+**Page doesn't open:**
+- Verify that the Notion URL is correct
+- Make sure the URL is complete (without `?source=...` parameters)
+- Check that the page is shared with your integration
 
-**El contenido externo no carga:**
-- Para PDFs: Asegúrate de que la URL sea accesible públicamente
-- Para URLs externas: Algunas páginas bloquean iframes por seguridad (CORS)
-- Revisa la consola del navegador para errores CORS o de iframe
+**External content doesn't load:**
+- For PDFs: Make sure the URL is publicly accessible
+- For external URLs: Some pages block iframes for security (CORS)
+- Check the browser console for CORS or iframe errors
 
-**La extensión no aparece:**
-- Verifica que `manifest.json` sea accesible públicamente
-- Verifica que la URL del manifiesto sea correcta en Owlbear
+**Extension doesn't appear:**
+- Verify that `manifest.json` is publicly accessible
+- Check that the manifest URL is correct in Owlbear
 
-**Error de token:**
-- Verifica que tu token sea correcto (comienza con `secret_` o `ntn_`)
-- Asegúrate de que la integración tenga acceso a las páginas que intentas ver
+**Token error:**
+- Verify that your token is correct (starts with `secret_` or `ntn_`)
+- Make sure the integration has access to the pages you're trying to view
 
-**Problemas de caché:**
-- Usa el botón 🔄 para recargar una página específica
-- Usa el botón 🗑️ para limpiar todo el caché
+**Cache issues:**
+- Use the 🔄 button to reload a specific page
+- Use the 🗑️ button to clear all cache
 
-## 💬 Soporte
+## 💬 Support
 
-### Obtener ayuda
+### Getting help
 
-Si encuentras algún problema, tienes preguntas o quieres solicitar una función:
+If you encounter any issues, have questions, or want to request a feature:
 
-1. **Revisa el README:** La mayoría de las preguntas comunes están respondidas en este documento
-2. **Revisa la sección de solución de problemas:** Ver arriba para problemas comunes y soluciones
-3. **GitHub Issues:** Abre un issue en [GitHub](https://github.com/lolergb/owlbear-notion-embed/issues) para:
-   - Reportes de errores
-   - Solicitudes de funciones
-   - Preguntas sobre uso
-4. **GitHub Discussions:** Usa [GitHub Discussions](https://github.com/lolergb/owlbear-notion-embed/discussions) para:
-   - Preguntas generales
-   - Compartir configuraciones
-   - Soporte de la comunidad
+1. **Check the README:** Most common questions are answered in this document
+2. **Check the troubleshooting section:** See above for common issues and solutions
+3. **GitHub Issues:** Open an issue on [GitHub](https://github.com/lolergb/owlbear-notion-embed/issues) for:
+   - Bug reports
+   - Feature requests
+   - Usage questions
+4. **GitHub Discussions:** Use [GitHub Discussions](https://github.com/lolergb/owlbear-notion-embed/discussions) for:
+   - General questions
+   - Sharing configurations
+   - Community support
 
-### Reportar errores
+### Reporting bugs
 
-Al reportar un error, por favor incluye:
-- **Descripción:** Qué pasó vs. qué esperabas
-- **Pasos para reproducir:** Cómo activar el problema
-- **Navegador/OS:** Tu navegador y sistema operativo
-- **Errores de consola:** Cualquier error visible en la consola del navegador (F12)
-- **Versión de extensión:** Revisa la versión en manifest.json
+When reporting a bug, please include:
+- **Description:** What happened vs. what you expected
+- **Steps to reproduce:** How to trigger the issue
+- **Browser/OS:** Your browser and operating system
+- **Console errors:** Any errors visible in the browser console (F12)
+- **Extension version:** Check the version in manifest.json
 
-## 📄 Licencia
+## 📄 License
 
-Uso personal - Siéntete libre de modificar y usar como desees.
+Personal use - Feel free to modify and use as you wish.

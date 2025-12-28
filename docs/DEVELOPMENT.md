@@ -1,259 +1,258 @@
-# 🛠️ Guía de Desarrollo
+# 🛠️ Development Guide
 
-Esta guía está dirigida a desarrolladores que quieren contribuir, hacer fork o desplegar su propia versión de la extensión.
+This guide is for developers who want to contribute, fork, or deploy their own version of the extension.
 
-## 📦 Estructura del Proyecto
+## 📦 Project Structure
 
 ```
 owlbear-notion-embed/
-├── manifest.json              # Configuración de la extensión
-├── index.html                 # Interfaz de usuario
+├── manifest.json              # Extension configuration
+├── index.html                 # User interface
 ├── js/
-│   └── index.js               # Lógica principal
+│   └── index.js               # Main logic
 ├── css/
-│   ├── app.css                # Estilos de la aplicación
-│   └── notion-markdown.css    # Estilos para renderizar contenido
+│   ├── app.css                # Application styles
+│   └── notion-markdown.css    # Styles for rendering content
 ├── html/
-│   └── image-viewer.html      # Visor de imágenes modal
-├── img/                       # Iconos e imágenes
-├── icon.svg                   # Icono de la extensión
+│   └── image-viewer.html      # Image viewer modal
+├── img/                       # Icons and images
+├── icon.svg                   # Extension icon
 ├── netlify/
 │   ├── functions/
-│   │   ├── notion-api.js      # Netlify Function (proxy seguro)
-│   │   └── get-debug-mode.js  # Función de modo debug
-│   └── netlify.toml           # Configuración de Netlify
+│   │   ├── notion-api.js      # Netlify Function (secure proxy)
+│   │   └── get-debug-mode.js  # Debug mode function
+│   └── netlify.toml           # Netlify configuration
 ├── public/
-│   └── default-config.json    # Configuración por defecto
-├── package.json               # Configuración de Node.js
-├── .gitignore                 # Archivos ignorados por Git
-└── README.md                  # Documentación pública
+│   └── default-config.json    # Default configuration
+├── package.json               # Node.js configuration
+├── .gitignore                 # Files ignored by Git
+└── README.md                  # Public documentation
 ```
 
-## 🚀 Despliegue en Netlify
+## 🚀 Deploy to Netlify
 
-### Pasos básicos
+### Basic steps
 
-1. **Fork/clona este repositorio**
+1. **Fork/clone this repository**
 
-2. **Crea una cuenta de Netlify** (gratis)
+2. **Create a Netlify account** (free)
 
-3. **Conecta tu repositorio:**
+3. **Connect your repository:**
    - "Add new site" → "Import an existing project"
-   - Conecta GitHub/GitLab → Selecciona este repo
+   - Connect GitHub/GitLab → Select this repo
 
-4. **Despliegue automático:**
-   - Netlify detectará y desplegará automáticamente
-   - **No necesitas configurar token** - cada usuario configurará el suyo
+4. **Automatic deployment:**
+   - Netlify will detect and deploy automatically
+   - **You don't need to configure token** - each user will configure their own
 
-5. **Comparte la URL:**
-   - Ejemplo: `https://your-project.netlify.app/manifest.json`
-   - Comparte esta URL con los usuarios
-   - **Cada usuario configurará su propio token** desde la interfaz (botón 🔑)
+5. **Share the URL:**
+   - Example: `https://your-project.netlify.app/manifest.json`
+   - Share this URL with users
+   - **Each user will configure their own token** from the interface (🔑 button)
 
-### Token opcional del servidor
+### Optional server token
 
-Si quieres que funcione sin que los usuarios configuren nada (páginas compartidas):
+If you want it to work without users configuring anything (shared pages):
 
-1. **En el Dashboard de Netlify:**
+1. **In Netlify Dashboard:**
    - Settings → Environment variables
-   - Agrega: `NOTION_API_TOKEN` = `your_notion_token`
-   - Obtén el token: https://www.notion.so/my-integrations
+   - Add: `NOTION_API_TOKEN` = `your_notion_token`
+   - Get the token: https://www.notion.so/my-integrations
 
-2. **En Notion:**
-   - Comparte tus páginas con la integración
-   - Los usuarios verán estas páginas sin configurar nada
+2. **In Notion:**
+   - Share your pages with the integration
+   - Users will see these pages without configuring anything
 
-3. **Los usuarios pueden:**
-   - Usar páginas compartidas (sin token)
-   - O configurar su propio token (🔑) para sus páginas
+3. **Users can:**
+   - Use shared pages (without token)
+   - Or configure their own token (🔑) for their pages
 
-## 🔧 Desarrollo Local
+## 🔧 Local Development
 
-### Requisitos
+### Requirements
 
-- Servidor web estático (cualquiera funciona)
-- Páginas de Notion configuradas como privadas (compartidas con integración) o públicas
+- Static web server (any works)
+- Notion pages configured as private (shared with integration) or public
 
-### Configuración
+### Configuration
 
-1. **Servidor local:**
+1. **Local server:**
    ```bash
    npm run serve
-   # o
+   # or
    npx http-server -p 8000
    ```
 
-2. **Usa en Owlbear:**
+2. **Use in Owlbear:**
    - `http://localhost:8000/manifest.json`
 
-3. **Configura tu token:**
-   - Abre la extensión en Owlbear
-   - Haz clic en el botón **🔑** (arriba a la derecha)
-   - Pega tu token de Notion
-   - ¡Listo! Ya puedes usar tus páginas
+3. **Configure your token:**
+   - Open the extension in Owlbear
+   - Click the **🔑** button (top right)
+   - Paste your Notion token
+   - Done! You can now use your pages
 
-**Nota:** La configuración se gestiona completamente desde la interfaz. No necesitas archivos de configuración locales.
+**Note:** Configuration is managed completely from the interface. You don't need local configuration files.
 
-## 🧪 Probar que funciona
+## 🧪 Test that it works
 
-Para probar que la extensión funciona:
+To test that the extension works:
 
-1. **Abre Owlbear Rodeo** y entra a una sala
-2. **Abre la extensión** desde el menú de extensiones
-3. **Configura tu token** haciendo clic en el botón **🔑**
-4. **Agrega una página** desde la interfaz
-5. **Haz clic en la página** para verificar que se carga correctamente
+1. **Open Owlbear Rodeo** and enter a room
+2. **Open the extension** from the extensions menu
+3. **Configure your token** by clicking the **🔑** button
+4. **Add a page** from the interface
+5. **Click on the page** to verify it loads correctly
 
-**Si hay errores:**
-- **Token inválido:** Verifica que el token sea correcto (debe comenzar con `secret_` o `ntn_`)
-- **Sin permisos:** Asegúrate de que la integración de Notion tenga acceso a la página
-- **Página no encontrada:** Verifica que la URL sea correcta y que la página esté compartida con la integración
+**If there are errors:**
+- **Invalid token:** Verify that the token is correct (must start with `secret_` or `ntn_`)
+- **No permissions:** Make sure the Notion integration has access to the page
+- **Page not found:** Verify that the URL is correct and that the page is shared with the integration
 
-## 🔐 Seguridad
+## 🔐 Security
 
-**Para Desarrolladores:**
+**For Developers:**
 
-- ✅ El token se almacena en Netlify (variables de entorno) - opcional
-- ✅ El token NUNCA se expone al cliente (usa Netlify Functions como proxy)
-- ✅ Los usuarios finales configuran su propio token desde la interfaz (botón 🔑)
-- ✅ Los tokens de usuario se almacenan localmente en el navegador (localStorage)
-- ✅ El token del servidor es opcional y solo se usa si el token de usuario no está configurado
+- ✅ Token is stored in Netlify (environment variables) - optional
+- ✅ Token is NEVER exposed to the client (uses Netlify Functions as proxy)
+- ✅ End users configure their own token from the interface (🔑 button)
+- ✅ User tokens are stored locally in the browser (localStorage)
+- ✅ Server token is optional and only used if user token is not configured
 
-**Para Usuarios:**
+**For Users:**
 
-- ✅ No necesitas saber nada sobre tokens
-- ✅ Solo usa la extensión normalmente
-- ✅ Tu token se almacena localmente y nunca se envía al servidor (excepto a través de Netlify Functions seguras)
+- ✅ You don't need to know anything about tokens
+- ✅ Just use the extension normally
+- ✅ Your token is stored locally and never sent to the server (except through secure Netlify Functions)
 
-## 📚 SDK de Owlbear
+## 📚 Owlbear SDK
 
-Esta extensión usa el SDK oficial de Owlbear Rodeo:
-- [Documentación](https://docs.owlbear.rodeo/)
+This extension uses the official Owlbear Rodeo SDK:
+- [Documentation](https://docs.owlbear.rodeo/)
 - [Modal API](https://docs.owlbear.rodeo/extensions/apis/modal/)
 
-## 📝 Notas de Desarrollo
+## 📝 Development Notes
 
-- Las páginas de Notion pueden ser **privadas** (no necesitan ser públicas) si se comparten con la integración
-- El modal se abre con un tamaño responsivo
-- Puedes tener múltiples páginas configuradas
-- La extensión es completamente privada si no la compartes públicamente
-- **✅ Seguridad:** Los tokens se gestionan desde la interfaz y se almacenan localmente (localStorage)
+- Notion pages can be **private** (they don't need to be public) if shared with the integration
+- The modal opens with a responsive size
+- You can have multiple pages configured
+- The extension is completely private if you don't share it publicly
+- **✅ Security:** Tokens are managed from the interface and stored locally (localStorage)
 
-## 🗺️ Roadmap / Próximos Pasos
+## 🗺️ Roadmap / Next Steps
 
-### ✅ Implementado
+### ✅ Implemented
 
-- ✅ Texto, encabezados (H1, H2, H3)
-- ✅ Listas (con viñetas, numeradas, to-do)
-- ✅ Lista toggle y Encabezados toggle (H1, H2, H3)
-- ✅ Imágenes (clicables, modal a tamaño completo)
-- ✅ Tablas
-- ✅ Columnas (2, 3, 4, 5 columnas)
-- ✅ Código, Cita, Callout
-- ✅ Divisor
-- ✅ Gestión de páginas basada en carpetas
-- ✅ Reordenamiento mover arriba/abajo
-- ✅ Importar/Exportar configuración JSON
-- ✅ Gestión de token de usuario (global)
-- ✅ Configuración por sala
-- ✅ Soporte de URL externa con selectores CSS
-- ✅ Filtrado de tipos de bloques (`blockTypes`)
-- ✅ Carpetas anidadas (profundidad ilimitada)
-- ✅ Iconos automáticos de páginas
-- ✅ Gestión de caché
-- ✅ Modo debug (controlado por variable de entorno de Netlify)
-- ✅ **Soporte para PDFs** embebidos
-- ✅ **Funcionalidad colapsar/expandir todas las carpetas**
-- ✅ **Panel de configuración** con interfaz de configuración unificada
-- ✅ **Integración con tokens** vía menú contextual (vincular/ver/desvincular páginas)
+- ✅ Text, headings (H1, H2, H3)
+- ✅ Lists (bulleted, numbered, to-do)
+- ✅ Toggle list and Toggle headings (H1, H2, H3)
+- ✅ Images (clickable, full-size modal)
+- ✅ Tables
+- ✅ Columns (2, 3, 4, 5 columns)
+- ✅ Code, Quote, Callout
+- ✅ Divider
+- ✅ Folder-based page management
+- ✅ Move up/down reordering
+- ✅ Import/Export JSON configuration
+- ✅ User token management (global)
+- ✅ Per-room configuration
+- ✅ External URL support with CSS selectors
+- ✅ Block type filtering (`blockTypes`)
+- ✅ Nested folders (unlimited depth)
+- ✅ Automatic page icons
+- ✅ Cache management
+- ✅ Debug mode (controlled by Netlify environment variable)
+- ✅ **PDF support** embedded
+- ✅ **Collapse/expand all folders** functionality
+- ✅ **Settings panel** with unified configuration interface
+- ✅ **Token integration** via context menu (link/view/unlink pages)
 
-### 🔜 Implementaciones Futuras
+### 🔜 Future Implementations
 
-#### Soporte multi-servicio (rama `feature/multi-service`)
-- **Estado:** Código listo, deshabilitado para soft launch
-- **Servicios:** Google Drive, Docs, Sheets, Slides, Dropbox, OneDrive, YouTube, Vimeo, Figma
-- **Descripción:** Conversión automática de URLs a formato embed
-- **Rama:** `feature/multi-service`
+#### Multi-service support (branch `feature/multi-service`)
+- **Status:** Code ready, disabled for soft launch
+- **Services:** Google Drive, Docs, Sheets, Slides, Dropbox, OneDrive, YouTube, Vimeo, Figma
+- **Description:** Automatic URL conversion to embed format
+- **Branch:** `feature/multi-service`
 
-#### Base de datos anidada (Bases de datos anidadas)
-- **Estado:** Pendiente
-- **Complejidad:** Media-Alta
-- **Descripción:** Renderizar bases de datos completas que están dentro de una página
-- **Requisitos:**
-  - Obtener estructura de base de datos
-  - Renderizar filas y columnas
-  - Soporte para diferentes tipos de propiedades (texto, número, fecha, etc.)
-  - Paginación si hay muchas filas
+#### Child Database (Nested databases)
+- **Status:** Pending
+- **Complexity:** Medium-High
+- **Description:** Render complete databases that are inside a page
+- **Requirements:**
+  - Get database structure
+  - Render rows and columns
+  - Support for different property types (text, number, date, etc.)
+  - Pagination if there are many rows
 
-#### Bloque de ecuación (Fórmulas matemáticas)
-- **Estado:** Pendiente
-- **Complejidad:** Media
-- **Descripción:** Renderizar fórmulas matemáticas usando KaTeX o MathJax
-- **Requisitos:**
-  - Integrar biblioteca de renderizado matemático
-  - Analizar formato LaTeX de Notion
+#### Block Equation (Mathematical formulas)
+- **Status:** Pending
+- **Complexity:** Medium
+- **Description:** Render mathematical formulas using KaTeX or MathJax
+- **Requirements:**
+  - Integrate math rendering library
+  - Parse Notion's LaTeX format
 
-#### Bloque sincronizado (Bloques sincronizados)
-- **Estado:** Pendiente
-- **Complejidad:** Media
-- **Descripción:** Renderizar bloques que están sincronizados entre páginas
-- **Requisitos:**
-  - Detectar bloques sincronizados
-  - Obtener contenido del bloque original
+#### Synced Block (Synchronized blocks)
+- **Status:** Pending
+- **Complexity:** Medium
+- **Description:** Render blocks that are synchronized between pages
+- **Requirements:**
+  - Detect synchronized blocks
+  - Get content from the original block
 
-## 📊 Estadísticas del Proyecto
+## 📊 Project Statistics
 
-### ⏱️ Tiempo de Desarrollo
-- **Fecha de inicio:** 19 de diciembre de 2025
-- **Última actualización:** 27 de diciembre de 2025
-- **Días de trabajo activo:** 8 días (19, 20, 21, 22, 24, 25, 26, 27 dic)
-- **Total de commits:** 223 commits
-- **Promedio de commits por día:** ~28 commits/día
-- **Días más productivos:** 
-  - 21 dic: 45 commits
-  - 20 dic: 39 commits  
-  - 24 dic: 37 commits
-- **Horas más activas:** 20:00-21:00 (sesiones nocturnas intensas)
+### ⏱️ Development Time
+- **Start date:** December 19, 2025
+- **Last update:** December 27, 2025
+- **Active work days:** 8 days (Dec 19, 20, 21, 22, 24, 25, 26, 27)
+- **Total commits:** 223 commits
+- **Average commits per day:** ~28 commits/day
+- **Most productive days:** 
+  - Dec 21: 45 commits
+  - Dec 20: 39 commits  
+  - Dec 24: 37 commits
+- **Most active hours:** 20:00-21:00 (intense night sessions)
 
-### 📈 Métricas del Código
-- **Líneas de código:** ~7,045 líneas
-- **Archivos principales:** 17 archivos
-- **Lenguajes:** JavaScript (ES6+), HTML5, CSS3, JSON
-- **Versión actual:** 2.0.1
-- **Tamaño del proyecto:** ~500 KB (sin node_modules)
+### 📈 Code Metrics
+- **Lines of code:** ~7,045 lines
+- **Main files:** 17 files
+- **Languages:** JavaScript (ES6+), HTML5, CSS3, JSON
+- **Current version:** 2.0.1
+- **Project size:** ~500 KB (without node_modules)
 
-### 🎯 Alcance del Proyecto
-- **Tipo:** Extensión para Owlbear Rodeo
-- **Funcionalidad principal:** Integración de Notion
-- **Contenido soportado:** Notion, PDFs, URLs externas
-- **Características implementadas:** 25+ funcionalidades principales
-- **Bloques de Notion soportados:** 15+ tipos de bloques
-- **Próximamente:** Multi-servicio (rama `feature/multi-service`)
+### 🎯 Project Scope
+- **Type:** Extension for Owlbear Rodeo
+- **Main functionality:** Notion integration
+- **Supported content:** Notion, PDFs, external URLs
+- **Implemented features:** 25+ main features
+- **Notion blocks supported:** 15+ block types
+- **Coming soon:** Multi-service (branch `feature/multi-service`)
 
-### 🛠️ Tecnologías Utilizadas
+### 🛠️ Technologies Used
 - **Frontend:** Vanilla JavaScript (ES6+), HTML5, CSS3
 - **Backend:** Netlify Functions (Node.js)
 - **SDK:** Owlbear Rodeo SDK v3.1.0
 - **APIs:** Notion API
-- **Almacenamiento:** localStorage (configuración por sala)
+- **Storage:** localStorage (configuration per room)
 - **Deployment:** Netlify
-- **Control de versiones:** Git
+- **Version control:** Git
 
-## 🐛 Problemas Conocidos
+## 🐛 Known Issues
 
-Actualmente no hay errores críticos conocidos. Si encuentras algún problema, por favor repórtalo a través de GitHub Issues.
+Currently there are no known critical bugs. If you encounter any issues, please report them via GitHub Issues.
 
-### Limitaciones Menores
+### Minor Limitations
 
-- **Bases de datos anidadas:** Las bases de datos anidadas aún no están soportadas (ver Roadmap)
-- **Bloques de ecuación:** Las fórmulas matemáticas aún no se renderizan (ver Roadmap)
-- **Bloques sincronizados:** Los bloques sincronizados aún no están soportados (ver Roadmap)
+- **Child Databases:** Nested databases are not yet supported (see Roadmap)
+- **Block Equations:** Mathematical formulas are not yet rendered (see Roadmap)
+- **Synced Blocks:** Synchronized blocks are not yet supported (see Roadmap)
 
-## 🔓 Hacer pública una página de Notion
+## 🔓 Make a Notion page public
 
-1. Abre tu página en Notion
-2. Haz clic en "Share" (arriba a la derecha)
-3. Habilita "Share to web"
-4. Copia la URL pública
-5. Pégala en la configuración de la extensión
-
+1. Open your page in Notion
+2. Click "Share" (top right)
+3. Enable "Share to web"
+4. Copy the public URL
+5. Paste it in the extension configuration
