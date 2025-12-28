@@ -3309,27 +3309,6 @@ async function togglePageVisibility(page, pageCategoryPath, roomId) {
   }
 }
 
-// Función para verificar si una carpeta tiene algún contenido visible para jugadores
-function hasVisibleContentForPlayers(category) {
-  // Verificar si hay páginas visibles directamente
-  if (category.pages && Array.isArray(category.pages)) {
-    if (category.pages.some(page => page.visibleToPlayers === true)) {
-      return true;
-    }
-  }
-  
-  // Verificar recursivamente en subcategorías
-  if (category.categories && Array.isArray(category.categories)) {
-    for (const subcat of category.categories) {
-      if (hasVisibleContentForPlayers(subcat)) {
-        return true;
-      }
-    }
-  }
-  
-  return false;
-}
-
 // Función para alternar la visibilidad de todas las páginas en una carpeta (recursivamente)
 async function toggleCategoryVisibility(category, categoryPath, roomId, makeVisible) {
   try {
