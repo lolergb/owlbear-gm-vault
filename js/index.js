@@ -175,6 +175,7 @@ function getFriendlyRoomId(roomId) {
 
 // Clave para metadata de OBR.room
 const ROOM_METADATA_KEY = 'com.dmscreen/pagesConfig';
+const ROOM_CONTENT_CACHE_KEY = 'com.dmscreen/contentCache';
 
 // Cache local para evitar lecturas repetidas (se sincroniza con room metadata)
 let pagesConfigCache = null;
@@ -384,12 +385,52 @@ function setCachedBlocks(pageId, blocks) {
     };
     localStorage.setItem(cacheKey, JSON.stringify(data));
     console.log('💾 Bloques guardados en caché para:', pageId);
+    
+    // Si es GM, también guardar en caché compartido para jugadores
+    saveToSharedCache(pageId, blocks);
   } catch (e) {
     console.error('Error al guardar en caché:', e);
     // Si el localStorage está lleno, informar al usuario
     if (e.name === 'QuotaExceededError') {
       console.warn('⚠️ localStorage lleno. Considera limpiar el caché manualmente.');
     }
+  }
+}
+
+// Guardar contenido en caché compartido (room metadata) para jugadores
+async function saveToSharedCache(pageId, blocks) {
+  try {
+    // Solo guardar si es GM
+    const isGM = await getUserRole();
+    if (!isGM) return;
+    
+    // Obtener el caché compartido actual
+    const metadata = await OBR.room.getMetadata();
+    const sharedCache = (metadata && metadata[ROOM_CONTENT_CACHE_KEY]) || {};
+    
+    // Limitar el tamaño del caché compartido (máximo 5 páginas para no sobrecargar)
+    const cacheKeys = Object.keys(sharedCache);
+    if (cacheKeys.length >= 5 && !sharedCache[pageId]) {
+      // Eliminar la página más antigua
+      const oldest = cacheKeys.reduce((a, b) => 
+        (sharedCache[a].savedAt < sharedCache[b].savedAt) ? a : b
+      );
+      delete sharedCache[oldest];
+    }
+    
+    // Guardar el contenido
+    sharedCache[pageId] = {
+      blocks: blocks,
+      savedAt: new Date().toISOString()
+    };
+    
+    await OBR.room.setMetadata({
+      [ROOM_CONTENT_CACHE_KEY]: sharedCache
+    });
+    console.log('💾 Contenido guardado en caché compartido para:', pageId);
+  } catch (e) {
+    // Ignorar errores silenciosamente - el caché compartido es opcional
+    console.debug('No se pudo guardar en caché compartido:', e);
   }
 }
 
@@ -611,7 +652,18 @@ async function fetchNotionBlocks(pageId, useCache = true) {
       // Usar el proxy de Netlify Function y pasar el token como parámetro
       apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(userToken)}`;
     } else {
-      // No hay token del usuario → mostrar error
+      // No hay token del usuario → intentar obtener del caché compartido (room metadata)
+      try {
+        const metadata = await OBR.room.getMetadata();
+        const sharedCache = metadata && metadata[ROOM_CONTENT_CACHE_KEY];
+        if (sharedCache && sharedCache[pageId] && sharedCache[pageId].blocks) {
+          console.log('✅ Usando caché compartido (room metadata) para:', pageId);
+          return sharedCache[pageId].blocks;
+        }
+      } catch (e) {
+        console.warn('No se pudo obtener caché compartido:', e);
+      }
+      // Si no hay caché compartido, mostrar error
       throw new Error('No token configured. Go to Settings (⚙️ button) to configure your Notion token.');
     }
     
@@ -2729,13 +2781,13 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       // Agregar la página directamente al contentContainer para mantener el orden combinado
       contentContainer.appendChild(button);
       
-      buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml, pageContextMenuButton });
+      buttonsData.push({ button, pageId, pageName: page.name, linkIconHtml, pageContextMenuButton, pageVisibilityButton, isGM });
     }
     });
     
     // Cargar iconos en paralelo después de renderizar todos los botones
     if (buttonsData.length > 0) {
-    Promise.all(buttonsData.map(async ({ button, pageId, pageName, linkIconHtml, pageContextMenuButton }) => {
+    Promise.all(buttonsData.map(async ({ button, pageId, pageName, linkIconHtml, pageContextMenuButton, pageVisibilityButton, isGM }) => {
         // Solo intentar cargar el icono si tenemos un pageId válido
         if (!pageId || pageId === 'null') {
           return; // Saltar si no hay pageId válido
@@ -2754,13 +2806,19 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
             </div>
           `;
         
-        // Re-agregar el botón de menú contextual después de actualizar el HTML
-        // Asegurarse de que el botón se mantiene visible
-        if (pageContextMenuButton && menuButtonParent === button) {
-          button.appendChild(pageContextMenuButton);
-          // Asegurar que el botón sea visible si el mouse está sobre el botón
-          if (button.matches(':hover')) {
-            pageContextMenuButton.style.opacity = '1';
+        // Re-agregar los botones después de actualizar el HTML (solo para GMs)
+        if (isGM && menuButtonParent === button) {
+          if (pageVisibilityButton) {
+            button.appendChild(pageVisibilityButton);
+            if (button.matches(':hover')) {
+              pageVisibilityButton.style.opacity = '1';
+            }
+          }
+          if (pageContextMenuButton) {
+            button.appendChild(pageContextMenuButton);
+            if (button.matches(':hover')) {
+              pageContextMenuButton.style.opacity = '1';
+            }
           }
         }
         } catch (e) {
