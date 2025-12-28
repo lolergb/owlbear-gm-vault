@@ -2152,8 +2152,34 @@ try {
   }
 }
 
+// Función para verificar recursivamente si una categoría tiene contenido visible para jugadores
+function hasVisibleContentForPlayers(category) {
+  // Verificar si tiene páginas visibles
+  if (category.pages && category.pages.length > 0) {
+    const hasVisiblePages = category.pages.some(page => 
+      page.url && 
+      !page.url.includes('...') && 
+      page.url.startsWith('http') &&
+      page.visibleToPlayers === true
+    );
+    if (hasVisiblePages) return true;
+  }
+  
+  // Verificar recursivamente en subcategorías
+  if (category.categories && category.categories.length > 0) {
+    return category.categories.some(subCat => hasVisibleContentForPlayers(subCat));
+  }
+  
+  return false;
+}
+
 // Función recursiva para renderizar una carpeta (puede tener subcarpetas)
 function renderCategory(category, parentElement, level = 0, roomId = null, categoryPath = [], isGM = true) {
+  // Si el usuario es jugador, verificar si la carpeta tiene contenido visible antes de renderizarla
+  if (!isGM && !hasVisibleContentForPlayers(category)) {
+    return; // No renderizar carpetas vacías o sin contenido visible para jugadores
+  }
+  
   // Verificar si la carpeta tiene contenido (páginas o subcarpetas)
   const hasPages = category.pages && category.pages.length > 0;
   const hasSubcategories = category.categories && category.categories.length > 0;
