@@ -964,6 +964,7 @@
   /* ==========================================================================
       Refresh Button
       ========================================================================== */
+  #page-context-menu-button-header,
   #refresh-page-button,
   #page-visibility-button-header {
     background: transparent;
@@ -980,16 +981,29 @@
     margin-left: var(--spacing-sm);
   }
 
-  #refresh-page-button,
+  /* Orden de botones de derecha a izquierda: menú contextual, refresh, visibility */
+  #page-context-menu-button-header {
+    order: 3; /* Más a la derecha */
+    margin-left: var(--spacing-sm);
+  }
+  
+  #refresh-page-button {
+    order: 2; /* Medio */
+    margin-left: var(--spacing-sm);
+  }
+  
   #page-visibility-button-header {
+    order: 1; /* Más a la izquierda */
     margin-left: 0;
   }
   
+  #page-context-menu-button-header:hover,
   #refresh-page-button:hover,
   #page-visibility-button-header:hover {
     background: var(--color-bg-hover);
   }
   
+  #page-context-menu-button-header:active,
   #refresh-page-button:active,
   #page-visibility-button-header:active {
     background: var(--color-bg-active);

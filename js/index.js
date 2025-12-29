@@ -1848,7 +1848,12 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           console.log(`    ✅ Tabla [${index}] renderizada`);
         } catch (error) {
           console.error('Error al renderizar tabla:', error);
-          html += '<div class="notion-table-placeholder">[Error loading table]</div>';
+          html += `
+            <div class="empty-state notion-table-placeholder">
+              <div class="empty-state-icon">⚠️</div>
+              <p class="empty-state-text">Error loading table</p>
+            </div>
+          `;
         }
       } else {
         // Verificar si el bloque coincide con el filtro antes de renderizar
@@ -1892,7 +1897,12 @@ async function renderTable(tableBlock) {
     const rows = await fetchNotionBlocks(tableBlock.id);
     
     if (!rows || rows.length === 0) {
-      return '<div class="notion-table-placeholder">[Tabla vacía]</div>';
+      return `
+        <div class="empty-state notion-table-placeholder">
+          <div class="empty-state-icon">📊</div>
+          <p class="empty-state-text">Tabla vacía</p>
+        </div>
+      `;
     }
     
     // Obtener el número de columnas de la primera fila
@@ -1900,7 +1910,12 @@ async function renderTable(tableBlock) {
     const columnCount = firstRow?.table_row?.cells?.length || 0;
     
     if (columnCount === 0) {
-      return '<div class="notion-table-placeholder">[Tabla sin columnas]</div>';
+      return `
+        <div class="empty-state notion-table-placeholder">
+          <div class="empty-state-icon">📊</div>
+          <p class="empty-state-text">Tabla sin columnas</p>
+        </div>
+      `;
     }
     
     let tableHtml = '<table class="notion-table">';
@@ -1929,7 +1944,13 @@ async function renderTable(tableBlock) {
     return tableHtml;
   } catch (error) {
     console.error('Error al renderizar tabla:', error);
-    return '<div class="notion-table-placeholder">[Error loading table: ' + error.message + ']</div>';
+    return `
+      <div class="empty-state notion-table-placeholder">
+        <div class="empty-state-icon">⚠️</div>
+        <p class="empty-state-text">Error loading table</p>
+        <p class="empty-state-hint">${error.message}</p>
+      </div>
+    `;
   }
 }
 
@@ -2116,7 +2137,12 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   }
   
   // Mostrar loading
-  contentDiv.innerHTML = '<div class="notion-loading">Cargando contenido...</div>';
+  contentDiv.innerHTML = `
+    <div class="empty-state notion-loading">
+      <div class="empty-state-icon">⏳</div>
+      <p class="empty-state-text">Cargando contenido...</p>
+    </div>
+  `;
   contentDiv.style.display = 'block';
   container.classList.add('show-content');
   
@@ -2175,7 +2201,12 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     console.log('Bloques obtenidos:', blocks.length);
     
     if (blocks.length === 0) {
-      contentDiv.innerHTML = '<div class="notion-loading">No content found on this page.</div>';
+      contentDiv.innerHTML = `
+        <div class="empty-state notion-loading">
+          <div class="empty-state-icon">📄</div>
+          <p class="empty-state-text">No content found on this page.</p>
+        </div>
+      `;
       return;
     }
     
@@ -5016,6 +5047,134 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         console.log('🔍 Filtro de tipos de bloques activado:', blockTypes);
       }
       
+      // Agregar o actualizar botón de menú contextual (solo para Notion, solo para GMs)
+      let contextMenuButton = document.getElementById("page-context-menu-button-header");
+      let isGMForHeader = false;
+      try {
+        const role = await OBR.player.getRole();
+        isGMForHeader = role === 'GM';
+      } catch (e) {
+        isGMForHeader = false;
+      }
+      
+      if (isGMForHeader) {
+        if (!contextMenuButton) {
+          contextMenuButton = document.createElement("button");
+          contextMenuButton.id = "page-context-menu-button-header";
+          contextMenuButton.className = "icon-button";
+          header.appendChild(contextMenuButton);
+        }
+        
+        contextMenuButton.innerHTML = "";
+        const contextMenuIcon = document.createElement("img");
+        contextMenuIcon.src = "img/icon-contextualmenu.svg";
+        contextMenuIcon.className = "icon-button-icon";
+        contextMenuButton.appendChild(contextMenuIcon);
+        contextMenuButton.title = "Menú";
+        
+        // Remover listeners anteriores
+        const newContextMenuButton = contextMenuButton.cloneNode(true);
+        contextMenuButton.parentNode.replaceChild(newContextMenuButton, contextMenuButton);
+        contextMenuButton = newContextMenuButton;
+        contextMenuButton.id = "page-context-menu-button-header";
+        contextMenuButton.className = "icon-button";
+        
+        // Configurar menú contextual
+        contextMenuButton.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const rect = contextMenuButton.getBoundingClientRect();
+          let roomId = null;
+          try {
+            roomId = OBR.room.id || await OBR.room.getId();
+          } catch (e) {}
+          
+          const config = getPagesJSON(roomId) || await getDefaultJSON();
+          const pageInfo = findPageInConfig(config, url, name);
+          
+          if (pageInfo) {
+            const pageCategoryPath = pageInfo.pageCategoryPath;
+            const parent = navigateConfigPath(config, pageCategoryPath);
+            const pageIndex = parent && parent.pages ? parent.pages.findIndex(p => p.name === pageInfo.page.name && p.url === pageInfo.page.url) : -1;
+            const combinedOrder = getCombinedOrder(parent);
+            const currentPos = combinedOrder.findIndex(o => o.type === 'page' && o.index === pageIndex);
+            const canMoveUp = currentPos > 0;
+            const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
+            
+            const menuItems = [
+              { 
+                icon: 'img/icon-edit.svg', 
+                text: 'Edit', 
+                action: async () => {
+                  await editPageFromPageList(pageInfo.page, pageCategoryPath, roomId);
+                }
+              },
+              { 
+                icon: 'img/icon-clone.svg', 
+                text: 'Duplicate', 
+                action: async () => {
+                  await duplicatePageFromPageList(pageInfo.page, pageCategoryPath, roomId);
+                }
+              },
+              { separator: true },
+            ];
+            
+            // Agregar opciones de mover si es posible
+            if (canMoveUp || canMoveDown) {
+              if (canMoveUp) {
+                menuItems.push({
+                  icon: 'img/icon-arrow.svg',
+                  text: 'Move up',
+                  action: async () => {
+                    await movePageInList(pageInfo.page, pageCategoryPath, roomId, 'up');
+                  }
+                });
+              }
+              if (canMoveDown) {
+                menuItems.push({
+                  icon: 'img/icon-arrow.svg',
+                  text: 'Move down',
+                  action: async () => {
+                    await movePageInList(pageInfo.page, pageCategoryPath, roomId, 'down');
+                  }
+                });
+              }
+              menuItems.push({ separator: true });
+            }
+            
+            menuItems.push({
+              icon: 'img/icon-trash.svg',
+              text: 'Delete',
+              action: async () => {
+                if (confirm(`¿Eliminar la página "${pageInfo.page.name}"?`)) {
+                  await deletePageFromPageList(pageInfo.page, pageCategoryPath, roomId);
+                  // Volver a la vista principal después de eliminar
+                  const notionContainer = document.getElementById("notion-container");
+                  if (notionContainer) {
+                    notionContainer.classList.add("hidden");
+                  }
+                  const pageList = document.getElementById("page-list");
+                  if (pageList) {
+                    pageList.classList.remove("hidden");
+                  }
+                }
+              }
+            });
+            
+            createContextMenu(menuItems, { x: rect.right + 8, y: rect.bottom + 4 }, () => {
+              contextMenuButton.classList.remove('context-menu-active');
+            });
+            
+            contextMenuButton.classList.add('context-menu-active');
+          }
+        });
+        
+        contextMenuButton.classList.remove("hidden");
+      } else {
+        if (contextMenuButton) {
+          contextMenuButton.classList.add("hidden");
+        }
+      }
+      
       // Agregar o actualizar botón de recargar (solo para Notion)
       let refreshButton = document.getElementById("refresh-page-button");
     if (!refreshButton) {
@@ -5159,6 +5318,11 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
           iframe.src = '';
           iframe.style.display = 'none';
         }
+        // Ocultar botón de menú contextual
+        const contextMenuButton = document.getElementById("page-context-menu-button-header");
+        if (contextMenuButton) {
+          contextMenuButton.classList.add("hidden");
+        }
         // Ocultar botón de recargar
         const refreshButton = document.getElementById("refresh-page-button");
         if (refreshButton) {
@@ -5184,14 +5348,15 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       backButton.dataset.listenerAdded = "true";
     }
     
-    // Agregar botón de visibilidad para GMs (al final para que aparezca después del refresh)
+    // Agregar botón de visibilidad para GMs (después del refresh, antes del menú contextual)
     let visibilityButton = document.getElementById("page-visibility-button-header");
-    let isGMForHeader = false;
-    try {
-      const role = await OBR.player.getRole();
-      isGMForHeader = role === 'GM';
-    } catch (e) {
-      isGMForHeader = false;
+    if (!isGMForHeader) {
+      try {
+        const role = await OBR.player.getRole();
+        isGMForHeader = role === 'GM';
+      } catch (e) {
+        isGMForHeader = false;
+      }
     }
     
     if (isGMForHeader) {
