@@ -2658,6 +2658,13 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           await editCategoryFromPageList(category, categoryPath, roomId);
         }
       },
+      { 
+        icon: 'img/icon-clone.svg', 
+        text: 'Duplicate', 
+        action: async () => {
+          await duplicateCategoryFromPageList(category, categoryPath, roomId);
+        }
+      },
       { separator: true },
     ];
     
@@ -2844,6 +2851,13 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
             text: 'Edit', 
             action: async () => {
               await editPageFromPageList(page, pageCategoryPath, roomId);
+            }
+          },
+          { 
+            icon: 'img/icon-clone.svg', 
+            text: 'Duplicate', 
+            action: async () => {
+              await duplicatePageFromPageList(page, pageCategoryPath, roomId);
             }
           },
           { separator: true },
@@ -3602,6 +3616,111 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
   } catch (error) {
     console.error('Error al eliminar página:', error);
     alert('Error deleting page: ' + error.message);
+    return false;
+  }
+}
+
+/**
+ * Duplicar una carpeta completa (incluyendo páginas y subcarpetas)
+ */
+async function duplicateCategoryFromPageList(category, categoryPath, roomId) {
+  try {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    
+    // Encontrar la carpeta en la configuración
+    const parent = navigateConfigPath(config, categoryPath.slice(0, -2));
+    const categoryIndex = categoryPath[categoryPath.length - 1];
+    
+    if (!parent || !parent.categories || !parent.categories[categoryIndex]) {
+      console.error('No se encontró la carpeta para duplicar');
+      alert('Error: Could not find folder to duplicate');
+      return false;
+    }
+    
+    const originalCategory = parent.categories[categoryIndex];
+    
+    // Crear una copia profunda de la carpeta
+    const duplicatedCategory = JSON.parse(JSON.stringify(originalCategory));
+    
+    // Modificar el nombre agregando " (Copy)" o " (Copy 2)", etc.
+    let newName = duplicatedCategory.name + ' (Copy)';
+    let counter = 1;
+    while (parent.categories.some(cat => cat.name === newName)) {
+      counter++;
+      newName = duplicatedCategory.name + ` (Copy ${counter})`;
+    }
+    duplicatedCategory.name = newName;
+    
+    // Insertar la carpeta duplicada justo después de la original
+    parent.categories.splice(categoryIndex + 1, 0, duplicatedCategory);
+    
+    await savePagesJSON(config, roomId);
+    
+    // Recargar la vista
+    const pageList = document.getElementById("page-list");
+    if (pageList) {
+      await renderPagesByCategories(config, pageList, roomId);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error al duplicar carpeta:', error);
+    alert('Error duplicating folder: ' + error.message);
+    return false;
+  }
+}
+
+/**
+ * Duplicar una página
+ */
+async function duplicatePageFromPageList(page, pageCategoryPath, roomId) {
+  try {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
+    
+    // Encontrar la página en la configuración
+    const parent = navigateConfigPath(config, pageCategoryPath);
+    if (!parent || !parent.pages) {
+      console.error('No se encontró el parent o pages en:', pageCategoryPath);
+      alert('Error: Could not find page to duplicate');
+      return false;
+    }
+    
+    const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
+    if (pageIndex === -1) {
+      console.error('No se encontró la página:', page.name, page.url);
+      alert('Error: Could not find page to duplicate');
+      return false;
+    }
+    
+    const originalPage = parent.pages[pageIndex];
+    
+    // Crear una copia de la página
+    const duplicatedPage = JSON.parse(JSON.stringify(originalPage));
+    
+    // Modificar el nombre agregando " (Copy)" o " (Copy 2)", etc.
+    let newName = duplicatedPage.name + ' (Copy)';
+    let counter = 1;
+    while (parent.pages.some(p => p.name === newName)) {
+      counter++;
+      newName = duplicatedPage.name + ` (Copy ${counter})`;
+    }
+    duplicatedPage.name = newName;
+    
+    // Insertar la página duplicada justo después de la original
+    parent.pages.splice(pageIndex + 1, 0, duplicatedPage);
+    
+    await savePagesJSON(config, roomId);
+    
+    // Recargar la vista
+    const pageList = document.getElementById("page-list");
+    if (pageList) {
+      await renderPagesByCategories(config, pageList, roomId);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error al duplicar página:', error);
+    alert('Error duplicating page: ' + error.message);
     return false;
   }
 }
@@ -5653,11 +5772,13 @@ async function showVisualEditor(pagesConfig, roomId = null) {
           { icon: '➕', text: 'Agregar página', action: () => addPage(path) },
           { separator: true },
           { icon: '✏️', text: 'Editar', action: () => editCategory(item, path) },
+          { icon: 'img/icon-clone.svg', text: 'Duplicar', action: () => duplicateCategory(path) },
           { icon: '🗑️', text: 'Eliminar', action: () => deleteCategory(path) }
         );
       } else {
         menuItems.push(
           { icon: '✏️', text: 'Edit', action: () => editPage(item, path) },
+          { icon: 'img/icon-clone.svg', text: 'Duplicate', action: () => duplicatePage(path) },
           { icon: '🗑️', text: 'Delete', action: () => deletePage(path) }
         );
       }
@@ -5894,6 +6015,56 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     const parent = navigatePath(config, path.slice(0, -2));
     if (parent && parent[key]) {
       parent[key].splice(index, 1);
+      await savePagesJSON(config, roomId);
+      refreshEditor();
+    }
+  };
+
+  const duplicateCategory = async (path) => {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+    const key = path[path.length - 2];
+    const index = path[path.length - 1];
+    const parent = navigatePath(config, path.slice(0, -2));
+    if (parent && parent[key] && parent[key][index]) {
+      const originalCategory = parent[key][index];
+      const duplicatedCategory = JSON.parse(JSON.stringify(originalCategory));
+      
+      // Modificar el nombre agregando " (Copy)" o " (Copy 2)", etc.
+      let newName = duplicatedCategory.name + ' (Copy)';
+      let counter = 1;
+      while (parent[key].some(cat => cat.name === newName)) {
+        counter++;
+        newName = duplicatedCategory.name + ` (Copy ${counter})`;
+      }
+      duplicatedCategory.name = newName;
+      
+      // Insertar la carpeta duplicada justo después de la original
+      parent[key].splice(index + 1, 0, duplicatedCategory);
+      await savePagesJSON(config, roomId);
+      refreshEditor();
+    }
+  };
+
+  const duplicatePage = async (path) => {
+    const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || currentConfig));
+    const key = path[path.length - 2];
+    const index = path[path.length - 1];
+    const parent = navigatePath(config, path.slice(0, -2));
+    if (parent && parent[key] && parent[key][index]) {
+      const originalPage = parent[key][index];
+      const duplicatedPage = JSON.parse(JSON.stringify(originalPage));
+      
+      // Modificar el nombre agregando " (Copy)" o " (Copy 2)", etc.
+      let newName = duplicatedPage.name + ' (Copy)';
+      let counter = 1;
+      while (parent[key].some(p => p.name === newName)) {
+        counter++;
+        newName = duplicatedPage.name + ` (Copy ${counter})`;
+      }
+      duplicatedPage.name = newName;
+      
+      // Insertar la página duplicada justo después de la original
+      parent[key].splice(index + 1, 0, duplicatedPage);
       await savePagesJSON(config, roomId);
       refreshEditor();
     }

@@ -139,6 +139,49 @@ This extension uses the official Owlbear Rodeo SDK:
 - The extension is completely private if you don't share it publicly
 - **✅ Security:** Tokens are managed from the interface and stored locally (localStorage)
 
+## 🔄 Content Sharing Architecture
+
+### How it works
+
+**Problem:** Room metadata has a 16KB size limit, but rendered Notion HTML can be much larger.
+
+**Solution:** Use `OBR.broadcast` for real-time content sharing between GM and players.
+
+**Flow:**
+1. **GM loads a Notion page:**
+   - Fetches blocks from Notion API (using GM's token)
+   - Renders HTML from blocks
+   - Stores rendered HTML in local memory cache (not room metadata)
+   - Sets up broadcast listener to respond to player requests
+
+2. **Player requests content:**
+   - Player clicks on a visible page
+   - Sends broadcast message: `BROADCAST_CHANNEL_REQUEST` with `pageId`
+   - Shows "Waiting..." message while waiting for response
+
+3. **GM responds:**
+   - Receives broadcast request
+   - Looks up HTML in local cache
+   - Sends broadcast message: `BROADCAST_CHANNEL_RESPONSE` with `pageId` and `html`
+   - Player receives HTML and displays it
+
+**Key Components:**
+- `localHtmlCache`: In-memory cache on GM side (max 20 pages)
+- `requestHtmlFromGM()`: Player function to request content
+- `setupGMContentBroadcast()`: GM listener for player requests
+- `saveHtmlToLocalCache()`: GM function to cache rendered HTML
+
+**Benefits:**
+- No size limits (broadcast doesn't have 16KB limit)
+- Real-time sharing (instant updates)
+- No token required for players
+- Works as long as GM has extension open
+
+**Limitations:**
+- GM must have extension open for sharing to work
+- Content is not persisted (cleared when GM closes extension)
+- 5-second timeout if GM doesn't respond
+
 ## 🗺️ Roadmap / Next Steps
 
 ### ✅ Implemented
@@ -166,6 +209,13 @@ This extension uses the official Owlbear Rodeo SDK:
 - ✅ **Collapse/expand all folders** functionality
 - ✅ **Settings panel** with unified configuration interface
 - ✅ **Token integration** via context menu (link/view/unlink pages)
+- ✅ **Player visibility control** - GM can control which pages are visible to players
+- ✅ **Visibility toggle buttons** - Quick toggle buttons for pages and categories
+- ✅ **Content sharing via broadcast** - GM shares Notion content with players (no token required)
+- ✅ **Shared cache for Notion blocks** - Players can view Notion content without their own token
+- ✅ **Empty state for players** - Shows message when GM hasn't shared content
+- ✅ **Role-based UI** - Different interface for GM vs Player
+- ✅ **Image sharing for players** - GM can share images via broadcast
 
 ### 🔜 Future Implementations
 
@@ -205,9 +255,9 @@ This extension uses the official Owlbear Rodeo SDK:
 
 ### ⏱️ Development Time
 - **Start date:** December 19, 2025
-- **Last update:** December 27, 2025
-- **Active work days:** 8 days (Dec 19, 20, 21, 22, 24, 25, 26, 27)
-- **Total commits:** 223 commits
+- **Last update:** January 2025
+- **Active work days:** 8+ days
+- **Total commits:** 250+ commits
 - **Average commits per day:** ~28 commits/day
 - **Most productive days:** 
   - Dec 21: 45 commits
@@ -235,7 +285,11 @@ This extension uses the official Owlbear Rodeo SDK:
 - **Backend:** Netlify Functions (Node.js)
 - **SDK:** Owlbear Rodeo SDK v3.1.0
 - **APIs:** Notion API
-- **Storage:** localStorage (configuration per room)
+- **Storage:** 
+  - `localStorage` (user token, local cache)
+  - `OBR.room.setMetadata()` (page configuration, shared blocks cache)
+  - `OBR.broadcast` (real-time content sharing)
+  - In-memory cache (GM's rendered HTML)
 - **Deployment:** Netlify
 - **Version control:** Git
 

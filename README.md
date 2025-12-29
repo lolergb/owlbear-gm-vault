@@ -21,6 +21,9 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 - 📁 **Folder management:** Collapse/expand all folders, reorder items
 - ⚙️ **Settings panel:** Unified configuration interface
 - 🎯 **Token integration:** Link pages to scene tokens via context menu
+- 👥 **Player visibility control:** GM can control which pages are visible to players
+- 🔄 **Content sharing:** GM shares Notion content with players via broadcast (no token required for players)
+- 👁️ **Visibility toggles:** Quick visibility buttons for pages and categories
 
 ## 🚀 Installation
 
@@ -99,7 +102,8 @@ Or use the URL provided by the extension developer.
           "name": "Page name",
           "url": "Page URL",
           "selector": "optional-selector",
-          "blockTypes": ["optional", "block", "types"]
+          "blockTypes": ["optional", "block", "types"],
+          "visibleToPlayers": false
         }
       ],
       "categories": [
@@ -108,7 +112,8 @@ Or use the URL provided by the extension developer.
           "pages": [
             {
               "name": "Page in subfolder",
-              "url": "Page URL"
+              "url": "Page URL",
+              "visibleToPlayers": true
             }
           ]
         }
@@ -168,6 +173,13 @@ Or use the URL provided by the extension developer.
   - Single type: `"quote"` (only show quotes)
   - Multiple types: `["quote", "callout"]` (only show quotes and callouts)
 
+**Page (`categories[].pages[].visibleToPlayers`)**
+- **Type:** Boolean
+- **Required:** No (defaults to `false`)
+- **Description:** Whether this page is visible to players. Only the GM can see pages with `visibleToPlayers: false`
+- **When to use:** Set to `true` to allow players to view the page
+- **Note:** Players cannot see pages unless explicitly marked as visible by the GM
+
 ### Update content
 
 - **Automatic reload:** Content is cached for fast loading
@@ -191,6 +203,45 @@ You can link pages directly to tokens/characters in the scene:
 
 **Note:** Only the GM can link/unlink pages. All players can view linked pages.
 
+### Player visibility and content sharing
+
+**By default, all pages are hidden from players.** The GM must explicitly mark pages as visible for players to see them.
+
+#### For Game Masters (GM)
+
+**Control page visibility:**
+1. **Toggle page visibility:** Click the **👁️** button next to any page to show/hide it from players
+2. **Toggle category visibility:** Click the **👁️** button next to any folder to show/hide all pages in that folder (and subfolders)
+3. **Page header toggle:** When viewing a page, use the **👁️** button in the header to toggle visibility
+4. **Image sharing:** When viewing an image, click **"Show to players"** to share it with all players
+
+**How content sharing works:**
+- When the GM views a Notion page, the rendered HTML is cached locally
+- Players can request this content via broadcast (no Notion token required)
+- The GM automatically responds with the cached content
+- Players see the exact same rendered content as the GM
+
+**Important:**
+- The GM must have the extension open to share content with players
+- Players will see a "Waiting for the GM to load this content..." message if the GM hasn't viewed the page yet
+- Players can click "Retry" to request content again
+
+#### For Players
+
+**What you can see:**
+- Only pages marked as visible by the GM
+- Content shared by the GM (no Notion token required)
+- Images shared by the GM via the image viewer
+
+**What you cannot do:**
+- Add, edit, or delete pages or folders
+- Change page visibility
+- Access settings
+- View pages that the GM hasn't marked as visible
+
+**Empty state:**
+- If the GM hasn't shared any content, you'll see: "No shared pages - The DM hasn't shared any pages with you yet"
+
 ### Supported content
 
 - **Notion pages** - Private or public pages (shared with your integration)
@@ -206,6 +257,9 @@ You can link pages directly to tokens/characters in the scene:
 - **Icons:** Pages automatically show their Notion icon
 - **Images:** Click on any image to view it at full size
 - **Change token:** Click **🔑** → Delete Token to go back to using the server token (if configured)
+- **Player visibility:** By default, all pages are hidden from players. Use the **👁️** button to make pages visible
+- **Content sharing:** Players don't need a Notion token to view pages shared by the GM
+- **GM must be online:** The GM needs to have the extension open for players to receive shared content
 
 ## 🐛 Troubleshooting
 
@@ -230,6 +284,17 @@ You can link pages directly to tokens/characters in the scene:
 **Cache issues:**
 - Use the 🔄 button to reload a specific page
 - Use the 🗑️ button to clear all cache
+
+**Player can't see pages:**
+- Make sure the GM has marked the page as visible (👁️ button should show eye-open icon)
+- Verify the GM has the extension open (required for content sharing)
+- Player should see "Waiting for the GM to load this content..." if the GM hasn't viewed the page yet
+- Player can click "Retry" to request content again
+
+**Content not loading for players:**
+- GM must view the page first to cache the content
+- GM must have the extension open for broadcast to work
+- Check browser console for broadcast errors
 
 ## 💬 Support
 

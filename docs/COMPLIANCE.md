@@ -145,9 +145,11 @@ This document verifies that the extension meets all Owlbear Rodeo extension requ
   - `localStorage` works with cookies disabled
   - No cookie dependencies
 - **Storage usage:**
-  - Configuration per room: `localStorage`
-  - User token: `localStorage`
-  - Cache: `localStorage`
+  - User token: `localStorage` (local to each user)
+  - Local cache: `localStorage` (local to each user)
+  - Page configuration: `OBR.room.setMetadata()` (shared across room)
+  - Shared blocks cache: `OBR.room.setMetadata()` (shared across room, limited to 16KB)
+  - Rendered HTML cache: In-memory (GM only, cleared on close)
   - All data persists in private browsing mode
 
 **Note:** Some browsers may clear `localStorage` when private window closes, but functionality works during the session.
@@ -161,6 +163,10 @@ This document verifies that the extension meets all Owlbear Rodeo extension requ
 **APIs Used:**
 - ✅ `OBR.onReady()` - Properly initialized
 - ✅ `OBR.room.getId()` - Gets room ID correctly
+- ✅ `OBR.room.getMetadata()` / `OBR.room.setMetadata()` - Stores page configuration and shared cache
+- ✅ `OBR.room.onMetadataChange()` - Listens for configuration changes
+- ✅ `OBR.player.getRole()` - Gets user role (GM or Player)
+- ✅ `OBR.broadcast.sendMessage()` / `OBR.broadcast.onMessage()` - Real-time content sharing
 - ✅ `OBR.modal.open()` - Opens modals for image viewing
 - ✅ `OBR.contextMenu.create()` - Creates context menus for tokens
 - ✅ `OBR.scene.items.getItems()` - Gets scene items
@@ -189,7 +195,9 @@ This document verifies that the extension meets all Owlbear Rodeo extension requ
 - ✅ Rooms with multiple pages
 - ✅ Rooms with external URLs
 - ✅ Rooms with token-linked pages
-- ✅ GM and Player roles (context menus respect roles)
+- ✅ GM and Player roles (different UI and permissions)
+- ✅ Player visibility control (GM controls what players can see)
+- ✅ Content sharing via broadcast (GM shares content with players)
 
 **Implementation:**
 - Handles missing room ID gracefully (falls back to "default")
