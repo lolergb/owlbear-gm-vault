@@ -1938,8 +1938,13 @@ async function attachImageClickHandlers() {
     img.addEventListener('error', function() {
       this.style.display = 'none';
       const errorDiv = document.createElement('div');
-      errorDiv.className = 'notion-image-error';
-      errorDiv.innerHTML = '⚠️ Could not load image<br><small>The URL may have expired</small><br><button class="btn btn--sm btn--primary">🔄 Reload page</button>';
+      errorDiv.className = 'empty-state';
+      errorDiv.innerHTML = `
+        <div class="empty-state-icon">⚠️</div>
+        <p class="empty-state-text">Could not load image</p>
+        <p class="empty-state-hint">The URL may have expired</p>
+        <button class="btn btn--sm btn--ghost">🔄 Reload page</button></div>
+      `;
       
       // Agregar event listener al botón de recargar
       const refreshButton = errorDiv.querySelector('button');
@@ -2693,9 +2698,10 @@ try {
       if (pageList) {
         pageList.innerHTML = `
           <div class="empty-state">
-            <p>Error loading extension</p>
-            <p>Verifica la consola para más detalles</p>
-            <p class="error-text">${error.message || 'Error desconocido'}</p>
+            <div class="empty-state-icon">🚨</div>
+            <p class="empty-state-text">Error loading extension</p>
+            <p class="empty-state-hint">Verifica la consola para más detalles</p>
+            <p class="empty-state-hint">${error.message || 'Error desconocido'}</p>
           </div>
         `;
       }
@@ -2708,9 +2714,10 @@ try {
   if (pageList) {
     pageList.innerHTML = `
       <div class="empty-state">
-        <p>Error crítico al cargar la extensión</p>
-        <p>Verifica la consola para más detalles</p>
-        <p style="font-size: 11px; margin-top: 8px; color: #888;">${error.message || 'Error desconocido'}</p>
+        <div class="empty-state-icon">🚨</div>
+        <p class="empty-state-text">Error crítico al cargar la extensión</p>
+        <p class="empty-state-hint">Verifica la consola para más detalles</p>
+        <p class="empty-state-hint">${error.message || 'Error desconocido'}</p>
       </div>
     `;
   }
@@ -4286,8 +4293,10 @@ async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       const emptyState = document.createElement('div');
       emptyState.className = 'empty-state';
       emptyState.innerHTML = `
-          <p>No pages configured</p>
-        <button id="add-first-category" class="btn btn--primary add-first-category-button">➕ Add first folder</button>
+        <div class="empty-state-icon">🫥</div>
+        <p class="empty-state-text">No pages configured</p>
+        <p class="empty-state-hint">Verifica la consola para más detalles</p>
+        <button class="btn btn--sm btn--ghost">➕ Add first folder</button>
       `;
       pageList.appendChild(emptyState);
       
