@@ -799,32 +799,62 @@ async function fetchNotionPageInfo(pageId, useCache = true) {
 }
 
 /**
- * Renderizar el cover de una página de Notion
+ * Extraer el título de una página de Notion desde pageInfo
  */
-function renderPageCover(cover) {
-  if (!cover) return '';
-  
-  let coverUrl = '';
-  
-  // El cover puede ser external (URL) o file (archivo de Notion)
-  if (cover.type === 'external' && cover.external && cover.external.url) {
-    coverUrl = cover.external.url;
-  } else if (cover.type === 'file' && cover.file && cover.file.url) {
-    coverUrl = cover.file.url;
+function extractPageTitle(pageInfo) {
+  if (!pageInfo || !pageInfo.properties) {
+    return null;
   }
   
-  if (!coverUrl) return '';
-  
-  // Hacer la URL absoluta si es relativa
-  if (coverUrl.startsWith('/')) {
-    coverUrl = 'https://www.notion.so' + coverUrl;
+  // El título puede estar en diferentes propiedades, pero generalmente está en 'title'
+  // Buscar la propiedad de tipo 'title'
+  for (const key in pageInfo.properties) {
+    const prop = pageInfo.properties[key];
+    if (prop && prop.type === 'title' && prop.title && prop.title.length > 0) {
+      return renderRichText(prop.title);
+    }
   }
   
-  return `
-    <div class="notion-page-cover">
-      <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" data-image-url="${coverUrl}" />
-    </div>
-  `;
+  return null;
+}
+
+/**
+ * Renderizar el cover y título de una página de Notion
+ */
+function renderPageCoverAndTitle(cover, pageTitle) {
+  let html = '';
+  
+  // Renderizar cover si existe
+  if (cover) {
+    let coverUrl = '';
+    
+    // El cover puede ser external (URL) o file (archivo de Notion)
+    if (cover.type === 'external' && cover.external && cover.external.url) {
+      coverUrl = cover.external.url;
+    } else if (cover.type === 'file' && cover.file && cover.file.url) {
+      coverUrl = cover.file.url;
+    }
+    
+    if (coverUrl) {
+      // Hacer la URL absoluta si es relativa
+      if (coverUrl.startsWith('/')) {
+        coverUrl = 'https://www.notion.so' + coverUrl;
+      }
+      
+      html += `
+        <div class="notion-page-cover">
+          <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" data-image-url="${coverUrl}" />
+        </div>
+      `;
+    }
+  }
+  
+  // Renderizar título si existe
+  if (pageTitle) {
+    html += `<h1 class="notion-page-title">${pageTitle}</h1>`;
+  }
+  
+  return html;
 }
 
 async function fetchNotionBlocks(pageId, useCache = true) {
@@ -2001,13 +2031,18 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
       return;
     }
     
-    // Obtener información de la página (incluyendo cover) si es una URL de Notion
+    // Obtener información de la página (incluyendo cover y título) si es una URL de Notion
     // Usar caché a menos que se fuerce la recarga
     let pageCover = null;
+    let pageTitle = null;
     if (url.includes('notion.so') || url.includes('notion.site')) {
       const pageInfo = await fetchNotionPageInfo(pageId, useCache);
-      if (pageInfo && pageInfo.cover) {
-        pageCover = pageInfo.cover;
+      if (pageInfo) {
+        if (pageInfo.cover) {
+          pageCover = pageInfo.cover;
+        }
+        // Extraer el título de la página
+        pageTitle = extractPageTitle(pageInfo);
       }
     }
     
@@ -2017,9 +2052,9 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     const useCacheForChildren = !forceRefresh;
     const blocksHtml = await renderBlocks(blocks, blockTypes, 0, useCacheForChildren);
     
-    // Agregar el cover al inicio si existe
-    const coverHtml = renderPageCover(pageCover);
-    const html = coverHtml + blocksHtml;
+    // Agregar el cover y título al inicio si existen
+    const coverAndTitleHtml = renderPageCoverAndTitle(pageCover, pageTitle);
+    const html = coverAndTitleHtml + blocksHtml;
     
     contentDiv.innerHTML = html;
     

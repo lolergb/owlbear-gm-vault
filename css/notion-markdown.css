@@ -40,6 +40,17 @@
   opacity: 0.9;
 }
 
+/* Título de página de Notion (después del cover) */
+.notion-page-title {
+  font-size: calc(var(--font-size-xl) * 1.6);
+  font-weight: var(--font-weight-bold);
+  margin-top: var(--spacing-xl);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  padding: 0;
+}
+
 /* Ajustar padding del contenido cuando hay cover */
 .notion-content:has(.notion-page-cover) {
   padding-top: var(--spacing-xl);
