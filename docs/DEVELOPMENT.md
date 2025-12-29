@@ -26,7 +26,11 @@ owlbear-notion-embed/
 │   └── default-config.json    # Default configuration
 ├── package.json               # Node.js configuration
 ├── .gitignore                 # Files ignored by Git
-└── README.md                  # Public documentation
+├── README.md                  # Public documentation
+└── docs/
+    ├── COMPLIANCE.md          # Extension compliance checklist
+    ├── DEVELOPMENT.md         # Development guide (this file)
+    └── USER_FEATURES.md       # Complete UI features guide for users
 ```
 
 ## 🚀 Deploy to Netlify
@@ -125,7 +129,13 @@ To test that the extension works:
 - ✅ Just use the extension normally
 - ✅ Your token is stored locally and never sent to the server (except through secure Netlify Functions)
 
-## 📚 Owlbear SDK
+## 📚 Documentation
+
+### User Documentation
+- **[README.md](../README.md):** Main user guide with installation, usage, and troubleshooting
+- **[USER_FEATURES.md](USER_FEATURES.md):** Complete guide to all UI features, buttons, and functionality
+
+### Owlbear SDK
 
 This extension uses the official Owlbear Rodeo SDK:
 - [Documentation](https://docs.owlbear.rodeo/)

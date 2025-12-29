@@ -37,6 +37,8 @@ Or use the URL provided by the extension developer.
 
 ## 📖 How to use DM screen
 
+> 💡 **New to the extension?** Check out the [complete UI features guide](docs/USER_FEATURES.md) for a detailed explanation of all buttons, menus, and functionality.
+
 ### Initial setup
 
 **Each user uses their own Notion account!** You only need to configure your token once.
@@ -303,12 +305,13 @@ You can link pages directly to tokens/characters in the scene:
 If you encounter any issues, have questions, or want to request a feature:
 
 1. **Check the README:** Most common questions are answered in this document
-2. **Check the troubleshooting section:** See above for common issues and solutions
-3. **GitHub Issues:** Open an issue on [GitHub](https://github.com/lolergb/owlbear-notion-embed/issues) for:
+2. **Check USER_FEATURES.md:** Complete guide to all UI features and functionality - see [docs/USER_FEATURES.md](docs/USER_FEATURES.md)
+3. **Check the troubleshooting section:** See above for common issues and solutions
+4. **GitHub Issues:** Open an issue on [GitHub](https://github.com/lolergb/owlbear-notion-embed/issues) for:
    - Bug reports
    - Feature requests
    - Usage questions
-4. **GitHub Discussions:** Use [GitHub Discussions](https://github.com/lolergb/owlbear-notion-embed/discussions) for:
+5. **GitHub Discussions:** Use [GitHub Discussions](https://github.com/lolergb/owlbear-notion-embed/discussions) for:
    - General questions
    - Sharing configurations
    - Community support

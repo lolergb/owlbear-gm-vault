@@ -213,6 +213,7 @@ This document verifies that the extension meets all Owlbear Rodeo extension requ
 
 **Support Channels:**
 - ✅ **README.md:** Comprehensive documentation
+- ✅ **USER_FEATURES.md:** Complete guide to all UI features and functionality
 - ✅ **Troubleshooting section:** Common issues and solutions
 - ✅ **GitHub Issues:** For bug reports and feature requests
 - ✅ **GitHub Discussions:** For community support
@@ -221,6 +222,7 @@ This document verifies that the extension meets all Owlbear Rodeo extension requ
 **Documentation:**
 - Installation instructions
 - Usage guide
+- **User interface features guide:** Complete list of all UI features and where they appear
 - Configuration examples
 - Troubleshooting guide
 - API documentation
