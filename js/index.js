@@ -1029,9 +1029,13 @@ function renderBlock(block) {
       return `<h3>${renderRichText(block.heading_3?.rich_text)}</h3>`;
     
     case 'bulleted_list_item':
+      // Los elementos de lista pueden tener hijos (listas anidadas)
+      // Se manejan en renderBlocks de forma especial si tienen hijos
       return `<li class="notion-bulleted-list-item">${renderRichText(block.bulleted_list_item?.rich_text)}</li>`;
     
     case 'numbered_list_item':
+      // Los elementos de lista pueden tener hijos (listas anidadas)
+      // Se manejan en renderBlocks de forma especial si tienen hijos
       return `<li class="notion-numbered-list-item">${renderRichText(block.numbered_list_item?.rich_text)}</li>`;
     
     case 'image':
@@ -1750,7 +1754,39 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         listType = currentListType;
       }
       
-      listItems.push(renderBlock(block));
+      // Renderizar el elemento de lista con sus hijos si los tiene
+      let listItemHtml = '';
+      const listItemText = type === 'bulleted_list_item' 
+        ? renderRichText(block.bulleted_list_item?.rich_text)
+        : renderRichText(block.numbered_list_item?.rich_text);
+      
+      // Si tiene hijos, obtenerlos y renderizarlos como lista anidada
+      if (block.has_children) {
+        try {
+          console.log(`  📦 Obteniendo hijos del elemento de lista [${index}]...`);
+          const children = await fetchBlockChildren(block.id, useCache);
+          console.log(`  📦 Hijos obtenidos: ${children.length}`);
+          
+          let nestedListContent = '';
+          if (children.length > 0) {
+            // Renderizar los hijos recursivamente (pueden ser más elementos de lista u otros bloques)
+            nestedListContent = await renderBlocks(children, blockTypes, headingLevelOffset, useCache);
+            console.log(`  ✅ Contenido anidado renderizado: ${nestedListContent.length} caracteres`);
+          }
+          
+          // Construir el elemento de lista con el contenido anidado
+          listItemHtml = `<li class="notion-${type === 'bulleted_list_item' ? 'bulleted' : 'numbered'}-list-item">${listItemText}${nestedListContent}</li>`;
+        } catch (error) {
+          console.error(`Error al renderizar elemento de lista con hijos:`, error);
+          // Fallback: renderizar solo el elemento sin hijos
+          listItemHtml = `<li class="notion-${type === 'bulleted_list_item' ? 'bulleted' : 'numbered'}-list-item">${listItemText}</li>`;
+        }
+      } else {
+        // Sin hijos, renderizar normalmente
+        listItemHtml = `<li class="notion-${type === 'bulleted_list_item' ? 'bulleted' : 'numbered'}-list-item">${listItemText}</li>`;
+      }
+      
+      listItems.push(listItemHtml);
     } else {
       // Cerrar lista si estábamos en una
       if (inList && listItems.length > 0) {

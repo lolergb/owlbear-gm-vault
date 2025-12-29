@@ -215,6 +215,16 @@
   padding-left: calc(var(--spacing-lg) + var(--spacing-md));
 }
 
+/* Listas anidadas dentro de elementos de lista */
+.notion-content .notion-bulleted-list-item .notion-bulleted-list,
+.notion-content .notion-bulleted-list-item .notion-numbered-list,
+.notion-content .notion-numbered-list-item .notion-bulleted-list,
+.notion-content .notion-numbered-list-item .notion-numbered-list {
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+  padding-left: calc(var(--spacing-lg) + var(--spacing-md));
+}
+
 .notion-content .notion-bulleted-list-item,
 .notion-content .notion-numbered-list-item {
   margin: 1px 0;
