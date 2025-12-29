@@ -1447,7 +1447,8 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     console.log(`  [${index}] Renderizando bloque:`, {
       type: type,
       id: block.id,
-      hasChildren: block.has_children || false
+      hasChildren: block.has_children || false,
+      order: index
     });
     
     // Manejar column_list de forma especial (debe procesarse antes que otros bloques)
@@ -1590,6 +1591,14 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     
     // Manejar callouts que tienen hijos (contenido anidado)
     if (type === 'callout' && block.has_children) {
+      // IMPORTANTE: Cerrar lista pendiente antes de renderizar el callout para mantener el orden correcto
+      if (inList && listItems.length > 0) {
+        html += `<${listType === 'ul' ? 'ul' : 'ol'} class="notion-${listType === 'ul' ? 'bulleted' : 'numbered'}-list">${listItems.join('')}</${listType === 'ul' ? 'ul' : 'ol'}>`;
+        listItems = [];
+        inList = false;
+        listType = null;
+      }
+      
       try {
         const callout = block.callout;
         const icon = callout?.icon?.emoji || '💡';
@@ -1665,12 +1674,39 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     
     // Manejar callouts sin hijos (deben ser filtrados si no coinciden con el filtro)
     if (type === 'callout' && !block.has_children) {
+      // IMPORTANTE: Cerrar lista pendiente antes de renderizar el callout para mantener el orden correcto
+      if (inList && listItems.length > 0) {
+        html += `<${listType === 'ul' ? 'ul' : 'ol'} class="notion-${listType === 'ul' ? 'bulleted' : 'numbered'}-list">${listItems.join('')}</${listType === 'ul' ? 'ul' : 'ol'}>`;
+        listItems = [];
+        inList = false;
+        listType = null;
+      }
+      
+      // Verificar si el bloque coincide con el filtro antes de renderizar
       if (blockTypes) {
         const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
         if (!typesArray.includes('callout')) {
           console.log(`    ⏭️ Callout sin hijos filtrado, no se muestra`);
           continue;
         }
+      }
+      // Renderizar el callout sin hijos inmediatamente para mantener el orden
+      try {
+        const callout = block.callout;
+        const icon = callout?.icon?.emoji || '💡';
+        const calloutText = renderRichText(callout?.rich_text);
+        html += `
+          <div class="notion-callout">
+            <div class="notion-callout-icon">${icon}</div>
+            <div class="notion-callout-content">${calloutText}</div>
+          </div>
+        `;
+        console.log(`    ✅ Callout sin hijos renderizado`);
+        continue;
+      } catch (error) {
+        console.error(`Error al renderizar callout sin hijos:`, error);
+        // Continuar con el siguiente bloque
+        continue;
       }
     }
     

@@ -259,8 +259,13 @@
   flex: 1;
 }
 
+.notion-content .notion-callout-text {
+  display: block;
+}
+
 .notion-content .notion-callout-children {
   margin-top: var(--spacing-sm);
+  display: block;
 }
 
 .notion-content .notion-divider {
