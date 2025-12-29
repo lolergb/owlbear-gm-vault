@@ -365,15 +365,26 @@ function setupRoomMetadataListener(roomId) {
 // Función para obtener la configuración por defecto (desde archivo público)
 async function getDefaultJSON() {
   try {
-    // Intentar cargar desde archivo público
-    const response = await fetch('/default-config.json');
+    // Intentar cargar desde URL pública de Netlify
+    const response = await fetch('https://owlbear-notion-embed.netlify.app/public/default-config.json');
     if (response.ok) {
       const config = await response.json();
       log('✅ Configuración por defecto cargada desde default-config.json');
       return config;
     }
   } catch (e) {
-    log('⚠️ No se pudo cargar default-config.json');
+    log('⚠️ No se pudo cargar default-config.json desde la URL pública:', e);
+    // Intentar fallback a ruta relativa (para desarrollo local)
+    try {
+      const localResponse = await fetch('/default-config.json');
+      if (localResponse.ok) {
+        const config = await localResponse.json();
+        log('✅ Configuración por defecto cargada desde ruta local');
+        return config;
+      }
+    } catch (localError) {
+      log('⚠️ No se pudo cargar default-config.json desde ruta local:', localError);
+    }
   }
   
   // Fallback: configuración vacía (el usuario puede agregar páginas desde la interfaz)
@@ -2752,7 +2763,17 @@ try {
       
       // Obtener configuraciones de localStorage como fallback
       const currentRoomConfig = getPagesJSON(roomId);
-      const defaultConfig = getPagesJSON('default');
+      let defaultConfig = getPagesJSON('default');
+      
+      // Si no hay configuración 'default' en localStorage, cargarla desde la URL y guardarla
+      if (!defaultConfig) {
+        log('📥 No se encontró configuración "default" en localStorage, cargando desde URL pública...');
+        defaultConfig = await getDefaultJSON();
+        if (defaultConfig && defaultConfig.categories && defaultConfig.categories.length > 0) {
+          await savePagesJSON(defaultConfig, 'default');
+          log('💾 Configuración "default" cargada y guardada desde URL pública');
+        }
+      }
       
       // Contar contenido de cada una
       const roomMetadataCount = countContent(roomMetadataConfig);
