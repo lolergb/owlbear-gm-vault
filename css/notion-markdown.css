@@ -246,6 +246,7 @@
   background: var(--color-bg-primary);
   border-left: 3px solid var(--color-border-subtle);
   display: flex;
+  flex-direction: row;
   gap: var(--spacing-md);
 }
 
@@ -256,6 +257,10 @@
 
 .notion-content .notion-callout-content {
   flex: 1;
+}
+
+.notion-content .notion-callout-children {
+  margin-top: var(--spacing-sm);
 }
 
 .notion-content .notion-divider {

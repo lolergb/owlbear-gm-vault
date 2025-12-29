@@ -1634,7 +1634,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             <div class="notion-callout-icon">${icon}</div>
             <div class="notion-callout-content">
               ${calloutText}
-              ${childrenContent}
+              ${childrenContent ? `<div class="notion-callout-children">${childrenContent}</div>` : ''}
             </div>
           </div>
         `;
@@ -2051,7 +2051,7 @@ async function attachImageClickHandlers() {
         
         // Feedback visual
         const originalContent = button.innerHTML;
-        button.innerHTML = '<img src="img/icon-eye-open.svg" alt="Shared" style="opacity: 0.5;" />';
+        button.innerHTML = '<img src="img/icon-users.svg" alt="Shared" style="opacity: 0.5;" />';
         button.disabled = true;
         setTimeout(() => {
           button.innerHTML = originalContent;
@@ -4309,7 +4309,12 @@ async function addPageToPageListSimple(categoryPath, roomId) {
 // Función para renderizar páginas agrupadas por carpetas
 async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
   // Mostrar loading
-  pageList.innerHTML = '<div class="loading-state"><div class="loading-state-icon">⏳</div><div>Cargando páginas...</div></div>';
+  pageList.innerHTML = `
+    <div class="notion-waiting">
+      <div class="notion-waiting-icon">⏳</div>
+      <p class="notion-waiting-text">Waiting for the load content...</p>
+    </div>`
+  ;
   
   // Verificar el rol del usuario
   let isGM = true; // Por defecto asumir GM (para compatibilidad)
