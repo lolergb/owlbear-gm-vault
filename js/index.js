@@ -350,6 +350,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 // Sistema de caché para bloques de Notion (persistente, sin expiración automática)
 const CACHE_PREFIX = 'notion-blocks-cache-';
+const PAGE_INFO_CACHE_PREFIX = 'notion-page-info-cache-';
 
 /**
  * Obtener bloques desde el caché (persistente, sin expiración)
@@ -537,7 +538,7 @@ function clearAllCache() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(CACHE_PREFIX)) {
+      if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(PAGE_INFO_CACHE_PREFIX))) {
         keysToRemove.push(key);
       }
     }
@@ -710,9 +711,61 @@ function renderPageIcon(icon, pageName, pageId) {
 
 // Función para obtener bloques de una página de Notion (con caché persistente)
 /**
- * Obtener información de la página de Notion (incluyendo cover)
+ * Obtener información de la página desde el caché
  */
-async function fetchNotionPageInfo(pageId) {
+function getCachedPageInfo(pageId) {
+  try {
+    const cacheKey = PAGE_INFO_CACHE_PREFIX + pageId;
+    const cached = localStorage.getItem(cacheKey);
+    
+    if (cached) {
+      const data = JSON.parse(cached);
+      if (data.pageInfo) {
+        console.log('✅ Información de página obtenida del caché para:', pageId);
+        return data.pageInfo;
+      }
+    }
+  } catch (e) {
+    console.error('Error al leer información de página del caché:', e);
+    try {
+      const cacheKey = PAGE_INFO_CACHE_PREFIX + pageId;
+      localStorage.removeItem(cacheKey);
+    } catch (e2) {
+      // Ignorar errores al limpiar
+    }
+  }
+  return null;
+}
+
+/**
+ * Guardar información de la página en el caché
+ */
+function setCachedPageInfo(pageId, pageInfo) {
+  try {
+    const cacheKey = PAGE_INFO_CACHE_PREFIX + pageId;
+    const data = {
+      pageInfo: pageInfo,
+      savedAt: new Date().toISOString()
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(data));
+    console.log('💾 Información de página guardada en caché para:', pageId);
+  } catch (e) {
+    console.error('Error al guardar información de página en caché:', e);
+  }
+}
+
+/**
+ * Obtener información de la página de Notion (incluyendo cover) con caché
+ */
+async function fetchNotionPageInfo(pageId, useCache = true) {
+  // Intentar obtener del caché primero
+  if (useCache) {
+    const cachedPageInfo = getCachedPageInfo(pageId);
+    if (cachedPageInfo) {
+      return cachedPageInfo;
+    }
+  }
+  
   try {
     const userToken = getUserToken();
     if (!userToken) {
@@ -734,6 +787,10 @@ async function fetchNotionPageInfo(pageId) {
     }
     
     const data = await response.json();
+    
+    // Guardar en caché
+    setCachedPageInfo(pageId, data);
+    
     return data;
   } catch (error) {
     console.warn('Error al obtener información de la página:', error);
@@ -1945,9 +2002,10 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     }
     
     // Obtener información de la página (incluyendo cover) si es una URL de Notion
+    // Usar caché a menos que se fuerce la recarga
     let pageCover = null;
     if (url.includes('notion.so') || url.includes('notion.site')) {
-      const pageInfo = await fetchNotionPageInfo(pageId);
+      const pageInfo = await fetchNotionPageInfo(pageId, useCache);
       if (pageInfo && pageInfo.cover) {
         pageCover = pageInfo.cover;
       }
@@ -4173,8 +4231,14 @@ async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
 function clearPageCache(url) {
   const pageId = extractNotionPageId(url);
   if (pageId) {
+    // Limpiar caché de bloques
     const cacheKey = CACHE_PREFIX + pageId;
     localStorage.removeItem(cacheKey);
+    
+    // Limpiar caché de información de página (incluyendo cover)
+    const pageInfoCacheKey = PAGE_INFO_CACHE_PREFIX + pageId;
+    localStorage.removeItem(pageInfoCacheKey);
+    
     console.log('🗑️ Caché limpiado para página:', pageId);
     return true;
   }
