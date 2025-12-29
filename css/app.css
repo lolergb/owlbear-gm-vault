@@ -999,7 +999,7 @@
   
   #refresh-page-button {
     order: 2; /* Medio */
-    margin-left: var(--spacing-sm);
+    margin-left: 0;
   }
   
   #page-visibility-button-header {
