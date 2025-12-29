@@ -134,6 +134,12 @@
   margin: var(--font-size-base) 0;
   border-radius: var(--radius-sm);
   display: block;
+  position: relative;
+}
+
+.notion-content .notion-image-container {
+  position: relative;
+  width: 100%;
 }
 
 .notion-content .notion-image img {
@@ -149,6 +155,41 @@
 
 .notion-content .notion-image-clickable:hover {
   opacity: 0.9;
+}
+
+.notion-content .notion-image-share-button {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  z-index: 10;
+}
+
+.notion-content .notion-image-container:hover .notion-image-share-button {
+  opacity: 1;
+}
+
+.notion-content .notion-image-share-button:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.notion-content .notion-image-share-button:active {
+  background: rgba(0, 0, 0, 1);
+}
+
+.notion-content .notion-image-share-button img {
+  width: 16px;
+  height: 16px;
+  filter: brightness(0) invert(1);
 }
 
 .notion-content .notion-image-caption {

@@ -1060,16 +1060,24 @@ function renderBlock(block) {
         // Si fallan, mostrar un mensaje de error con opción de refrescar
         return `
           <div class="notion-image" data-block-id="${block.id}">
-            <img 
-              src="${imageUrl}" 
-              alt="${caption || 'Imagen de Notion'}" 
-              class="notion-image-clickable" 
-              data-image-id="${imageId}" 
-              data-image-url="${imageUrl}" 
-              data-image-caption="${caption.replace(/"/g, '&quot;')}"
-              data-block-id="${block.id}"
-              loading="lazy"
-            />
+            <div class="notion-image-container">
+              <img 
+                src="${imageUrl}" 
+                alt="${caption || 'Imagen de Notion'}" 
+                class="notion-image-clickable" 
+                data-image-id="${imageId}" 
+                data-image-url="${imageUrl}" 
+                data-image-caption="${caption.replace(/"/g, '&quot;')}"
+                data-block-id="${block.id}"
+                loading="lazy"
+              />
+              <button class="notion-image-share-button" 
+                      data-image-url="${imageUrl}" 
+                      data-image-caption="${caption.replace(/"/g, '&quot;')}"
+                      title="Show to players">
+                <img src="img/icon-eye-open.svg" alt="Share" />
+              </button>
+            </div>
             ${caption ? `<div class="notion-image-caption">${caption}</div>` : ''}
           </div>
         `;
@@ -1907,7 +1915,7 @@ window.refreshImage = function(button) {
 };
 
 // Agregar event listeners a las imágenes después de renderizar
-function attachImageClickHandlers() {
+async function attachImageClickHandlers() {
   // Manejar imágenes normales y cover
   const images = document.querySelectorAll('.notion-image-clickable, .notion-cover-image');
   images.forEach(img => {
@@ -1950,6 +1958,55 @@ function attachImageClickHandlers() {
       img.style.opacity = '1';
     });
   });
+  
+  // Manejar botones de compartir imágenes (solo para GMs)
+  const isGM = await getUserRole();
+  const shareButtons = document.querySelectorAll('.notion-image-share-button');
+  shareButtons.forEach(button => {
+    // Ocultar botón para jugadores
+    if (!isGM) {
+      button.style.display = 'none';
+      return;
+    }
+    
+    // Click handler para compartir imagen
+    button.addEventListener('click', async (e) => {
+      e.stopPropagation(); // Evitar que se abra el modal
+      const imageUrl = button.getAttribute('data-image-url');
+      const caption = button.getAttribute('data-image-caption') || '';
+      
+      // Asegurarse de que la URL sea absoluta
+      let absoluteImageUrl = imageUrl;
+      if (imageUrl && !imageUrl.match(/^https?:\/\//i)) {
+        try {
+          absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
+        } catch (e) {
+          console.warn('No se pudo construir URL absoluta, usando original:', imageUrl);
+          absoluteImageUrl = imageUrl;
+        }
+      }
+      
+      // Compartir con todos los jugadores via broadcast
+      try {
+        await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
+          url: absoluteImageUrl,
+          caption: caption
+        });
+        console.log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80));
+        
+        // Feedback visual
+        const originalContent = button.innerHTML;
+        button.innerHTML = '<img src="img/icon-eye-open.svg" alt="Shared" style="opacity: 0.5;" />';
+        button.disabled = true;
+        setTimeout(() => {
+          button.innerHTML = originalContent;
+          button.disabled = false;
+        }, 1000);
+      } catch (error) {
+        console.error('Error al compartir imagen:', error);
+      }
+    });
+  });
 }
 
 // Función para cargar y renderizar contenido de Notion desde la API
@@ -1989,7 +2046,7 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
       if (cachedHtml) {
         console.log('✅ Usando HTML recibido del GM');
         contentDiv.innerHTML = cachedHtml;
-        attachImageClickHandlers();
+        await attachImageClickHandlers();
         return;
       }
       console.log('⚠️ El GM no tiene el contenido disponible');
@@ -2064,7 +2121,7 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     }
     
     // Agregar event listeners a las imágenes para abrirlas en modal
-    attachImageClickHandlers();
+    await attachImageClickHandlers();
     
   } catch (error) {
     console.error('Error al cargar contenido de Notion:', error);
