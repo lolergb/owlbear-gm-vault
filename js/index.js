@@ -3242,7 +3242,12 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   const contentContainer = document.createElement('div');
   contentContainer.className = 'category-content';
   // Mostrar el contenido si no está colapsado Y si tiene contenido o si está vacía (para poder agregar)
-  const hasContent = hasSubcategories || categoryPages.length > 0;
+  // Para jugadores, verificar si hay subcategorías CON contenido visible, no solo si existen
+  let hasVisibleSubcategories = hasSubcategories;
+  if (!isGM && hasSubcategories) {
+    hasVisibleSubcategories = category.categories.some(subCat => hasVisibleContentForPlayers(subCat));
+  }
+  const hasContent = hasVisibleSubcategories || categoryPages.length > 0;
   contentContainer.style.display = isCollapsed ? 'none' : 'block';
   
   // Obtener el orden combinado de elementos (carpetas y páginas mezcladas)
