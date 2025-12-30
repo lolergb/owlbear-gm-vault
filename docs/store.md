@@ -20,7 +20,8 @@ Open **Notion pages**, **PDFs**, and **links** inside your room — keep content
 
 > **Official builds:** Only manifests served from `owlbear-dm-panel.netlify.app` are official. See [TRADEMARK.md](https://github.com/lolergb/owlbear-dm-panel/blob/main/TRADEMARK.md) for branding policy.
 
-![Highlights](https://owlbear-dm-panel.netlify.app/img/share-with-players-using-the-eye-toggle.jpg)
+
+![What you can add](https://owlbear-dm-panel.netlify.app/img/highlights.jpg)
 
 ## Highlights
 
@@ -30,10 +31,6 @@ Open **Notion pages**, **PDFs**, and **links** inside your room — keep content
 - **Handouts:** click images to view full screen and **Show to players**
 - **Token links:** right-click a token to link a page and open it instantly later
 - **Reload when needed:** use **🔄** to pull the latest changes
-
----
-
-![Start Here](https://owlbear-dm-panel.netlify.app/img/add-your-first-folder-and-page.jpg)
 
 ## Start Here (built-in onboarding)
 
@@ -45,10 +42,6 @@ DM Panel includes a small “Start Here” structure in every room so you can le
 - **Notes — Session Notes** (a ready-to-use Notion template)
 
 > You can edit, rename, or delete everything. Nothing is shared unless you choose to.
-
----
-
-![Quick start](https://owlbear-dm-panel.netlify.app/img/open-notes-instantly-during-play.jpg)
 
 ## Quick start
 
@@ -66,8 +59,6 @@ https://owlbear-dm-panel.netlify.app/manifest.json
 
 ---
 
-![What you can add](https://owlbear-dm-panel.netlify.app/img/bring-notion-pdf-and-web-pages.jpg)
-
 ## What you can add
 
 - **Notion pages** (private or public — shared with your integration)
@@ -76,16 +67,13 @@ https://owlbear-dm-panel.netlify.app/manifest.json
 
 ---
 
-![Notion setup](https://owlbear-dm-panel.netlify.app/img/players-dont-need-notion-access.jpg)
-
+![What you can add](https://owlbear-dm-panel.netlify.app/img/notion-integration.jpg)
 ## Notion setup (optional)
 
-If you want to use private Notion pages, paste your Notion token in **Settings**.  
+To use private Notion pages, you first need to get your Notion token (see [this tutorial](https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion)), and then upload it in the **Settings** panel.
 Players don’t need a token.
 
 ---
-
-![Support](https://owlbear-dm-panel.netlify.app/img/update-content-when-you-change-notes.jpg)
 
 ## Support
 
