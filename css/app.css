@@ -87,8 +87,9 @@
   }
   
   html {
-    width: 100vw;
-    max-width: 100vw;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
     overflow-x: hidden;
   }
   
@@ -98,9 +99,12 @@
     font-size: var(--font-size-base);
     color: var(--color-text-secondary);
     padding: var(--spacing-lg);
-    min-height: 100vh;
-    width: 100vw;
-    max-width: 100vw;
+    height: 100%;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
     overflow-x: hidden;
     background-color: var(--color-bg-overlay);
   }
@@ -350,8 +354,12 @@
     ========================================================================== */
   .container {
     width: 100%;
+    height: 100%;
     max-width: 600px;
     margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
   
   @media (max-width: 600px) {

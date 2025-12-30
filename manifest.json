@@ -10,7 +10,7 @@
     "title": "GM vault",
     "icon": "https://owlbear-gm-vault.netlify.app/icon.svg",
     "popover": "/index.html",
-    "height": 800,
+    "height": 1000,
     "width": 600
   }
 }
