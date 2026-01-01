@@ -5278,21 +5278,32 @@ async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
     if (!pagesConfig || !pagesConfig.categories || pagesConfig.categories.length === 0) {
       const emptyState = document.createElement('div');
       emptyState.className = 'empty-state';
-      emptyState.innerHTML = `
-        <div class="empty-state-icon">🫥</div>
-        <p class="empty-state-text">No pages configured</p>
-        <p class="empty-state-hint">Verifica la consola para más detalles</p>
-        <button class="btn btn--sm btn--ghost">➕ Add first folder</button>
-      `;
-      pageList.appendChild(emptyState);
       
-      // Botón para agregar primera carpeta
-      const addFirstCategoryBtn = emptyState.querySelector('#add-first-category');
-      if (addFirstCategoryBtn) {
-        addFirstCategoryBtn.addEventListener('click', async () => {
-          await addCategoryToPageList([], roomId);
-        });
-        // Hover styles movidos a CSS con :hover
+      if (isGM) {
+        // GM: mostrar opción de agregar carpeta
+        emptyState.innerHTML = `
+          <div class="empty-state-icon">🫥</div>
+          <p class="empty-state-text">No pages configured</p>
+          <p class="empty-state-hint">Add your first folder to get started</p>
+          <button id="add-first-category" class="btn btn--sm btn--ghost">➕ Add first folder</button>
+        `;
+        pageList.appendChild(emptyState);
+        
+        // Botón para agregar primera carpeta
+        const addFirstCategoryBtn = emptyState.querySelector('#add-first-category');
+        if (addFirstCategoryBtn) {
+          addFirstCategoryBtn.addEventListener('click', async () => {
+            await addCategoryToPageList([], roomId);
+          });
+        }
+      } else {
+        // Player: mostrar mensaje de espera
+        emptyState.innerHTML = `
+          <div class="empty-state-icon">📄</div>
+          <p class="empty-state-text">No shared pages</p>
+          <p class="empty-state-hint">The GM hasn't shared any pages with you yet</p>
+        `;
+        pageList.appendChild(emptyState);
       }
       return;
     }
