@@ -819,19 +819,34 @@ async function loadPagesFromRoomMetadata() {
 }
 
 // Listener para cambios en metadata de room (sincronización en tiempo real)
+// IMPORTANTE: Solo para Players - el GM genera la configuración, no la recibe
 function setupRoomMetadataListener(roomId) {
   try {
     OBR.room.onMetadataChange(async (metadata) => {
+      // Verificar si es GM - si es GM, ignorar los cambios de room metadata
+      // porque él es quien los genera
+      let isGM = false;
+      try {
+        const role = await OBR.player.getRole();
+        isGM = role === 'GM';
+      } catch (e) {
+        // Si falla, asumir que no es GM para ser seguro
+      }
+      
+      // Solo los Players deben actualizar desde room metadata
+      if (isGM) {
+        log('🔄 [GM] Ignorando cambio en room metadata (el GM genera la config)');
+        return;
+      }
+      
       if (metadata && metadata[ROOM_METADATA_KEY]) {
         const newConfig = metadata[ROOM_METADATA_KEY];
         // Solo actualizar si es diferente
         if (JSON.stringify(newConfig) !== JSON.stringify(pagesConfigCache)) {
-          log('🔄 Configuración actualizada desde room metadata');
+          log('🔄 [Player] Configuración actualizada desde room metadata');
           pagesConfigCache = newConfig;
           
-          // Actualizar localStorage también
-          const storageKey = getStorageKey(roomId);
-          localStorage.setItem(storageKey, JSON.stringify(newConfig, null, 2));
+          // NO actualizar localStorage para players (solo usan room metadata)
           
           // Recargar la vista
           const pageList = document.getElementById("page-list");
