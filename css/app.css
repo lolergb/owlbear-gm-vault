@@ -783,6 +783,93 @@
     margin-bottom: var(--spacing-lg);
     line-height: var(--font-line-md);
   }
+
+  /* Modal variants */
+  .modal__content--warning {
+    border-left: 4px solid #f59e0b;
+  }
+
+  .modal__content--info {
+    border-left: 4px solid #3b82f6;
+  }
+
+  .modal__content--error {
+    border-left: 4px solid #ef4444;
+  }
+
+  .modal__icon {
+    font-size: 2.5rem;
+    text-align: center;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal__body {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .modal__text {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-sm);
+    line-height: 1.5;
+  }
+
+  .modal__text strong {
+    color: var(--color-text-primary);
+  }
+
+  .modal__list {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin: var(--spacing-md) 0;
+    padding-left: var(--spacing-lg);
+    line-height: 1.6;
+  }
+
+  .modal__list li {
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .form__actions--stacked {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .form__actions--stacked .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Player waiting states */
+  .notion-waiting--gm-offline {
+    text-align: center;
+    padding: var(--spacing-xl);
+  }
+
+  .notion-waiting--gm-offline .notion-waiting-icon {
+    font-size: 3rem;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .notion-waiting--gm-offline .notion-waiting-text {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .notion-waiting--gm-offline .notion-waiting-hint {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .notion-waiting--gm-offline .notion-waiting-subhint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-disabled);
+    margin-bottom: var(--spacing-lg);
+  }
   
   /* ==========================================================================
       Notion Container

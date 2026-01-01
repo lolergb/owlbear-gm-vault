@@ -266,6 +266,135 @@ function validateTotalMetadataSize(metadataKey, newValue, currentMetadata = {}) 
   };
 }
 
+/**
+ * Filtra la configuración para incluir solo páginas visibles para players
+ * Se usa para guardar en room metadata (optimiza espacio)
+ * @param {object} config - Configuración completa del GM
+ * @returns {object} - Configuración filtrada solo con páginas visibles
+ */
+function filterVisiblePagesForMetadata(config) {
+  if (!config || !config.categories) {
+    return { categories: [] };
+  }
+  
+  const filterCategory = (category) => {
+    // Filtrar páginas visibles
+    const visiblePages = (category.pages || []).filter(page => 
+      page.visibleToPlayers === true && 
+      page.url && 
+      !page.url.includes('...')
+    ).map(page => ({
+      name: page.name,
+      url: page.url,
+      icon: page.icon,
+      visibleToPlayers: true,
+      // Solo incluir campos esenciales para reducir tamaño
+      ...(page.selector ? { selector: page.selector } : {}),
+      ...(page.blockTypes ? { blockTypes: page.blockTypes } : {})
+    }));
+    
+    // Filtrar subcategorías recursivamente
+    const filteredSubcategories = (category.categories || [])
+      .map(filterCategory)
+      .filter(subCat => 
+        (subCat.pages && subCat.pages.length > 0) || 
+        (subCat.categories && subCat.categories.length > 0)
+      );
+    
+    // Solo incluir la categoría si tiene contenido visible
+    if (visiblePages.length === 0 && filteredSubcategories.length === 0) {
+      return null;
+    }
+    
+    return {
+      name: category.name,
+      ...(category.icon ? { icon: category.icon } : {}),
+      ...(visiblePages.length > 0 ? { pages: visiblePages } : {}),
+      ...(filteredSubcategories.length > 0 ? { categories: filteredSubcategories } : {}),
+      ...(category.order ? { order: category.order } : {})
+    };
+  };
+  
+  const filteredCategories = config.categories
+    .map(filterCategory)
+    .filter(cat => cat !== null);
+  
+  return {
+    categories: filteredCategories,
+    ...(config.order ? { order: config.order } : {})
+  };
+}
+
+// Canal de broadcast para sincronizar lista de páginas visibles
+const BROADCAST_CHANNEL_VISIBLE_PAGES = 'com.dmscreen/visiblePages';
+const BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES = 'com.dmscreen/requestVisiblePages';
+
+/**
+ * Envía la lista de páginas visibles a todos los players vía broadcast
+ * @param {object} visibleConfig - Configuración filtrada con solo páginas visibles
+ */
+function broadcastVisiblePagesUpdate(visibleConfig) {
+  try {
+    OBR.broadcast.sendMessage(BROADCAST_CHANNEL_VISIBLE_PAGES, {
+      config: visibleConfig,
+      timestamp: Date.now()
+    });
+    log('📤 Lista de páginas visibles enviada vía broadcast');
+  } catch (e) {
+    console.warn('⚠️ No se pudo enviar lista de páginas visibles vía broadcast:', e);
+  }
+}
+
+/**
+ * Solicitar lista de páginas visibles al GM (para players)
+ * @returns {Promise<object|null>} - Configuración de páginas visibles o null si no hay respuesta
+ */
+async function requestVisiblePagesFromGM() {
+  return new Promise((resolve) => {
+    console.log('📡 Solicitando lista de páginas visibles al GM...');
+    
+    // Timeout de 5 segundos
+    const timeout = setTimeout(() => {
+      console.log('⏰ Timeout esperando lista de páginas visibles del GM');
+      unsubscribe();
+      resolve(null);
+    }, 5000);
+    
+    // Escuchar respuesta del GM
+    const unsubscribe = OBR.broadcast.onMessage(BROADCAST_CHANNEL_VISIBLE_PAGES, (event) => {
+      const data = event.data;
+      if (data && data.config) {
+        console.log('✅ Lista de páginas visibles recibida del GM');
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(data.config);
+      }
+    });
+    
+    // Enviar solicitud al GM
+    OBR.broadcast.sendMessage(BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES, { 
+      requestId: Date.now() 
+    });
+  });
+}
+
+/**
+ * Configurar el GM para responder a solicitudes de lista de páginas visibles
+ */
+function setupGMVisiblePagesBroadcast() {
+  OBR.broadcast.onMessage(BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES, async (event) => {
+    console.log('📨 Recibida solicitud de lista de páginas visibles');
+    
+    // Obtener la configuración actual y filtrar
+    const currentConfig = pagesConfigCache || getPagesJSON(OBR.room.id);
+    if (currentConfig) {
+      const visibleConfig = filterVisiblePagesForMetadata(currentConfig);
+      broadcastVisiblePagesUpdate(visibleConfig);
+    }
+  });
+  console.log('🎧 GM escuchando solicitudes de lista de páginas visibles');
+}
+
 // Caché local de HTML renderizado (solo en memoria del GM)
 let localHtmlCache = {};
 
@@ -305,7 +434,21 @@ async function savePagesJSON(json, roomId) {
     // Guardar en localStorage (para persistencia local)
     const storageKey = getStorageKey(roomId);
     log('💾 Guardando configuración con clave:', storageKey, 'para roomId:', roomId);
-    localStorage.setItem(storageKey, JSON.stringify(json, null, 2));
+    
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(json, null, 2));
+    } catch (storageError) {
+      console.error('Error al guardar en localStorage:', storageError);
+      if (storageError.name === 'QuotaExceededError') {
+        console.warn('⚠️ localStorage lleno. Mostrando modal al usuario.');
+        showStorageLimitModal('saving configuration');
+        return false;
+      }
+      throw storageError;
+    }
+    
+    // Filtrar solo páginas visibles para guardar en room metadata
+    const visibleOnlyConfig = filterVisiblePagesForMetadata(json);
     
     // Obtener metadatos actuales para validar tamaño TOTAL
     let currentMetadata = {};
@@ -315,17 +458,20 @@ async function savePagesJSON(json, roomId) {
       console.warn('No se pudo obtener metadatos actuales:', e);
     }
     
-    // Validar tamaño TOTAL considerando todos los metadatos
-    const validation = validateTotalMetadataSize(ROOM_METADATA_KEY, json, currentMetadata);
+    // Validar tamaño TOTAL considerando todos los metadatos (solo con páginas visibles)
+    const validation = validateTotalMetadataSize(ROOM_METADATA_KEY, visibleOnlyConfig, currentMetadata);
     
     if (validation.fits) {
-      // Guardar en OBR.room.metadata para compartir con todos los usuarios
+      // Guardar en OBR.room.metadata para compartir con todos los usuarios (solo páginas visibles)
       try {
-        const compressed = compressJson(json);
+        const compressed = compressJson(visibleOnlyConfig);
         await OBR.room.setMetadata({
           [ROOM_METADATA_KEY]: compressed
         });
-        log(`✅ Configuración sincronizada con room metadata (${validation.percentage}% del límite total)`);
+        log(`✅ Configuración visible sincronizada con room metadata (${validation.percentage}% del límite total)`);
+        
+        // Enviar actualización vía broadcast a todos los players
+        broadcastVisiblePagesUpdate(visibleOnlyConfig);
       } catch (e) {
         // Si falla, puede ser por tamaño o por otro error
         if (e.message && (e.message.includes('size') || e.message.includes('limit') || e.message.includes('16'))) {
@@ -340,8 +486,11 @@ async function savePagesJSON(json, roomId) {
               [ROOM_METADATA_KEY]: compressed
             });
             log('✅ Configuración guardada después de limpiar caché');
+            broadcastVisiblePagesUpdate(visibleOnlyConfig);
           } catch (e2) {
-            logWarn('⚠️ La configuración es demasiado grande para room metadata (>16KB). Se guardó solo en localStorage.');
+            logWarn('⚠️ La configuración visible es demasiado grande para room metadata (>16KB). Usando solo broadcast.');
+            // Enviar solo vía broadcast
+            broadcastVisiblePagesUpdate(visibleOnlyConfig);
           }
         } else {
           console.warn('⚠️ No se pudo sincronizar con room metadata:', e);
@@ -355,15 +504,17 @@ async function savePagesJSON(json, roomId) {
           [ROOM_CONTENT_CACHE_KEY]: {}
         });
         // Intentar guardar después de limpiar
-        const compressed = compressJson(json);
+        const compressed = compressJson(visibleOnlyConfig);
         await OBR.room.setMetadata({
           [ROOM_METADATA_KEY]: compressed
         });
         log('✅ Configuración guardada después de limpiar caché');
+        broadcastVisiblePagesUpdate(visibleOnlyConfig);
       } catch (e) {
-        logWarn('⚠️ La configuración es demasiado grande para room metadata (>16KB). Se guardó solo en localStorage.');
+        logWarn('⚠️ La configuración visible es demasiado grande para room metadata (>16KB). Usando solo broadcast.');
         logWarn(`   Tamaño total: ${(validation.size / 1024).toFixed(2)}KB / ${(ROOM_METADATA_SAFE_LIMIT / 1024).toFixed(2)}KB`);
-        logWarn('   Sugerencia: Reduce el número de páginas configuradas.');
+        // Enviar solo vía broadcast
+        broadcastVisiblePagesUpdate(visibleOnlyConfig);
       }
     }
     
@@ -371,6 +522,9 @@ async function savePagesJSON(json, roomId) {
     return true;
   } catch (e) {
     console.error('Error al guardar JSON:', e);
+    if (e.name === 'QuotaExceededError') {
+      showStorageLimitModal('saving configuration');
+    }
     return false;
   }
 }
@@ -544,9 +698,10 @@ function setCachedBlocks(pageId, blocks) {
     saveToSharedCache(pageId, blocks);
   } catch (e) {
     console.error('Error al guardar en caché:', e);
-    // Si el localStorage está lleno, informar al usuario
+    // Si el localStorage está lleno, mostrar modal al usuario
     if (e.name === 'QuotaExceededError') {
-      console.warn('⚠️ localStorage lleno. Considera limpiar el caché manualmente.');
+      console.warn('⚠️ localStorage lleno. Mostrando modal al usuario.');
+      showStorageLimitModal('caching page content');
     }
   }
 }
@@ -990,6 +1145,11 @@ function setCachedPageInfo(pageId, pageInfo) {
     console.log('💾 Información de página guardada en caché para:', pageId);
   } catch (e) {
     console.error('Error al guardar información de página en caché:', e);
+    // Si el localStorage está lleno, mostrar modal al usuario
+    if (e.name === 'QuotaExceededError') {
+      console.warn('⚠️ localStorage lleno. Mostrando modal al usuario.');
+      showStorageLimitModal('caching page information');
+    }
   }
 }
 
@@ -2409,13 +2569,14 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
         return;
       }
       console.log('⚠️ El GM no tiene el contenido disponible');
-      // Sin HTML disponible, mostrar mensaje de espera con botón de reintentar
+      // Sin HTML disponible, mostrar mensaje más claro
       contentDiv.innerHTML = `
-        <div class="notion-waiting">
-          <div class="notion-waiting-icon">⏳</div>
-          <p class="notion-waiting-text">Waiting for the GM to load this content...</p>
-          <p class="notion-waiting-hint">The GM needs to view this page first to make it available.</p>
-          <button class="btn btn--sm btn--secondary notion-retry-button">Retry</button>
+        <div class="notion-waiting notion-waiting--gm-offline">
+          <div class="notion-waiting-icon">👋</div>
+          <p class="notion-waiting-text">Your GM is not active right now</p>
+          <p class="notion-waiting-hint">Wait for them to join the session or send them a greeting!</p>
+          <p class="notion-waiting-subhint">The content you're trying to view requires your GM to be online.</p>
+          <button class="btn btn--sm btn--secondary notion-retry-button">🔄 Retry</button>
         </div>
       `;
       
@@ -2747,6 +2908,9 @@ try {
         
         // Configurar el GM para responder a solicitudes de contenido de jugadores
         setupGMContentBroadcast();
+        
+        // Configurar el GM para responder a solicitudes de lista de páginas visibles
+        setupGMVisiblePagesBroadcast();
       }
       
       // Obtener ID de la room actual
@@ -6664,6 +6828,202 @@ function showModalForm(title, fields, onSubmit, onCancel) {
       }
     }, 100);
   }
+}
+
+// Variable para evitar mostrar múltiples modales de storage limit
+let storageLimitModalShown = false;
+
+/**
+ * Muestra un modal cuando el localStorage está lleno (QuotaExceededError)
+ * @param {string} context - Contexto donde ocurrió el error (ej: 'saving configuration', 'caching page')
+ */
+function showStorageLimitModal(context = 'saving data') {
+  // Evitar mostrar múltiples modales
+  if (storageLimitModalShown) {
+    console.log('⚠️ Storage limit modal already shown, skipping');
+    return;
+  }
+  storageLimitModalShown = true;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'storage-limit-modal';
+  overlay.className = 'modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal__content modal__content--warning';
+
+  modal.innerHTML = `
+    <div class="modal__icon">⚠️</div>
+    <h2 class="modal__title">Storage Limit Reached</h2>
+    <div class="modal__body">
+      <p class="modal__text">
+        Your browser's local storage is full and we couldn't save your data while <strong>${context}</strong>.
+      </p>
+      <p class="modal__text">
+        This can happen when you have many pages cached. You can:
+      </p>
+      <ul class="modal__list">
+        <li>Clear the cache to free up space</li>
+        <li>Remove some pages from your configuration</li>
+        <li>Check our roadmap for premium storage options</li>
+      </ul>
+    </div>
+    <div class="form__actions form__actions--stacked">
+      <button id="storage-clear-cache" class="btn btn--primary btn--flex">
+        🗑️ Clear Cache
+      </button>
+      <a href="https://www.notion.so/DM-Panel-Roadmap-2d8d4856c90e8088825df40c3be24393" 
+         target="_blank" 
+         rel="noopener noreferrer"
+         class="btn btn--ghost btn--flex">
+        📋 View Roadmap
+      </a>
+      <button id="storage-dismiss" class="btn btn--ghost btn--flex">
+        Dismiss
+      </button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.remove();
+    storageLimitModalShown = false;
+  };
+
+  // Clear Cache button
+  const clearCacheBtn = modal.querySelector('#storage-clear-cache');
+  clearCacheBtn.addEventListener('click', async () => {
+    const clearedCount = clearAllCache();
+    clearCacheBtn.textContent = `✅ Cleared ${clearedCount} items`;
+    clearCacheBtn.disabled = true;
+    setTimeout(() => {
+      close();
+    }, 1500);
+  });
+
+  // Dismiss button
+  const dismissBtn = modal.querySelector('#storage-dismiss');
+  dismissBtn.addEventListener('click', close);
+
+  // Close on overlay click
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+}
+
+/**
+ * Muestra un modal cuando el GM no está activo (para players)
+ */
+function showGMNotActiveModal() {
+  const overlay = document.createElement('div');
+  overlay.id = 'gm-not-active-modal';
+  overlay.className = 'modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal__content modal__content--info';
+
+  modal.innerHTML = `
+    <div class="modal__icon">👋</div>
+    <h2 class="modal__title">Your GM is not active right now</h2>
+    <div class="modal__body">
+      <p class="modal__text">
+        The content you're trying to view requires your GM to be online.
+      </p>
+      <p class="modal__text">
+        Wait for them to join the session or send them a greeting! 
+      </p>
+    </div>
+    <div class="form__actions">
+      <button id="gm-retry" class="btn btn--primary btn--flex">
+        🔄 Retry
+      </button>
+      <button id="gm-dismiss" class="btn btn--ghost btn--flex">
+        Dismiss
+      </button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.remove();
+  };
+
+  // Retry button - just closes, caller handles retry
+  const retryBtn = modal.querySelector('#gm-retry');
+  retryBtn.addEventListener('click', () => {
+    close();
+    // Trigger a custom event that callers can listen to
+    window.dispatchEvent(new CustomEvent('gm-retry-requested'));
+  });
+
+  // Dismiss button
+  const dismissBtn = modal.querySelector('#gm-dismiss');
+  dismissBtn.addEventListener('click', close);
+
+  // Close on overlay click
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+}
+
+/**
+ * Muestra un modal cuando el contenido es demasiado grande para compartir
+ * @param {number} size - Tamaño del contenido en bytes
+ * @param {string} pageName - Nombre de la página
+ */
+function showContentTooLargeModal(size, pageName) {
+  const overlay = document.createElement('div');
+  overlay.id = 'content-too-large-modal';
+  overlay.className = 'modal';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal__content modal__content--warning';
+
+  const sizeKB = (size / 1024).toFixed(1);
+
+  modal.innerHTML = `
+    <div class="modal__icon">📦</div>
+    <h2 class="modal__title">Content Too Large to Share</h2>
+    <div class="modal__body">
+      <p class="modal__text">
+        The page "<strong>${pageName}</strong>" is too large to share with players (${sizeKB} KB).
+      </p>
+      <p class="modal__text">
+        Consider splitting the content into smaller pages or removing some elements.
+      </p>
+    </div>
+    <div class="form__actions">
+      <a href="https://www.notion.so/DM-Panel-Roadmap-2d8d4856c90e8088825df40c3be24393" 
+         target="_blank" 
+         rel="noopener noreferrer"
+         class="btn btn--ghost btn--flex">
+        📋 View Roadmap
+      </a>
+      <button id="large-content-dismiss" class="btn btn--primary btn--flex">
+        Got it
+      </button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.remove();
+  };
+
+  // Dismiss button
+  const dismissBtn = modal.querySelector('#large-content-dismiss');
+  dismissBtn.addEventListener('click', close);
+
+  // Close on overlay click
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
 }
 
 // Función para mostrar el editor de JSON
