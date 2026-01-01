@@ -1453,14 +1453,6 @@ async function clearAllRoomMetadata() {
   }
 }
 
-// Función auxiliar para verificar si una URL es de Notion
-function isNotionUrl(url) {
-  if (!url || typeof url !== 'string') {
-    return false;
-  }
-  return url.includes('notion.so') || url.includes('notion.site');
-}
-
 // Función para extraer el ID de página desde una URL de Notion
 function extractNotionPageId(url) {
   try {
