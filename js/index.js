@@ -795,13 +795,16 @@ async function savePagesJSON(json, roomId) {
 }
 
 // Función para cargar configuración desde room metadata (compartida entre usuarios)
+// NOTA: Solo para Players - el GM usa localStorage directamente
 async function loadPagesFromRoomMetadata() {
   try {
     const metadata = await OBR.room.getMetadata();
     if (metadata && metadata[ROOM_METADATA_KEY]) {
-      pagesConfigCache = metadata[ROOM_METADATA_KEY];
+      // NO actualizar pagesConfigCache aquí - eso lo hace el flujo principal
+      // para evitar que el GM sobrescriba su config completa con la filtrada
+      const config = metadata[ROOM_METADATA_KEY];
       log('✅ Configuración cargada desde room metadata');
-      return pagesConfigCache;
+      return config;
     }
   } catch (e) {
     console.warn('⚠️ No se pudo cargar desde room metadata:', e);
@@ -3311,24 +3314,40 @@ try {
         console.log('🔍 Configuración default - elementos:', defaultCount);
       }
       
-      // Prioridad: room metadata > localStorage > default
-      if (roomMetadataCount > 0) {
-        log('✅ Usando configuración desde room metadata (compartida) con', roomMetadataCount, 'elementos');
-        pagesConfig = roomMetadataConfig;
-      } else if (currentRoomCount >= defaultCount && currentRoomCount > 0) {
-        log('✅ Usando configuración del localStorage roomId:', roomId, 'con', currentRoomCount, 'elementos');
-        pagesConfig = currentRoomConfig;
-        // Sincronizar con room metadata para que otros usuarios la vean
-        await savePagesJSON(pagesConfig, roomId);
-      } else if (defaultCount > 0) {
-        log('✅ Usando configuración "default" con', defaultCount, 'elementos (tiene más contenido)');
-        pagesConfig = defaultConfig;
-        // Copiar la configuración default al roomId actual para futuras ediciones
-        await savePagesJSON(defaultConfig, roomId);
-        log('💾 Configuración "default" copiada a roomId:', roomId);
-      } else if (currentRoomConfig) {
-        log('⚠️ Ambas configuraciones vacías, usando la del roomId');
-        pagesConfig = currentRoomConfig;
+      // Prioridad diferenciada por rol:
+      // - GM: localStorage > default (él genera la configuración completa)
+      // - Player: room metadata > broadcast (recibe configuración filtrada del GM)
+      if (isGM) {
+        // GM siempre usa su localStorage (configuración completa)
+        if (currentRoomCount >= defaultCount && currentRoomCount > 0) {
+          log('✅ [GM] Usando configuración del localStorage con', currentRoomCount, 'elementos');
+          pagesConfig = currentRoomConfig;
+          // Sincronizar con room metadata para que los players la vean
+          await savePagesJSON(pagesConfig, roomId);
+        } else if (defaultCount > 0) {
+          log('✅ [GM] Usando configuración "default" con', defaultCount, 'elementos');
+          pagesConfig = defaultConfig;
+          // Copiar la configuración default al roomId actual
+          await savePagesJSON(defaultConfig, roomId);
+          log('💾 [GM] Configuración "default" copiada a roomId:', roomId);
+        } else if (currentRoomConfig) {
+          log('⚠️ [GM] Configuración vacía, usando la existente del roomId');
+          pagesConfig = currentRoomConfig;
+        }
+      } else {
+        // Player usa room metadata (configuración filtrada por el GM)
+        if (roomMetadataCount > 0) {
+          log('✅ [Player] Usando configuración desde room metadata con', roomMetadataCount, 'elementos');
+          pagesConfig = roomMetadataConfig;
+        } else {
+          // Fallback: solicitar al GM vía broadcast
+          log('⚠️ [Player] No hay configuración en room metadata, solicitando al GM...');
+          const visibleConfig = await requestVisiblePagesFromGM();
+          if (visibleConfig) {
+            pagesConfig = visibleConfig;
+            log('✅ [Player] Configuración recibida del GM vía broadcast');
+          }
+        }
       }
       
       // Si no hay ninguna configuración, crear una nueva por defecto
