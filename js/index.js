@@ -3557,21 +3557,32 @@ try {
           }
           
           // El notion-container ya está visible por CSS (html.modal-mode)
-          // Limpiar todo el contenido anterior antes de cargar
+          // Limpiar TODO el contenido anterior antes de cargar
           const notionContainer = document.getElementById("notion-container");
           if (notionContainer) {
-            // Limpiar ambos: content e iframe
+            // Usar setNotionDisplayMode para limpiar correctamente
+            // Primero forzar limpieza completa
             const notionContent = notionContainer.querySelector('#notion-content');
-            const notionIframe = notionContainer.querySelector('#notion-iframe');
             if (notionContent) {
+              // Remover todos los hijos primero
+              while (notionContent.firstChild) {
+                notionContent.removeChild(notionContent.firstChild);
+              }
+              // Luego limpiar el innerHTML
               notionContent.innerHTML = '';
             }
+            
+            // Limpiar completamente el iframe
+            const notionIframe = notionContainer.querySelector('#notion-iframe');
             if (notionIframe) {
               notionIframe.src = 'about:blank';
             }
+            
             // Remover la clase show-content para empezar en estado limpio
-            // loadPageContent establecerá el modo correcto
             notionContainer.classList.remove('show-content');
+            
+            // Pequeño delay para asegurar que el navegador procese la limpieza
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
           
           // Cargar el contenido de la página
@@ -6707,10 +6718,29 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
             modalUrl.searchParams.set('selector', encodeURIComponent(selector));
           }
           // Agregar timestamp para evitar caché
-          modalUrl.searchParams.set('_t', Date.now().toString());
+          const timestamp = Date.now();
+          modalUrl.searchParams.set('_t', timestamp.toString());
+          
+          // Cerrar cualquier modal anterior antes de abrir uno nuevo
+          // Intentar cerrar todos los modales posibles (con diferentes IDs)
+          try {
+            // Intentar cerrar con el patrón de ID que usamos
+            const previousModalIds = ['notion-content-modal', `notion-content-modal-${timestamp - 1000}`, `notion-content-modal-${timestamp - 2000}`];
+            for (const modalId of previousModalIds) {
+              try {
+                await OBR.modal.close(modalId);
+              } catch (e) {
+                // Ignorar errores si el modal no existe
+              }
+            }
+            // Pequeño delay para asegurar que el modal anterior se cierre
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (e) {
+            // Continuar aunque falle el cierre
+          }
           
           // Usar un ID único basado en timestamp para evitar problemas de caché
-          const modalId = `notion-content-modal-${Date.now()}`;
+          const modalId = `notion-content-modal-${timestamp}`;
           
           // Abrir modal usando Owlbear SDK
           await OBR.modal.open({
