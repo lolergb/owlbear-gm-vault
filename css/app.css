@@ -902,25 +902,30 @@
     display: none;
   }
   
+  /* Cuando tiene show-content: mostrar content, ocultar iframe */
   .notion-container.show-content .notion-container__iframe,
   .notion-container.show-content #notion-iframe {
     display: none !important;
+    visibility: hidden !important;
   }
   
   .notion-container.show-content .notion-container__content,
   .notion-container.show-content #notion-content {
     display: block !important;
+    visibility: visible !important;
   }
   
   /* Estados por defecto (sin .show-content) - mostrar iframe, ocultar content */
   .notion-container:not(.show-content) .notion-container__iframe,
   .notion-container:not(.show-content) #notion-iframe {
     display: block !important;
+    visibility: visible !important;
   }
   
   .notion-container:not(.show-content) .notion-container__content,
   .notion-container:not(.show-content) #notion-content {
     display: none !important;
+    visibility: hidden !important;
   }
   
   /* Alias para compatibilidad - ahora sin display fijo */

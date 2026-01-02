@@ -3042,6 +3042,8 @@ function setNotionDisplayMode(container, mode) {
   const contentDiv = container.querySelector('#notion-content');
   const iframe = container.querySelector('#notion-iframe');
   
+  console.log(`🔄 setNotionDisplayMode: Cambiando a modo "${mode}"`);
+  
   // Limpiar estilos inline que podrían interferir con CSS
   if (contentDiv) {
     contentDiv.style.removeProperty('display');
@@ -3054,16 +3056,28 @@ function setNotionDisplayMode(container, mode) {
   
   if (mode === 'content') {
     // Mostrar content, ocultar y limpiar iframe
+    console.log('  - Modo content: limpiando iframe');
     if (iframe) {
       iframe.src = 'about:blank'; // Limpiar contenido del iframe
     }
     container.classList.add('show-content');
+    console.log('  - Clase show-content añadida');
   } else if (mode === 'iframe') {
     // Mostrar iframe, ocultar y limpiar content
+    console.log('  - Modo iframe: limpiando notion-content');
     if (contentDiv) {
-      contentDiv.innerHTML = ''; // Limpiar para evitar contenido residual
+      // Limpiar completamente el contenido de Notion
+      // Primero remover todos los hijos
+      while (contentDiv.firstChild) {
+        contentDiv.removeChild(contentDiv.firstChild);
+      }
+      // Luego limpiar el innerHTML por si acaso
+      contentDiv.innerHTML = '';
+      console.log('  - notion-content limpiado completamente');
     }
+    // IMPORTANTE: Remover show-content ANTES de establecer el src del iframe
     container.classList.remove('show-content');
+    console.log('  - Clase show-content removida');
     // Nota: El src del iframe se establecerá por la función que llama a setNotionDisplayMode
     // No lo establecemos aquí para evitar conflictos
   }
@@ -6203,17 +6217,24 @@ async function loadIframeContent(url, container, selector = null) {
     return;
   }
   
-  // Usar la función centralizada para gestionar visibilidad
+  // PRIMERO: Limpiar notion-content y cambiar modo
+  // Esto asegura que el contenido de Notion se elimine completamente
+  console.log('🔄 loadIframeContent: Cambiando a modo iframe y limpiando', url);
   setNotionDisplayMode(container, 'iframe');
   
-  // Forzar limpieza del iframe antes de cargar nuevo contenido
+  // SEGUNDO: Forzar limpieza del iframe antes de cargar nuevo contenido
   // Esto asegura que el iframe se recargue correctamente
-  console.log('🔄 loadIframeContent: Limpiando iframe antes de cargar', url);
   if (iframe.src && iframe.src !== 'about:blank') {
     console.log('  - Iframe actual tiene src:', iframe.src);
     iframe.src = 'about:blank';
     // Pequeño delay para asegurar que el navegador procese el cambio
     await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  
+  // Verificar que show-content fue removida
+  if (container.classList.contains('show-content')) {
+    console.warn('  - ⚠️ show-content todavía presente, forzando remoción');
+    container.classList.remove('show-content');
   }
   
   // Si hay un selector, intentar cargar solo ese elemento
@@ -6317,8 +6338,14 @@ async function loadIframeContent(url, container, selector = null) {
       console.log(`📄 URL de ${embedResult.service} (sin conversión necesaria)`);
     }
     console.log('📄 Cargando URL en iframe:', embedResult.url);
+    // Verificar que estamos en modo iframe antes de establecer src
+    if (container.classList.contains('show-content')) {
+      console.warn('  - ⚠️ show-content todavía presente, removiendo antes de cargar');
+      container.classList.remove('show-content');
+    }
     iframe.src = embedResult.url;
     console.log('  - Iframe src establecido a:', iframe.src);
+    console.log('  - Container tiene show-content?', container.classList.contains('show-content'));
     // No usar estilos inline - CSS se encarga de la visibilidad
   }
 }
