@@ -4,6 +4,9 @@ import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
 
 console.log('✅ OBR SDK importado');
 
+// Configuración del ancho de expansión del modal de Notion (en píxeles)
+const NOTION_MODAL_EXPAND_WIDTH = 200;
+
 // Sistema de logs controlado por variable de entorno de Netlify
 let DEBUG_MODE = false;
 
@@ -6342,6 +6345,10 @@ function hidePageHeaderButtons() {
   if (refreshButton) {
     refreshButton.classList.add("hidden");
   }
+  const expandButton = document.getElementById("page-expand-button-header");
+  if (expandButton) {
+    expandButton.classList.add("hidden");
+  }
   const contextMenuButton = document.getElementById("page-context-menu-button-header");
   if (contextMenuButton) {
     contextMenuButton.classList.add("hidden");
@@ -6349,6 +6356,13 @@ function hidePageHeaderButtons() {
   const visibilityButton = document.getElementById("page-visibility-button-header");
   if (visibilityButton) {
     visibilityButton.classList.add("hidden");
+  }
+  
+  // Resetear estado expandido del modal
+  const notionContainer = document.getElementById("notion-container");
+  if (notionContainer) {
+    notionContainer.classList.remove("expanded");
+    notionContainer.style.width = "";
   }
 }
 
@@ -6532,6 +6546,61 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         await loadIframeContent(url, notionContainer, selector);
       }
     }
+    
+    // Agregar botón de expandir/contraer el modal (siempre visible cuando hay contenido)
+    let expandButton = document.getElementById("page-expand-button-header");
+    if (!expandButton) {
+      expandButton = document.createElement("button");
+      expandButton.id = "page-expand-button-header";
+      expandButton.className = "icon-button";
+      header.appendChild(expandButton);
+    }
+    
+    // Estado inicial: no expandido
+    let isExpanded = notionContainer.classList.contains("expanded");
+    
+    // Limpiar contenido anterior y configurar icono
+    expandButton.innerHTML = "";
+    const expandIcon = document.createElement("img");
+    expandIcon.src = isExpanded ? 'img/icon=expand-true.svg' : 'img/icon=expand-false.svg';
+    expandIcon.className = 'icon-button-icon';
+    expandButton.appendChild(expandIcon);
+    expandButton.title = isExpanded ? 'Contraer ancho del modal' : 'Expandir ancho del modal';
+    
+    // Remover listeners anteriores
+    const newExpandButton = expandButton.cloneNode(true);
+    expandButton.parentNode.replaceChild(newExpandButton, expandButton);
+    expandButton = newExpandButton;
+    expandButton.id = "page-expand-button-header";
+    expandButton.className = "icon-button";
+    
+    // Actualizar icono después de clonar
+    const icon = expandButton.querySelector('img');
+    if (icon) {
+      icon.src = isExpanded ? 'img/icon=expand-true.svg' : 'img/icon=expand-false.svg';
+    }
+    expandButton.title = isExpanded ? 'Contraer ancho del modal' : 'Expandir ancho del modal';
+    
+    // Agregar listener para toggle
+    expandButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isExpanded = !isExpanded;
+      
+      if (isExpanded) {
+        notionContainer.classList.add("expanded");
+        notionContainer.style.width = `calc(100% + ${NOTION_MODAL_EXPAND_WIDTH}px)`;
+      } else {
+        notionContainer.classList.remove("expanded");
+        notionContainer.style.width = "";
+      }
+      
+      // Actualizar icono y título
+      const currentIcon = expandButton.querySelector('img');
+      if (currentIcon) {
+        currentIcon.src = isExpanded ? 'img/icon=expand-true.svg' : 'img/icon=expand-false.svg';
+      }
+      expandButton.title = isExpanded ? 'Contraer ancho del modal' : 'Expandir ancho del modal';
+    });
     
     // Agregar botón de menú contextual para GMs (solo si la página está en la configuración)
     // Esto debe ejecutarse tanto para URLs de Notion como para otras URLs

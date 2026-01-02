@@ -882,6 +882,7 @@
     border-radius: var(--radius-lg);
     overflow-y: auto;
     overflow-x: hidden;
+    transition: width 0.3s ease;
   }
   
   .notion-container-dark .notion-content {
