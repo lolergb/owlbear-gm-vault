@@ -9,7 +9,7 @@
    ========================================================================== */
 .notion-content {
   padding: 0 var(--spacing-xl) var(--spacing-xl);
-  max-width: 900px;
+  max-width: 800px;
   margin: 0 auto;
   color: var(--color-text-primary);
   line-height: 1.6;
