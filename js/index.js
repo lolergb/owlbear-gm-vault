@@ -6765,6 +6765,17 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
           // Usar un ID único basado en timestamp para evitar problemas de caché
           const modalId = `notion-content-modal-${timestamp}`;
           
+          // Mostrar la URL del modal en consola para debug
+          console.log('🔍 URL del modal que se va a abrir:', modalUrl.toString());
+          console.log('🔍 ID del modal:', modalId);
+          console.log('🔍 URL decodificada:', {
+            url: decodeURIComponent(modalUrl.searchParams.get('url') || ''),
+            name: decodeURIComponent(modalUrl.searchParams.get('name') || ''),
+            modal: modalUrl.searchParams.get('modal'),
+            timestamp: modalUrl.searchParams.get('_t'),
+            uniqueId: modalUrl.searchParams.get('_id')
+          });
+          
           // Abrir modal usando Owlbear SDK
           // La URL ya tiene timestamp y uniqueId para evitar caché del navegador
           await OBR.modal.open({
@@ -6773,6 +6784,8 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
             height: 800,
             width: 1200
           });
+          
+          console.log('✅ Modal abierto con ID:', modalId);
         } catch (error) {
           console.error('Error al abrir modal de OBR:', error);
         }
