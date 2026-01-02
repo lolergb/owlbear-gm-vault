@@ -3034,6 +3034,7 @@ async function attachImageClickHandlers() {
 
 /**
  * Gestiona la visibilidad entre notion-content y notion-iframe
+ * Usa la clase CSS 'show-content' para controlar la visibilidad
  * @param {HTMLElement} container - El contenedor notion-container
  * @param {'content' | 'iframe'} mode - Qué elemento mostrar
  */
@@ -3041,26 +3042,26 @@ function setNotionDisplayMode(container, mode) {
   const contentDiv = container.querySelector('#notion-content');
   const iframe = container.querySelector('#notion-iframe');
   
+  // Limpiar estilos inline que podrían interferir con CSS
+  if (contentDiv) {
+    contentDiv.style.removeProperty('display');
+    contentDiv.style.removeProperty('visibility');
+  }
+  if (iframe) {
+    iframe.style.removeProperty('display');
+    iframe.style.removeProperty('visibility');
+  }
+  
   if (mode === 'content') {
-    // Mostrar content, ocultar iframe
+    // Mostrar content, ocultar y limpiar iframe
     if (iframe) {
-      iframe.src = ''; // Limpiar para evitar contenido residual
-      iframe.style.display = 'none';
-      iframe.style.visibility = 'hidden';
-    }
-    if (contentDiv) {
-      contentDiv.style.display = 'block';
+      iframe.src = 'about:blank'; // Limpiar contenido del iframe
     }
     container.classList.add('show-content');
   } else if (mode === 'iframe') {
-    // Mostrar iframe, ocultar content
+    // Mostrar iframe, ocultar y limpiar content
     if (contentDiv) {
       contentDiv.innerHTML = ''; // Limpiar para evitar contenido residual
-      contentDiv.style.display = 'none';
-    }
-    if (iframe) {
-      iframe.style.display = 'block';
-      iframe.style.visibility = 'visible';
     }
     container.classList.remove('show-content');
   }
@@ -3078,15 +3079,14 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   // Usar la función centralizada para gestionar visibilidad
   setNotionDisplayMode(container, 'content');
   
-  // Mostrar loading
+  // Mostrar loading (setNotionDisplayMode ya gestionó la visibilidad)
   contentDiv.innerHTML = `
     <div class="empty-state notion-loading">
       <div class="empty-state-icon">⏳</div>
       <p class="empty-state-text">Cargando contenido...</p>
     </div>
   `;
-  contentDiv.style.display = 'block';
-  container.classList.add('show-content');
+  // No usar estilos inline - la clase show-content ya está añadida por setNotionDisplayMode
   
   try {
     // Extraer ID de la página
@@ -6259,8 +6259,7 @@ async function loadIframeContent(url, container, selector = null) {
       const blobUrl = URL.createObjectURL(blob);
       
       iframe.src = blobUrl;
-      iframe.style.display = 'block';
-      iframe.style.visibility = 'visible';
+      // No usar estilos inline - CSS se encarga de la visibilidad
       
       // Limpiar el blob URL cuando el iframe se descargue
       iframe.addEventListener('load', () => {
@@ -6276,8 +6275,7 @@ async function loadIframeContent(url, container, selector = null) {
         console.log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
       }
       iframe.src = embedResult.url;
-      iframe.style.display = 'block';
-      iframe.style.visibility = 'visible';
+      // No usar estilos inline - CSS se encarga de la visibilidad
     }
   } else {
     // Sin selector: cargar la URL completa
@@ -6290,8 +6288,7 @@ async function loadIframeContent(url, container, selector = null) {
     }
     console.log('📄 Cargando URL en iframe:', embedResult.url);
     iframe.src = embedResult.url;
-    iframe.style.display = 'block';
-    iframe.style.visibility = 'visible';
+    // No usar estilos inline - CSS se encarga de la visibilidad
   }
 }
 
@@ -6347,8 +6344,7 @@ async function loadDemoHtmlContent(url, container) {
       <p class="empty-state-text">Cargando contenido...</p>
     </div>
   `;
-  contentDiv.style.display = 'block';
-  container.classList.add('show-content');
+  // No usar estilos inline - la clase show-content ya está añadida por setNotionDisplayMode
   
   try {
     // Resolver la URL relativa a absoluta
@@ -6922,12 +6918,15 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         notionContainer.classList.remove("show-content");
         if (notionContent) {
           notionContent.innerHTML = "";
+          notionContent.style.removeProperty('display');
+          notionContent.style.removeProperty('visibility');
         }
         // Limpiar iframe
         const iframe = notionContainer.querySelector('#notion-iframe');
         if (iframe) {
-          iframe.src = '';
-          iframe.style.display = 'none';
+          iframe.src = 'about:blank';
+          iframe.style.removeProperty('display');
+          iframe.style.removeProperty('visibility');
         }
         // Ocultar todos los botones de página
         hidePageHeaderButtons();
@@ -7003,12 +7002,15 @@ async function showSettings() {
         notionContainer.classList.remove("show-content");
         if (notionContent) {
           notionContent.innerHTML = "";
+          notionContent.style.removeProperty('display');
+          notionContent.style.removeProperty('visibility');
         }
         // Limpiar iframe
         const iframe = notionContainer.querySelector('#notion-iframe');
         if (iframe) {
-          iframe.src = '';
-          iframe.style.display = 'none';
+          iframe.src = 'about:blank';
+          iframe.style.removeProperty('display');
+          iframe.style.removeProperty('visibility');
         }
         // Ocultar todos los botones de página
         hidePageHeaderButtons();
