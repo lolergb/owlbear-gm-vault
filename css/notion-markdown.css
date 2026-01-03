@@ -469,6 +469,7 @@
 }
 
 .modal-mode .notion-image-container {
+  margin-top: var(--spacing-xl);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
