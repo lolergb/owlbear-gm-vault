@@ -1353,6 +1353,10 @@
     font-size: 2.5rem;
     margin-bottom: var(--spacing-md);
   }
+  
+  .notion-loading .empty-state-icon {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
 
  .empty-state-text {
     font-size: var(--font-size-lg);
