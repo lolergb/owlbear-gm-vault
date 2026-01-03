@@ -6348,7 +6348,9 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
                   min-height: 32px;
                 "
                 onmouseover="this.style.opacity='1'; this.style.background='rgba(0, 0, 0, 0.95)'; this.style.borderColor='rgba(255, 255, 255, 0.4)';"
-                onmouseout="this.style.opacity='0.6'; this.style.background='rgba(0, 0, 0, 0.8)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';">
+                onmouseout="this.style.opacity='0.6'; this.style.background='rgba(0, 0, 0, 0.8)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';"
+                onmousedown="this.style.background='rgba(0, 0, 0, 1)';"
+                onmouseup="this.style.background='rgba(0, 0, 0, 0.95)';">
           <img src="img/icon-players.svg" alt="Share" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
         </button>
       </div>
@@ -6398,15 +6400,17 @@ async function shareVideoToPlayers(videoUrl, caption, videoType, shareButton) {
       caption: caption,
       type: videoType
     });
+    console.log('📤 Video compartido con jugadores:', videoUrl.substring(0, 80));
     
-    // Feedback visual
+    // Feedback visual (igual que imagen)
     if (shareButton) {
-      shareButton.style.background = 'rgba(45, 74, 45, 0.95)';
-      shareButton.style.borderColor = 'rgba(74, 106, 74, 0.4)';
+      const originalContent = shareButton.innerHTML;
+      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Shared" style="width: 16px; height: 16px; filter: brightness(0) invert(1); opacity: 0.5;" />';
+      shareButton.disabled = true;
       setTimeout(() => {
-        shareButton.style.background = 'rgba(0, 0, 0, 0.8)';
-        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-      }, 2000);
+        shareButton.innerHTML = originalContent;
+        shareButton.disabled = false;
+      }, 1000);
     }
   } catch (error) {
     console.error('Error al compartir video:', error);
@@ -6654,7 +6658,7 @@ async function loadIframeContent(url, container, selector = null) {
       shareIcon.style.cssText = 'width: 16px; height: 16px; filter: brightness(0) invert(1);';
       shareButton.appendChild(shareIcon);
       
-      // Event listeners para hover
+      // Event listeners para hover (igual que imagen y video)
       shareButton.addEventListener('mouseenter', () => {
         shareButton.style.opacity = '1';
         shareButton.style.background = 'rgba(0, 0, 0, 0.95)';
@@ -6664,6 +6668,12 @@ async function loadIframeContent(url, container, selector = null) {
         shareButton.style.opacity = '0.6';
         shareButton.style.background = 'rgba(0, 0, 0, 0.8)';
         shareButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      });
+      shareButton.addEventListener('mousedown', () => {
+        shareButton.style.background = 'rgba(0, 0, 0, 1)';
+      });
+      shareButton.addEventListener('mouseup', () => {
+        shareButton.style.background = 'rgba(0, 0, 0, 0.95)';
       });
       
       // Event listener para compartir
@@ -6688,15 +6698,17 @@ async function shareGoogleDocToPlayers(iframeUrl, name, shareButton) {
       url: iframeUrl,
       name: name
     });
+    console.log('📤 Google Doc compartido con jugadores:', iframeUrl.substring(0, 80));
     
-    // Feedback visual
+    // Feedback visual (igual que imagen y video)
     if (shareButton) {
-      shareButton.style.background = 'rgba(45, 74, 45, 0.95)';
-      shareButton.style.borderColor = 'rgba(74, 106, 74, 0.4)';
+      const originalContent = shareButton.innerHTML;
+      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Shared" style="width: 16px; height: 16px; filter: brightness(0) invert(1); opacity: 0.5;" />';
+      shareButton.disabled = true;
       setTimeout(() => {
-        shareButton.style.background = 'rgba(0, 0, 0, 0.8)';
-        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-      }, 2000);
+        shareButton.innerHTML = originalContent;
+        shareButton.disabled = false;
+      }, 1000);
     }
   } catch (error) {
     console.error('Error al compartir Google Doc:', error);
