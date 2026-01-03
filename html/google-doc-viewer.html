@@ -5,105 +5,136 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Google Doc</title>
   <style>
+    :root {
+      --color-text-primary: #fff;
+      --color-text-secondary: #e0e0e0;
+      --color-text-muted: #999;
+      --spacing-sm: 8px;
+      --spacing-md: 12px;
+      --spacing-lg: 16px;
+      --spacing-xl: 24px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --font-size-sm: 14px;
+      --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      --transition-normal: 0.2s;
+      --transition-slow: 0.3s;
+      --share-button-bg: rgba(0, 0, 0, 0.8);
+      --share-button-bg-hover: rgba(0, 0, 0, 0.95);
+      --share-button-bg-active: rgba(0, 0, 0, 1);
+      --share-button-border: rgba(255, 255, 255, 0.2);
+      --share-button-border-hover: rgba(255, 255, 255, 0.4);
+      --share-button-opacity: 0.6;
+      --share-button-opacity-hover: 1;
+      --feedback-bg: #2d4a2d;
+      --feedback-border: #4a6a4a;
+      --feedback-text: #8fdf8f;
+      --icon-size-sm: 16px;
+      --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
     body {
-      color: #e0e0e0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      color: var(--color-text-secondary);
+      font-family: var(--font-family-base);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      padding: 20px;
+      padding: var(--spacing-xl);
+      margin: 0;
     }
     .doc-container {
       max-width: 100%;
       width: 100%;
-      max-width: 1200px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 16px;
+      gap: var(--spacing-lg);
     }
     .doc-wrapper {
       position: relative;
       width: 100%;
       height: calc(100vh - 100px);
       overflow: hidden;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       background: #fff;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow-card);
     }
     iframe {
       width: 100%;
       height: 100%;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
     }
     .caption {
-      color: #999;
-      font-size: 14px;
+      color: var(--color-text-muted);
+      font-size: var(--font-size-sm);
       text-align: center;
       max-width: 800px;
-      padding: 24px;
+      padding: var(--spacing-xl);
     }
     .toolbar {
       position: fixed;
-      top: 20px;
-      right: 20px;
+      top: var(--spacing-xl);
+      right: var(--spacing-xl);
       display: flex;
-      gap: 8px;
+      gap: var(--spacing-sm);
     }
     .toolbar-button {
-      background: #2d2d2d;
-      border: 1px solid #404040;
-      border-radius: 6px;
-      padding: 10px 16px;
-      color: #e0e0e0;
+      background: var(--share-button-bg);
+      border: 1px solid var(--share-button-border);
+      border-radius: var(--radius-md);
+      padding: 0;
+      color: var(--color-text-secondary);
       cursor: pointer;
-      font-size: 14px;
+      font-size: var(--font-size-sm);
       font-weight: 600;
-      transition: all 0.2s;
+      transition: all var(--transition-normal);
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: center;
+      gap: var(--spacing-sm);
+      width: 32px;
+      height: 32px;
     }
     .toolbar-button:hover {
-      background: #3d3d3d;
-      border-color: #555;
+      background: var(--share-button-bg-hover);
+      border-color: var(--share-button-border-hover);
+      opacity: var(--share-button-opacity-hover);
     }
     .toolbar-button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
     .toolbar-button.shared {
-      background: #2d4a2d;
-      border-color: #4a6a4a;
+      background: var(--feedback-bg);
+      border-color: var(--feedback-border);
     }
     .toolbar-button img {
-      width: 18px;
-      height: 18px;
+      width: var(--icon-size-sm);
+      height: var(--icon-size-sm);
     }
     .gm-only {
       display: none;
     }
     .feedback {
       position: fixed;
-      bottom: 20px;
+      bottom: var(--spacing-xl);
       left: 50%;
       transform: translateX(-50%);
-      background: #2d4a2d;
-      border: 1px solid #4a6a4a;
-      padding: 12px 24px;
-      border-radius: 6px;
-      color: #8fdf8f;
-      font-size: 14px;
+      background: var(--feedback-bg);
+      border: 1px solid var(--feedback-border);
+      padding: var(--spacing-md) var(--spacing-xl);
+      border-radius: var(--radius-md);
+      color: var(--feedback-text);
+      font-size: var(--font-size-sm);
       opacity: 0;
-      transition: opacity 0.3s;
+      transition: opacity var(--transition-slow);
     }
     .feedback.visible {
       opacity: 1;
@@ -114,7 +145,6 @@
   <div class="toolbar gm-only">
     <button id="share-button" class="toolbar-button" title="Show this document to all players">
       <img src="../img/icon-players.svg" alt="Share" />
-      <span>Show to players</span>
     </button>
   </div>
   <div class="doc-container">
@@ -198,7 +228,6 @@
               
               // Cambiar el botón a estado compartido
               shareButton.classList.add('shared');
-              shareButton.querySelector('span').textContent = 'Shared!';
               
             } catch (error) {
               console.error('Error al compartir documento:', error);

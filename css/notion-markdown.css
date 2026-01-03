@@ -164,43 +164,30 @@
   opacity: 0.9;
 }
 
-.notion-content .notion-image-share-button {
+/* Los estilos de share-button están en app.css */
+.notion-content .notion-image-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: var(--spacing-lg) 0;
+  min-height: var(--min-height-image-container);
+}
+
+.notion-content .notion-image-container .image-loading {
   position: absolute;
-  top: var(--spacing-sm);
-  right: var(--spacing-sm);
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-  transition: opacity var(--transition-normal), background var(--transition-normal);
-  z-index: 10;
-  min-width: 32px;
-  min-height: 32px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
 }
 
-.notion-content .notion-image-container:hover .notion-image-share-button,
-.notion-content .notion-image-share-button:hover {
+.notion-content .notion-image-container img {
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.notion-content .notion-image-container img.loaded {
   opacity: 1;
-}
-
-.notion-content .notion-image-share-button:hover {
-  background: rgba(0, 0, 0, 0.95);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.notion-content .notion-image-share-button:active {
-  background: rgba(0, 0, 0, 1);
-}
-
-.notion-content .notion-image-share-button img {
-  width: 16px;
-  height: 16px;
-  filter: brightness(0) invert(1);
 }
 
 .notion-content .notion-image-caption {
@@ -212,7 +199,7 @@
 
 .notion-content .notion-bulleted-list,
 .notion-content .notion-numbered-list {
-  margin: 1px 0;
+  margin: var(--spacing-xs) 0;
   padding-left: calc(var(--spacing-lg) + var(--spacing-md));
 }
 
@@ -228,7 +215,7 @@
 
 .notion-content .notion-bulleted-list-item,
 .notion-content .notion-numbered-list-item {
-  margin: 1px 0;
+  margin: var(--spacing-xs) 0;
   padding-left: var(--radius-sm);
 }
 
@@ -321,7 +308,7 @@
 }
 
 .notion-content .notion-toggle {
-  margin: 1px 0;
+  margin: var(--spacing-xs) 0;
 }
 
 .notion-content .notion-toggle-summary {

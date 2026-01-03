@@ -75,6 +75,28 @@
     
     /* Sombras */
     --shadow-menu: rgba(0, 0, 0, 0.2) 0px 2px 4px -1px, rgba(0, 0, 0, 0.14) 0px 4px 5px 0px, rgba(0, 0, 0, 0.12) 0px 1px 10px 0px;
+    --shadow-card: 0 4px 6px rgba(0, 0, 0, 0.1);
+    
+    /* Share button colors */
+    --share-button-bg: rgba(0, 0, 0, 0.8);
+    --share-button-bg-hover: rgba(0, 0, 0, 0.95);
+    --share-button-bg-active: rgba(0, 0, 0, 1);
+    --share-button-border: rgba(255, 255, 255, 0.2);
+    --share-button-border-hover: rgba(255, 255, 255, 0.4);
+    --share-button-opacity: 0.6;
+    --share-button-opacity-hover: 1;
+    
+    /* Feedback colors */
+    --feedback-bg: #2d4a2d;
+    --feedback-border: #4a6a4a;
+    --feedback-text: #8fdf8f;
+    
+    /* Loading spinner */
+    --loading-spinner-color: var(--color-text-secondary);
+    --loading-bg: rgba(0, 0, 0, 0.5);
+    
+    /* Alturas mínimas */
+    --min-height-image-container: 100px;
   }
   
 /* ==========================================================================
@@ -130,7 +152,7 @@
     background: var(--color-bg-primary);
     border: 1px solid var(--color-border-primary);
     border-radius: var(--radius-md);
-    padding: 10px 20px;
+    padding: var(--spacing-sm) var(--spacing-xl);
     cursor: pointer;
     transition: all var(--transition-normal);
     display: inline-flex;
@@ -578,7 +600,7 @@
   .category__title {
     font-family: var(--font-family-base);
     font-size: var(--font-size-md);
-    line-height: 24px;
+    line-height: var(--font-line-base);
     font-weight: var(--font-weight-bold);
     color: var(--color-text-primary);
     letter-spacing: 0.5px;
@@ -588,12 +610,12 @@
   
   .category__content {
     display: block;
-    margin-left: 32px;
+    margin-left: var(--spacing-xl);
   }
   
   .category__pages {
     display: block;
-    margin-left: 32px;
+    margin-left: var(--spacing-xl);
   }
   
   .category__menu-btn {
@@ -690,7 +712,7 @@
     color: var(--color-text-muted);
     font-size: var(--font-size-base);
     margin-bottom: var(--spacing-lg);
-    line-height: 1.6;
+    line-height: var(--font-line-base);
   }
   
   /* ==========================================================================
@@ -814,7 +836,7 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     margin-bottom: var(--spacing-sm);
-    line-height: 1.5;
+    line-height: var(--font-line-base);
   }
 
   .modal__text strong {
@@ -826,7 +848,7 @@
     font-size: var(--font-size-sm);
     margin: var(--spacing-md) 0;
     padding-left: var(--spacing-lg);
-    line-height: 1.6;
+    line-height: var(--font-line-base);
   }
 
   .modal__list li {
@@ -930,8 +952,50 @@
   }
   
   /* Alias para compatibilidad - ahora sin display fijo */
-  #notion-iframe { width: 100%; height: 100%; border: none; }
-  #notion-content { /* display controlado por .show-content */ }
+  #notion-iframe { 
+    width: 100%; 
+    height: 100%; 
+    border: none; 
+    border-radius: var(--radius-lg);
+  }
+  /* #notion-content display controlado por .show-content */
+  
+  /* Video ocupa 100% del ancho */
+  .notion-container:not(.show-content) #notion-iframe {
+    width: 100%;
+  }
+  
+  /* Centrado de contenido en modales */
+  .notion-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  
+  .notion-container.show-content {
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+  
+  .notion-container.show-content #notion-content {
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 200px);
+  }
+  
+  /* Si el contenido es más pequeño (imágenes, videos), centrarlo verticalmente */
+  .notion-container.show-content #notion-content.centered-content {
+    justify-content: center;
+    align-items: center;
+  }
+  
+  /* Si el contenido es grande (como Notion), ocupar todo el espacio */
+  .notion-container.show-content #notion-content:not(.centered-content) {
+    justify-content: flex-start;
+    align-items: stretch;
+  }
   
   /* ==========================================================================
       Estados
@@ -940,7 +1004,7 @@
   /* Empty state */
   .empty-state {
     text-align: center;
-    padding: 32px var(--spacing-lg);
+    padding: var(--spacing-xl) var(--spacing-lg);
     color: var(--color-text-disabled);
   }
   
@@ -949,7 +1013,7 @@
   }
   
   .empty-state code {
-    padding: 2px 6px;
+    padding: var(--spacing-xs) var(--spacing-md);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
   }
@@ -957,7 +1021,7 @@
   /* Loading state */
   .loading-state {
     text-align: center;
-    padding: 40px;
+    padding: var(--spacing-xl);
     color: var(--color-text-muted);
   }
   
@@ -971,7 +1035,7 @@
   
   /* Error state */
   .error-message {
-    padding: 10px;
+    padding: var(--spacing-sm);
     color: var(--color-error-text);
     background: rgba(255, 107, 107, 0.1);
     border-radius: var(--radius-sm);
@@ -988,13 +1052,13 @@
       Notion Blocked Message
       ========================================================================== */
   .notion-blocked {
-    padding: 40px 20px;
+    padding: var(--spacing-xl) var(--spacing-xl);
     text-align: center;
     color: var(--color-text-secondary);
   }
   
   .notion-blocked__icon {
-    font-size: 48px;
+    font-size: var(--font-size-xl);
     margin-bottom: var(--spacing-lg);
   }
   
@@ -1002,15 +1066,15 @@
     color: var(--color-text-primary);
     margin-bottom: var(--spacing-md);
     font-size: var(--font-size-md);
-    line-height: 24px;
+    line-height: var(--font-line-base);
     font-weight: var(--font-weight-bold);
   }
   
   .notion-blocked__text {
     color: var(--color-text-muted);
-    margin-bottom: 20px;
+    margin-bottom: var(--spacing-xl);
     font-size: var(--font-size-base);
-    line-height: 1.5;
+    line-height: var(--font-line-base);
   }
   
   /* Notion blocked message */
@@ -1045,7 +1109,7 @@
   /* .notion-image-error-button eliminado - usa .btn .btn--sm .btn--primary */
   
   .notion-image-unavailable {
-    padding: 10px;
+    padding: var(--spacing-sm);
     color: var(--color-text-muted);
     font-style: italic;
   }
@@ -1269,7 +1333,7 @@
   h1 {
     font-family: var(--font-family-base);
     font-size: var(--font-size-lg);
-    line-height: 24px;
+    line-height: var(--font-line-base);
     font-weight: var(--font-weight-bold);
     margin-bottom: var(--spacing-lg);
     color: var(--color-text-primary);
@@ -1329,7 +1393,7 @@
   right: 0;
   background: var(--bg-primary, #1a1a1a);
   border-top: 1px solid var(--border-primary, rgba(255, 255, 255, 0.1));
-  padding: 16px;
+    padding: var(--spacing-lg);
   z-index: 10000;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -1347,7 +1411,7 @@
   flex: 1;
   min-width: 200px;
   margin: 0;
-  font-size: 14px;
+    font-size: var(--font-size-sm);
   line-height: 1.5;
   color: var(--text-primary, #ffffff);
 }
@@ -1359,8 +1423,8 @@
 }
 
 .btn--small {
-  padding: 8px 16px;
-  font-size: 14px;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-size: var(--font-size-sm);
 }
 
 @media (max-width: 600px) {
@@ -1390,4 +1454,135 @@
 
 .icon-loading {
   animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ==========================================================================
+  Share Buttons - Estilos unificados
+  ========================================================================== */
+.share-button,
+.notion-image-share-button,
+.video-share-button,
+.google-docs-share-button {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  background: var(--share-button-bg);
+  border: 1px solid var(--share-button-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: var(--share-button-opacity);
+  transition: opacity var(--transition-normal), background var(--transition-normal), border-color var(--transition-normal);
+  z-index: 10;
+  min-width: 32px;
+  min-height: 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.share-button:hover,
+.notion-image-share-button:hover,
+.video-share-button:hover,
+.google-docs-share-button:hover {
+  opacity: var(--share-button-opacity-hover);
+  background: var(--share-button-bg-hover);
+  border-color: var(--share-button-border-hover);
+}
+
+.share-button:active,
+.notion-image-share-button:active,
+.video-share-button:active,
+.google-docs-share-button:active {
+  background: var(--share-button-bg-active);
+}
+
+.share-button img,
+.notion-image-share-button img,
+.video-share-button img,
+.google-docs-share-button img {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  filter: brightness(0) invert(1);
+  display: block;
+}
+
+.share-button:disabled,
+.notion-image-share-button:disabled,
+.video-share-button:disabled,
+.google-docs-share-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Feedback para share buttons */
+.share-feedback {
+  position: fixed;
+  bottom: var(--spacing-xl);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--feedback-bg);
+  border: 1px solid var(--feedback-border);
+  padding: var(--spacing-md) var(--spacing-xl);
+  border-radius: var(--radius-md);
+  color: var(--feedback-text);
+  font-size: var(--font-size-sm);
+  opacity: 0;
+  transition: opacity var(--transition-slow);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.share-feedback.visible {
+  opacity: 1;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  display: inline-block;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  border: 2px solid var(--loading-spinner-color);
+  border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--loading-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+/* Centrado de contenido en modales */
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--spacing-xl);
+}
+
+.modal-content.centered {
+  justify-content: center;
+}
+
+.modal-content.full-height {
+  justify-content: flex-start;
 }

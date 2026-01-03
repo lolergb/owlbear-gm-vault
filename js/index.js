@@ -1751,8 +1751,12 @@ function renderPageCoverAndTitle(cover, pageTitle) {
       html += `
         <div class="notion-page-cover">
           <div class="notion-image-container">
-            <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" data-image-url="${coverUrl}" />
-            <button class="notion-image-share-button" 
+            <div class="image-loading">
+              <div class="loading-spinner"></div>
+            </div>
+            <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" data-image-url="${coverUrl}" 
+                 onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();" />
+            <button class="notion-image-share-button share-button" 
                     data-image-url="${coverUrl}" 
                     data-image-caption=""
                     title="Show to players">
@@ -1980,6 +1984,9 @@ function renderBlock(block) {
         return `
           <div class="notion-image" data-block-id="${block.id}">
             <div class="notion-image-container">
+              <div class="image-loading">
+                <div class="loading-spinner"></div>
+              </div>
               <img 
                 src="${imageUrl}" 
                 alt="${caption || 'Imagen de Notion'}" 
@@ -1989,8 +1996,9 @@ function renderBlock(block) {
                 data-image-caption="${caption.replace(/"/g, '&quot;')}"
                 data-block-id="${block.id}"
                 loading="lazy"
+                onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
               />
-              <button class="notion-image-share-button" 
+              <button class="notion-image-share-button share-button" 
                       data-image-url="${imageUrl}" 
                       data-image-caption="${caption.replace(/"/g, '&quot;')}"
                       title="Show to players">
@@ -3092,12 +3100,15 @@ async function attachImageClickHandlers() {
         
         // Feedback visual
         const originalContent = button.innerHTML;
-        button.innerHTML = '<img src="img/icon-players.svg" alt="Shared" style="opacity: 0.5;" />';
+        button.innerHTML = '<img src="img/icon-players.svg" alt="Shared" />';
+        button.style.opacity = '0.5';
         button.disabled = true;
         setTimeout(() => {
           button.innerHTML = originalContent;
+          button.style.opacity = '';
           button.disabled = false;
         }, 1000);
+        showShareFeedback('✓ Image shared with all players');
       } catch (error) {
         console.error('Error al compartir imagen:', error);
       }
@@ -3166,6 +3177,9 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   
   // Usar la función centralizada para gestionar visibilidad
   setNotionDisplayMode(container, 'content');
+  
+  // Remover clase centered-content si existe (solo para imágenes/videos)
+  contentDiv.classList.remove('centered-content');
   
   // Mostrar loading (setNotionDisplayMode ya gestionó la visibilidad)
   contentDiv.innerHTML = `
@@ -4516,7 +4530,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         const menuButtonParent = pageContextMenuButton ? pageContextMenuButton.parentNode : null;
         
           button.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+            <div style="display: flex; align-items: center; gap: var(--spacing-md); width: 100%;">
               ${iconHtml}
               <div class="page-name" style="flex: 1; text-align: left;">${pageName}</div>
               ${linkIconHtml}
@@ -6229,6 +6243,7 @@ async function loadImageContent(url, container, name) {
     const caption = name || '';
     const escapedCaption = caption.replace(/"/g, '&quot;');
     
+    contentDiv.className = 'centered-content';
     contentDiv.innerHTML = `
       <div class="image-viewer-container" style="
         display: flex;
@@ -6236,8 +6251,8 @@ async function loadImageContent(url, container, name) {
         align-items: center;
         justify-content: center;
         height: 100%;
-        padding: 16px;
-        gap: 16px;
+        padding: var(--spacing-lg);
+        gap: var(--spacing-lg);
         position: relative;
       ">
         <div style="position: relative; display: inline-block;">
@@ -6248,44 +6263,22 @@ async function loadImageContent(url, container, name) {
             data-image-url="${absoluteImageUrl}"
             data-image-caption="${escapedCaption}"
             style="
-              max-width: 100%;
-              max-height: calc(100vh - 150px);
-              object-fit: contain;
-              border-radius: 8px;
-              cursor: pointer;
-              transition: transform 0.2s ease;
+            max-width: 100%;
+            max-height: calc(100vh - 150px);
+            object-fit: contain;
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            transition: transform var(--transition-normal);
             "
           />
-          <button class="notion-image-share-button" 
+          <button class="notion-image-share-button share-button" 
                   data-image-url="${absoluteImageUrl}" 
                   data-image-caption="${escapedCaption}"
-                  title="Show to players"
-                  style="
-                    position: absolute;
-                    top: 8px;
-                    right: 8px;
-                    background: rgba(0, 0, 0, 0.8);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                    border-radius: 6px;
-                    padding: 8px;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    opacity: 0.6;
-                    transition: opacity 0.2s, background 0.2s;
-                    z-index: 10;
-                    min-width: 32px;
-                    min-height: 32px;
-                  "
-                  onmouseover="this.style.opacity='1'; this.style.background='rgba(0, 0, 0, 0.95)'; this.style.borderColor='rgba(255, 255, 255, 0.4)';"
-                  onmouseout="this.style.opacity='0.6'; this.style.background='rgba(0, 0, 0, 0.8)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';"
-                  onmousedown="this.style.background='rgba(0, 0, 0, 1)';"
-                  onmouseup="this.style.background='rgba(0, 0, 0, 0.95)';">
-            <img src="img/icon-players.svg" alt="Share" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                  title="Show to players">
+            <img src="img/icon-players.svg" alt="Share" />
           </button>
         </div>
-        <p style="color: var(--color-text-secondary); font-size: 14px;">Click on the image to view it full size</p>
+        <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">Click on the image to view it full size</p>
       </div>
     `;
     
@@ -6390,6 +6383,7 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
   const caption = name || '';
   const escapedCaption = caption.replace(/"/g, '&quot;');
   
+  contentDiv.className = 'centered-content';
   contentDiv.innerHTML = `
     <div class="video-thumbnail-container" style="
       display: flex;
@@ -6397,8 +6391,8 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
       align-items: center;
       justify-content: center;
       height: 100%;
-      padding: 16px;
-      gap: 16px;
+      padding: var(--spacing-lg);
+      gap: var(--spacing-lg);
       position: relative;
     ">
       <div style="position: relative; display: inline-block; cursor: pointer;">
@@ -6415,8 +6409,8 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
             max-width: 100%;
             max-height: calc(100vh - 150px);
             object-fit: contain;
-            border-radius: 8px;
-            transition: transform 0.2s ease;
+            border-radius: var(--radius-lg);
+            transition: transform var(--transition-normal);
           "
         />
         <div class="video-play-overlay" style="
@@ -6432,43 +6426,21 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
           align-items: center;
           justify-content: center;
           pointer-events: none;
-          transition: transform 0.2s ease, background 0.2s ease;
+          transition: transform var(--transition-normal), background var(--transition-normal);
         ">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="white" style="margin-left: 4px;">
             <path d="M8 5v14l11-7z"/>
           </svg>
         </div>
-        <button class="video-share-button" 
+        <button class="video-share-button share-button" 
                 data-video-url="${embedUrl}" 
                 data-video-caption="${escapedCaption}"
                 data-video-type="${videoType}"
-                title="Show to players"
-                style="
-                  position: absolute;
-                  top: 8px;
-                  right: 8px;
-                  background: rgba(0, 0, 0, 0.8);
-                  border: 1px solid rgba(255, 255, 255, 0.2);
-                  border-radius: 6px;
-                  padding: 8px;
-                  cursor: pointer;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  opacity: 0.6;
-                  transition: opacity 0.2s, background 0.2s;
-                  z-index: 10;
-                  min-width: 32px;
-                  min-height: 32px;
-                "
-                onmouseover="this.style.opacity='1'; this.style.background='rgba(0, 0, 0, 0.95)'; this.style.borderColor='rgba(255, 255, 255, 0.4)';"
-                onmouseout="this.style.opacity='0.6'; this.style.background='rgba(0, 0, 0, 0.8)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';"
-                onmousedown="this.style.background='rgba(0, 0, 0, 1)';"
-                onmouseup="this.style.background='rgba(0, 0, 0, 0.95)';">
-          <img src="img/icon-players.svg" alt="Share" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                title="Show to players">
+          <img src="img/icon-players.svg" alt="Share" />
         </button>
       </div>
-      <p style="color: var(--color-text-secondary); font-size: 14px;">Click on the video to play it</p>
+      <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">Click on the video to play it</p>
     </div>
   `;
   
@@ -6506,6 +6478,34 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
   }
 }
 
+// Función común para mostrar feedback de share
+function showShareFeedback(message = '✓ Shared with all players') {
+  // Remover feedback anterior si existe
+  const existingFeedback = document.querySelector('.share-feedback');
+  if (existingFeedback) {
+    existingFeedback.remove();
+  }
+  
+  // Crear nuevo feedback
+  const feedback = document.createElement('div');
+  feedback.className = 'share-feedback';
+  feedback.textContent = message;
+  document.body.appendChild(feedback);
+  
+  // Mostrar feedback
+  setTimeout(() => {
+    feedback.classList.add('visible');
+  }, 10);
+  
+  // Ocultar después de 2 segundos
+  setTimeout(() => {
+    feedback.classList.remove('visible');
+    setTimeout(() => {
+      feedback.remove();
+    }, 300);
+  }, 2000);
+}
+
 // Función para compartir video con jugadores
 async function shareVideoToPlayers(videoUrl, caption, videoType, shareButton) {
   try {
@@ -6516,16 +6516,19 @@ async function shareVideoToPlayers(videoUrl, caption, videoType, shareButton) {
     });
     console.log('📤 Video compartido con jugadores:', videoUrl.substring(0, 80));
     
-    // Feedback visual (igual que imagen)
+    // Feedback visual
     if (shareButton) {
       const originalContent = shareButton.innerHTML;
-      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Shared" style="width: 16px; height: 16px; filter: brightness(0) invert(1); opacity: 0.5;" />';
+      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Shared" />';
+      shareButton.style.opacity = '0.5';
       shareButton.disabled = true;
       setTimeout(() => {
         shareButton.innerHTML = originalContent;
+        shareButton.style.opacity = '';
         shareButton.disabled = false;
       }, 1000);
     }
+    showShareFeedback('✓ Video shared with all players');
   } catch (error) {
     console.error('Error al compartir video:', error);
   }
@@ -6595,11 +6598,25 @@ function loadVideoContent(url, container, videoType) {
   // Convertir URL a formato embed y cargar
   const embedUrl = getVideoEmbedUrl(url, videoType);
   
-  // Configurar iframe para video
+  // Añadir loading overlay
+  const loadingOverlay = document.createElement('div');
+  loadingOverlay.className = 'loading-overlay';
+  loadingOverlay.innerHTML = '<div class="loading-spinner"></div>';
+  container.style.position = 'relative';
+  container.appendChild(loadingOverlay);
+  
+  // Configurar iframe para video (100% ancho)
   iframe.src = embedUrl;
-  iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:8px';
+  iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
   iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
   iframe.allowFullscreen = true;
+  
+  // Remover loading cuando el iframe cargue
+  iframe.addEventListener('load', () => {
+    if (loadingOverlay && loadingOverlay.parentNode) {
+      loadingOverlay.remove();
+    }
+  });
 }
 
 // Función para cargar contenido en iframe (para URLs no-Notion)
@@ -6615,6 +6632,17 @@ async function loadIframeContent(url, container, selector = null) {
   // PRIMERO: Limpiar notion-content y cambiar modo
   // Esto asegura que el contenido de Notion se elimine completamente
   setNotionDisplayMode(container, 'iframe');
+  
+  // Añadir loading overlay
+  const existingLoading = container.querySelector('.loading-overlay');
+  if (existingLoading) {
+    existingLoading.remove();
+  }
+  const loadingOverlay = document.createElement('div');
+  loadingOverlay.className = 'loading-overlay';
+  loadingOverlay.innerHTML = '<div class="loading-spinner"></div>';
+  container.style.position = 'relative';
+  container.appendChild(loadingOverlay);
   
   // Limpiar iframe si tiene contenido previo
   if (iframe.src && iframe.src !== 'about:blank') {
@@ -6679,7 +6707,7 @@ async function loadIframeContent(url, container, selector = null) {
               box-sizing: border-box;
             }
             body {
-              padding: 16px;
+              padding: var(--spacing-lg);
               background: transparent;
             }
             ${styles}
@@ -6699,8 +6727,11 @@ async function loadIframeContent(url, container, selector = null) {
       iframe.src = blobUrl;
       // No usar estilos inline - CSS se encarga de la visibilidad
       
-      // Limpiar el blob URL cuando el iframe se descargue
+      // Remover loading cuando el iframe cargue
       iframe.addEventListener('load', () => {
+        if (loadingOverlay && loadingOverlay.parentNode) {
+          loadingOverlay.remove();
+        }
         setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       }, { once: true });
       
@@ -6732,6 +6763,13 @@ async function loadIframeContent(url, container, selector = null) {
     iframe.src = embedResult.url;
     // No usar estilos inline - CSS se encarga de la visibilidad
     
+    // Remover loading cuando el iframe cargue
+    iframe.addEventListener('load', () => {
+      if (loadingOverlay && loadingOverlay.parentNode) {
+        loadingOverlay.remove();
+      }
+    }, { once: true });
+    
     // Añadir botón de compartir si es Google Docs/Sheets/Slides
     const isGoogleDocs = url.includes('docs.google.com');
     if (isGoogleDocs) {
@@ -6747,48 +6785,11 @@ async function loadIframeContent(url, container, selector = null) {
       shareButton.title = 'Show to players';
       shareButton.dataset.iframeUrl = embedResult.url;
       shareButton.dataset.iframeName = name || 'Google Doc';
-      shareButton.style.cssText = `
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        background: rgba(0, 0, 0, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 6px;
-        padding: 8px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 0.6;
-        transition: opacity 0.2s, background 0.2s;
-        z-index: 10;
-        min-width: 32px;
-        min-height: 32px;
-      `;
-      
+      // Los estilos se aplican mediante CSS, no inline
       const shareIcon = document.createElement('img');
       shareIcon.src = 'img/icon-players.svg';
       shareIcon.alt = 'Share';
-      shareIcon.style.cssText = 'width: 16px; height: 16px; filter: brightness(0) invert(1);';
       shareButton.appendChild(shareIcon);
-      
-      // Event listeners para hover (igual que imagen y video)
-      shareButton.addEventListener('mouseenter', () => {
-        shareButton.style.opacity = '1';
-        shareButton.style.background = 'rgba(0, 0, 0, 0.95)';
-        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.4)';
-      });
-      shareButton.addEventListener('mouseleave', () => {
-        shareButton.style.opacity = '0.6';
-        shareButton.style.background = 'rgba(0, 0, 0, 0.8)';
-        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-      });
-      shareButton.addEventListener('mousedown', () => {
-        shareButton.style.background = 'rgba(0, 0, 0, 1)';
-      });
-      shareButton.addEventListener('mouseup', () => {
-        shareButton.style.background = 'rgba(0, 0, 0, 0.95)';
-      });
       
       // Event listener para compartir
       shareButton.addEventListener('click', async (e) => {
@@ -6814,16 +6815,19 @@ async function shareGoogleDocToPlayers(iframeUrl, name, shareButton) {
     });
     console.log('📤 Google Doc compartido con jugadores:', iframeUrl.substring(0, 80));
     
-    // Feedback visual (igual que imagen y video)
+    // Feedback visual
     if (shareButton) {
       const originalContent = shareButton.innerHTML;
-      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Shared" style="width: 16px; height: 16px; filter: brightness(0) invert(1); opacity: 0.5;" />';
+      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Shared" />';
+      shareButton.style.opacity = '0.5';
       shareButton.disabled = true;
       setTimeout(() => {
         shareButton.innerHTML = originalContent;
+        shareButton.style.opacity = '';
         shareButton.disabled = false;
       }, 1000);
     }
+    showShareFeedback('✓ Document shared with all players');
   } catch (error) {
     console.error('Error al compartir Google Doc:', error);
   }
@@ -7750,15 +7754,15 @@ async function showSettings() {
     display: flex;
           align-items: center;
           justify-content: center;
-          padding: 20px;
+          padding: var(--spacing-xl);
         `;
         
         const jsonContent = document.createElement('div');
         jsonContent.style.cssText = `
           background: #1a1a1a;
           border: 1px solid ${CSS_VARS.borderPrimary};
-          border-radius: 8px;
-          padding: 24px;
+          border-radius: var(--radius-lg);
+          padding: var(--spacing-xl);
           max-width: 90%;
           max-height: 90vh;
           overflow: auto;
@@ -7767,15 +7771,15 @@ async function showSettings() {
         
         jsonContent.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h2 style="color: #fff; font-size: 18px; font-weight: 700; margin: 0; font-family: Roboto, Helvetica, Arial, sans-serif;">Configuration JSON</h2>
+            <h2 style="color: var(--color-text-primary); font-size: var(--font-size-md); font-weight: var(--font-weight-bold); margin: 0; font-family: var(--font-family-base);">Configuration JSON</h2>
             <button id="close-json-modal" style="
         background: ${CSS_VARS.bgPrimary};
         border: 1px solid ${CSS_VARS.borderPrimary};
         border-radius: 6px;
-        padding: 6px 12px;
-        color: #e0e0e0;
+        padding: var(--spacing-xs) var(--spacing-md);
+        color: var(--color-text-secondary);
         cursor: pointer;
-        font-size: 14px;
+        font-size: var(--font-size-sm);
               font-family: Roboto, Helvetica, Arial, sans-serif;
             ">Cerrar</button>
       </div>
@@ -7783,11 +7787,11 @@ async function showSettings() {
             background: ${CSS_VARS.bgPrimary};
             border: 1px solid ${CSS_VARS.borderPrimary};
             border-radius: 6px;
-            padding: 16px;
-          color: #e0e0e0;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
-            font-size: 12px;
-            line-height: 1.6;
+            padding: var(--spacing-lg);
+          color: var(--color-text-secondary);
+            font-family: var(--font-family-mono);
+            font-size: var(--font-size-xs);
+            line-height: var(--font-line-base);
             overflow-x: auto;
             white-space: pre;
             margin: 0;
@@ -8021,7 +8025,7 @@ function createContextMenu(items, position, onClose) {
       const pulseClass = isClockIcon ? 'icon-loading' : '';
       iconHtml = `<img src="${item.icon}" alt="" class="${pulseClass}" style="width: 24px; height: 24px; display: block; ${rotation}" />`;
     } else {
-      iconHtml = `<span style="font-size: 16px; width: 20px; text-align: center;">${item.icon || ''}</span>`;
+      iconHtml = `<span style="font-size: var(--font-size-base); width: var(--icon-size-md); text-align: center;">${item.icon || ''}</span>`;
     }
 
     menuItem.innerHTML = `
@@ -8517,9 +8521,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     itemRow.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border-radius: 4px;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background 0.15s;
       position: relative;
@@ -8534,7 +8538,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       toggle.style.cssText = `
         background: transparent;
         border: none;
-        color: #999;
+        color: var(--color-text-muted);
         cursor: pointer;
         padding: 0;
         width: 16px;
@@ -8575,9 +8579,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #fff;
-        font-weight: 700;
-        font-size: 12px;
+        color: var(--color-text-primary);
+        font-weight: var(--font-weight-bold);
+        font-size: var(--font-size-xs);
         flex-shrink: 0;
       `;
       circleIcon.textContent = initial;
@@ -8606,9 +8610,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #fff;
-          font-weight: 700;
-          font-size: 11px;
+          color: var(--color-text-primary);
+          font-weight: var(--font-weight-bold);
+          font-size: var(--font-size-xs);
           flex-shrink: 0;
         `;
         notionIcon.textContent = 'N';
@@ -8621,9 +8625,9 @@ async function showVisualEditor(pagesConfig, roomId = null) {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #999;
-          font-size: 16px;
-          font-weight: 400;
+          color: var(--color-text-muted);
+          font-size: var(--font-size-base);
+          font-weight: var(--font-weight-normal);
           flex-shrink: 0;
         `;
         ampersandIcon.textContent = '&';
@@ -8978,12 +8982,12 @@ async function showVisualEditor(pagesConfig, roomId = null) {
       const emptyState = document.createElement('div');
       emptyState.style.cssText = `
         text-align: center;
-        padding: 40px;
-        color: #666;
+        padding: var(--spacing-xl);
+        color: var(--color-text-muted);
       `;
       emptyState.innerHTML = `
         <p style="margin-bottom: 12px;">No folders</p>
-        <p style="font-size: 12px; color: #555;">Click the + button to add a folder</p>
+        <p style="font-size: var(--font-size-xs); color: var(--color-text-muted);">Click the + button to add a folder</p>
       `;
       contentArea.appendChild(emptyState);
     }
