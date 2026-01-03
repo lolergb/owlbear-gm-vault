@@ -1997,6 +1997,7 @@ function renderBlock(block) {
                 data-block-id="${block.id}"
                 loading="eager"
                 onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
+                onerror="this.style.opacity='0.5';"
               />
               <button class="notion-image-share-button share-button" 
                       data-image-url="${imageUrl}" 
@@ -3046,13 +3047,18 @@ async function attachImageClickHandlers() {
       console.log('✅ Imagen cargada correctamente:', this.src.substring(0, 80));
     });
     
-    // Efecto hover para indicar que es clicable
+    // Efecto hover para indicar que es clicable (solo si la imagen ya está cargada)
     img.style.transition = 'opacity 0.2s';
     img.addEventListener('mouseenter', () => {
-      img.style.opacity = '0.9';
+      // Solo aplicar hover si la imagen ya tiene la clase loaded
+      if (img.classList.contains('loaded')) {
+        img.style.opacity = '0.9';
+      }
     });
     img.addEventListener('mouseleave', () => {
-      img.style.opacity = '1';
+      if (img.classList.contains('loaded')) {
+        img.style.opacity = '1';
+      }
     });
   });
   

@@ -182,10 +182,12 @@
 
 /* Solo afectar a las imágenes de Notion que son hijos directos, no a las imágenes dentro de los share buttons */
 .notion-content .notion-image-container > img {
-  opacity: 0;
+  /* Mostrar la imagen inmediatamente mientras carga (no esperar al evento load) */
+  opacity: 1;
   transition: opacity var(--transition-normal);
 }
 
+/* Estado cargado - mantener opacidad completa */
 .notion-content .notion-image-container > img.loaded {
   opacity: 1;
 }
