@@ -7887,9 +7887,12 @@ async function showSettings() {
             // Borrar el default del localStorage para evitar conflictos
             // El vault cargado será el único para este roomId
             const defaultStorageKey = 'notion-pages-json-default';
-            if (localStorage.getItem(defaultStorageKey)) {
+            console.log('🔍 Verificando si existe default:', localStorage.getItem(defaultStorageKey) ? 'SÍ' : 'NO');
+            try {
               localStorage.removeItem(defaultStorageKey);
-              log('🗑️ Default eliminado del localStorage (nuevo vault cargado)');
+              console.log('🗑️ Default eliminado del localStorage (nuevo vault cargado)');
+            } catch (e) {
+              console.error('❌ Error al borrar default:', e);
             }
             
             // Guardar la nueva configuración
