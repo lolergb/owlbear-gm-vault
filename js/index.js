@@ -3854,6 +3854,15 @@ try {
         }
       });
       
+      // Listener para recibir Google Docs compartidos por el GM
+      OBR.broadcast.onMessage('com.dmscreen/showGoogleDoc', async (event) => {
+        const { url, name } = event.data;
+        if (url) {
+          // Abrir el Google Doc en modal para este jugador
+          await showGoogleDocModal(url, name);
+        }
+      });
+      
     } catch (error) {
       console.error('❌ Error dentro de OBR.onReady:', error);
       console.error('Stack:', error.stack);
@@ -5820,12 +5829,12 @@ function getLinkType(url) {
     
     // YouTube
     if (hostname.includes('youtube.com') || hostname === 'youtu.be') {
-      return { type: 'youtube', icon: 'icon-link.svg' };
+      return { type: 'youtube', icon: 'icon-youtube.svg' };
     }
     
     // Vimeo
     if (hostname.includes('vimeo.com')) {
-      return { type: 'vimeo', icon: 'icon-link.svg' };
+      return { type: 'vimeo', icon: 'icon-vimeo.svg' };
     }
     
     // Figma - PRÓXIMAMENTE
@@ -6337,15 +6346,39 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
           <img src="img/icon-players.svg" alt="Share" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
         </button>
       </div>
-      <p style="color: var(--color-text-secondary); font-size: 14px;">Haz clic en el video para verlo a pantalla completa</p>
+      <button class="video-open-modal-button" 
+              data-video-url="${embedUrl}" 
+              data-video-caption="${escapedCaption}"
+              data-video-type="${videoType}"
+              title="Abrir en modal"
+              style="
+                background: rgba(45, 45, 45, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                padding: 8px 16px;
+                color: #e0e0e0;
+                cursor: pointer;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                transition: all 0.2s;
+              "
+              onmouseover="this.style.background='rgba(60, 60, 60, 0.95)'; this.style.borderColor='rgba(255, 255, 255, 0.4)';"
+              onmouseout="this.style.background='rgba(45, 45, 45, 0.9)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';">
+        <img src="img/open-modal.svg" alt="Abrir en modal" style="width: 16px; height: 16px;" />
+        <span>Abrir en modal</span>
+      </button>
+      <p style="color: var(--color-text-secondary); font-size: 14px;">Haz clic en el video para reproducirlo</p>
     </div>
   `;
   
-  // Añadir handler para abrir en modal
+  // Añadir handler para reproducir video directamente (cambiar a modo iframe)
   const thumbnail = contentDiv.querySelector('.video-thumbnail-clickable');
   if (thumbnail) {
     thumbnail.addEventListener('click', () => {
-      showVideoModal(embedUrl, caption, videoType);
+      // Cambiar a modo iframe y reproducir el video
+      loadVideoContent(url, container, videoType);
     });
     
     // Efecto hover en el overlay de play
@@ -6358,6 +6391,18 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
     container.addEventListener('mouseleave', () => {
       overlay.style.transform = 'translate(-50%, -50%) scale(1)';
       overlay.style.background = 'rgba(0, 0, 0, 0.8)';
+    });
+  }
+  
+  // Añadir handler para abrir en modal
+  const openModalButton = contentDiv.querySelector('.video-open-modal-button');
+  if (openModalButton) {
+    openModalButton.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const videoUrl = openModalButton.dataset.videoUrl;
+      const videoCaption = openModalButton.dataset.videoCaption;
+      const videoType = openModalButton.dataset.videoType;
+      await showVideoModal(videoUrl, videoCaption, videoType);
     });
   }
   
@@ -6421,6 +6466,32 @@ async function showVideoModal(videoUrl, caption, videoType) {
     console.error('Error al abrir modal de video:', error);
     // Fallback: abrir en nueva ventana
     window.open(videoUrl, '_blank', 'noopener,noreferrer');
+  }
+}
+
+// Función para mostrar Google Doc en modal
+async function showGoogleDocModal(iframeUrl, name) {
+  try {
+    const baseDir = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+    const baseUrl = window.location.origin + baseDir;
+    
+    const viewerUrl = new URL('html/google-doc-viewer.html', baseUrl);
+    viewerUrl.searchParams.set('url', encodeURIComponent(iframeUrl));
+    if (name) {
+      viewerUrl.searchParams.set('name', encodeURIComponent(name));
+    }
+    
+    // Abrir modal usando Owlbear SDK
+    await OBR.modal.open({
+      id: 'notion-google-doc-viewer',
+      url: viewerUrl.toString(),
+      height: 800,
+      width: 1200
+    });
+  } catch (error) {
+    console.error('Error al abrir modal de Google Doc:', error);
+    // Fallback: abrir en nueva ventana
+    window.open(iframeUrl, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -6571,6 +6642,93 @@ async function loadIframeContent(url, container, selector = null) {
     }
     iframe.src = embedResult.url;
     // No usar estilos inline - CSS se encarga de la visibilidad
+    
+    // Añadir botón de compartir si es Google Docs/Sheets/Slides
+    const isGoogleDocs = url.includes('docs.google.com');
+    if (isGoogleDocs) {
+      // Limpiar botón anterior si existe
+      const existingButton = container.querySelector('.google-docs-share-button');
+      if (existingButton) {
+        existingButton.remove();
+      }
+      
+      // Crear botón de compartir
+      const shareButton = document.createElement('button');
+      shareButton.className = 'google-docs-share-button';
+      shareButton.title = 'Show to players';
+      shareButton.dataset.iframeUrl = embedResult.url;
+      shareButton.dataset.iframeName = name || 'Google Doc';
+      shareButton.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: rgba(0, 0, 0, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        padding: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.6;
+        transition: opacity 0.2s, background 0.2s;
+        z-index: 10;
+        min-width: 32px;
+        min-height: 32px;
+      `;
+      
+      const shareIcon = document.createElement('img');
+      shareIcon.src = 'img/icon-players.svg';
+      shareIcon.alt = 'Share';
+      shareIcon.style.cssText = 'width: 16px; height: 16px; filter: brightness(0) invert(1);';
+      shareButton.appendChild(shareIcon);
+      
+      // Event listeners para hover
+      shareButton.addEventListener('mouseenter', () => {
+        shareButton.style.opacity = '1';
+        shareButton.style.background = 'rgba(0, 0, 0, 0.95)';
+        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+      });
+      shareButton.addEventListener('mouseleave', () => {
+        shareButton.style.opacity = '0.6';
+        shareButton.style.background = 'rgba(0, 0, 0, 0.8)';
+        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      });
+      
+      // Event listener para compartir
+      shareButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const iframeUrl = shareButton.dataset.iframeUrl;
+        const iframeName = shareButton.dataset.iframeName;
+        await shareGoogleDocToPlayers(iframeUrl, iframeName, shareButton);
+      });
+      
+      // Añadir botón al contenedor
+      container.style.position = 'relative';
+      container.appendChild(shareButton);
+    }
+  }
+}
+
+// Función para compartir Google Docs con jugadores
+async function shareGoogleDocToPlayers(iframeUrl, name, shareButton) {
+  try {
+    await OBR.broadcast.sendMessage('com.dmscreen/showGoogleDoc', {
+      url: iframeUrl,
+      name: name
+    });
+    
+    // Feedback visual
+    if (shareButton) {
+      shareButton.style.background = 'rgba(45, 74, 45, 0.95)';
+      shareButton.style.borderColor = 'rgba(74, 106, 74, 0.4)';
+      setTimeout(() => {
+        shareButton.style.background = 'rgba(0, 0, 0, 0.8)';
+        shareButton.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      }, 2000);
+    }
+  } catch (error) {
+    console.error('Error al compartir Google Doc:', error);
   }
 }
 
@@ -6747,106 +6905,11 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         console.log('🔍 Filtro de tipos de bloques activado:', blockTypes);
       }
       
-      // Agregar o actualizar botón de recargar (solo para Notion)
+      // Ocultar botón de recargar del header (ahora está en el menú contextual)
       let refreshButton = document.getElementById("refresh-page-button");
-    if (!refreshButton) {
-      refreshButton = document.createElement("button");
-      refreshButton.id = "refresh-page-button";
-      refreshButton.className = "hidden";
-      header.appendChild(refreshButton);
-    }
-    
-    // Guardar la URL actual y blockTypes en el botón
-    refreshButton.dataset.pageUrl = url;
-    if (blockTypes) {
-      refreshButton.dataset.blockTypes = JSON.stringify(blockTypes);
-    } else {
-      delete refreshButton.dataset.blockTypes;
-    }
-    
-    // Limpiar contenido anterior
-    refreshButton.innerHTML = "";
-    const reloadIcon = document.createElement("img");
-    reloadIcon.src = "img/icon-reload.svg";
-    reloadIcon.alt = "Recargar contenido";
-    reloadIcon.className = "icon-button-icon";
-    refreshButton.appendChild(reloadIcon);
-    refreshButton.title = "Recargar contenido";
-    // Estilos movidos a CSS - solo background se controla dinámicamente en hover
-    
-    // Remover listeners anteriores si existen
-    const newRefreshButton = refreshButton.cloneNode(true);
-    refreshButton.parentNode.replaceChild(newRefreshButton, refreshButton);
-    refreshButton = newRefreshButton;
-    refreshButton.id = "refresh-page-button";
-    refreshButton.dataset.pageUrl = url;
-    if (blockTypes) {
-      refreshButton.dataset.blockTypes = JSON.stringify(blockTypes);
-    } else {
-      delete refreshButton.dataset.blockTypes;
-    }
-    
-      // Hover styles movidos a CSS con :hover y :active
-      // Solo se mantiene el background dinámico si es necesario, pero CSS ya lo maneja
-    
-    refreshButton.addEventListener('click', async () => {
-      // Obtener la URL actual del botón
-      const currentUrl = refreshButton.dataset.pageUrl;
-      if (!currentUrl) {
-        console.error('No se encontró URL en el botón de recargar');
-        return;
+      if (refreshButton) {
+        refreshButton.classList.add("hidden");
       }
-      
-      // Get page name for tracking
-      const pageTitle = document.getElementById("page-title");
-      const pageName = pageTitle ? pageTitle.textContent : 'unknown';
-      trackPageReloaded(pageName);
-      
-      // Limpiar caché de esta página ANTES de recargar
-      const pageId = extractNotionPageId(currentUrl);
-      if (pageId) {
-        const cacheKey = CACHE_PREFIX + pageId;
-        localStorage.removeItem(cacheKey);
-        console.log('🗑️ Caché limpiado para recarga:', pageId, 'clave:', cacheKey);
-        // Verificar que se limpió correctamente
-        const verifyCache = localStorage.getItem(cacheKey);
-        if (verifyCache) {
-          console.warn('⚠️ El caché todavía existe después de limpiarlo');
-        } else {
-          console.log('✅ Caché confirmado como limpiado');
-        }
-      } else {
-        console.warn('No se pudo extraer pageId de la URL:', currentUrl);
-      }
-      
-      refreshButton.disabled = true;
-      // Reemplazar icono por el de reloj (loading)
-      refreshButton.innerHTML = "";
-      const clockIcon = document.createElement("img");
-      clockIcon.src = "img/icon-clock.svg";
-      clockIcon.alt = "Cargando...";
-      clockIcon.style.cssText = "width: 20px; height: 20px; display: block;";
-      refreshButton.appendChild(clockIcon);
-      try {
-        console.log('🔄 Llamando a loadNotionContent con forceRefresh = true');
-        // Obtener blockTypes del botón si está disponible
-        const blockTypes = refreshButton.dataset.blockTypes ? JSON.parse(refreshButton.dataset.blockTypes) : null;
-        await loadNotionContent(currentUrl, notionContainer, true, blockTypes);
-      } catch (e) {
-        console.error('Error al recargar:', e);
-      } finally {
-        refreshButton.disabled = false;
-        // Restaurar icono de reload
-        refreshButton.innerHTML = "";
-        const reloadIconRestore = document.createElement("img");
-        reloadIconRestore.src = "img/icon-reload.svg";
-        reloadIconRestore.alt = "Recargar contenido";
-        reloadIconRestore.style.cssText = "width: 20px; height: 20px; display: block;";
-        refreshButton.appendChild(reloadIconRestore);
-      }
-    });
-    
-      refreshButton.classList.remove("hidden");
       
       await loadNotionContent(url, notionContainer, false, blockTypes);
     } else {
@@ -6865,6 +6928,11 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         // Es una imagen → abrir en image viewer
         console.log('🖼️ Imagen detectada, abriendo en viewer');
         await loadImageContent(url, notionContainer, name);
+        // Ocultar botón de abrir en modal para imágenes
+        const openModalButton = document.getElementById("page-open-modal-button-header");
+        if (openModalButton) {
+          openModalButton.classList.add("hidden");
+        }
       } else if (linkType.type === 'youtube' || linkType.type === 'vimeo') {
         // Es un video → mostrar thumbnail (similar a imagen)
         console.log('🎬 Video detectado, mostrando thumbnail');
@@ -7076,6 +7144,9 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
           const canMoveUp = currentPos > 0;
           const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
           
+          // Verificar si es una página de Notion para mostrar opción de recargar
+          const isNotionPage = isNotionUrl(url);
+          
           const menuItems = [
             { 
               icon: 'img/icon-edit.svg', 
@@ -7093,6 +7164,36 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
             },
             { separator: true },
           ];
+          
+          // Agregar opción de recargar si es Notion
+          if (isNotionPage) {
+            menuItems.push({
+              icon: 'img/icon-reload.svg',
+              text: 'Reload content',
+              action: async () => {
+                // Obtener blockTypes si existen
+                const blockTypes = pageInfo.page.blockTypes || null;
+                const pageTitle = document.getElementById("page-title");
+                const pageName = pageTitle ? pageTitle.textContent : name;
+                trackPageReloaded(pageName);
+                
+                // Limpiar caché de esta página ANTES de recargar
+                const pageId = extractNotionPageId(url);
+                if (pageId) {
+                  const cacheKey = CACHE_PREFIX + pageId;
+                  localStorage.removeItem(cacheKey);
+                  console.log('🗑️ Caché limpiado para recarga:', pageId);
+                }
+                
+                // Recargar el contenido
+                const notionContainer = document.getElementById("notion-container");
+                if (notionContainer) {
+                  await loadNotionContent(url, notionContainer, true, blockTypes);
+                }
+              }
+            });
+            menuItems.push({ separator: true });
+          }
           
           // Agregar opciones de mover si es posible
           if (canMoveUp || canMoveDown) {
