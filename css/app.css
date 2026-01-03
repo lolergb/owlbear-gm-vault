@@ -973,7 +973,7 @@
   
   .notion-container.show-content #notion-content {
     width: 100%;
-    max-width: 100%;
+    max-width: 600px;
     display: flex;
     flex-direction: column;
     min-height: calc(100vh - 200px);
