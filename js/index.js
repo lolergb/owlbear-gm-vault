@@ -6324,33 +6324,6 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
             <path d="M8 5v14l11-7z"/>
           </svg>
         </div>
-        <button class="video-share-button" 
-                data-video-url="${embedUrl}" 
-                data-video-caption="${escapedCaption}"
-                data-video-type="${videoType}"
-                title="Show to players"
-                style="
-                  position: absolute;
-                  top: 8px;
-                  right: 8px;
-                  background: rgba(0, 0, 0, 0.8);
-                  border: 1px solid rgba(255, 255, 255, 0.2);
-                  border-radius: 6px;
-                  padding: 8px;
-                  cursor: pointer;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  opacity: 0.6;
-                  transition: opacity 0.2s, background 0.2s;
-                  z-index: 10;
-                  min-width: 32px;
-                  min-height: 32px;
-                "
-                onmouseover="this.style.opacity='1'; this.style.background='rgba(0, 0, 0, 0.95)'; this.style.borderColor='rgba(255, 255, 255, 0.4)';"
-                onmouseout="this.style.opacity='0.6'; this.style.background='rgba(0, 0, 0, 0.8)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';">
-          <img src="img/icon-players.svg" alt="Share" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-        </button>
       </div>
       <p style="color: var(--color-text-secondary); font-size: 14px;">Haz clic en el video para reproducirlo</p>
     </div>
@@ -6374,18 +6347,6 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
     thumbnailContainer.addEventListener('mouseleave', () => {
       overlay.style.transform = 'translate(-50%, -50%) scale(1)';
       overlay.style.background = 'rgba(0, 0, 0, 0.8)';
-    });
-  }
-  
-  // Añadir handler para compartir video
-  const shareButton = contentDiv.querySelector('.video-share-button');
-  if (shareButton) {
-    shareButton.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const videoUrl = shareButton.dataset.videoUrl;
-      const videoCaption = shareButton.dataset.videoCaption;
-      const videoType = shareButton.dataset.videoType;
-      await shareVideoToPlayers(videoUrl, videoCaption, videoType, shareButton);
     });
   }
 }
