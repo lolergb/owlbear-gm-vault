@@ -673,6 +673,7 @@
     font-family: var(--font-family-base);
     background: var(--color-bg-primary);
     border-radius: var(--radius-lg);
+    overflow-y: scroll ;
   }
   
   .settings__content {
