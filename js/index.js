@@ -3042,6 +3042,12 @@ function setNotionDisplayMode(container, mode) {
   const contentDiv = container.querySelector('#notion-content');
   const iframe = container.querySelector('#notion-iframe');
   
+  // Limpiar botones de compartir de Google Docs si existen
+  const googleDocsShareButton = container.querySelector('.google-docs-share-button');
+  if (googleDocsShareButton) {
+    googleDocsShareButton.remove();
+  }
+  
   // Limpiar estilos inline que podrían interferir con CSS
   if (contentDiv) {
     contentDiv.style.removeProperty('display');
@@ -6346,29 +6352,6 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
           <img src="img/icon-players.svg" alt="Share" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
         </button>
       </div>
-      <button class="video-open-modal-button" 
-              data-video-url="${embedUrl}" 
-              data-video-caption="${escapedCaption}"
-              data-video-type="${videoType}"
-              title="Abrir en modal"
-              style="
-                background: rgba(45, 45, 45, 0.9);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 6px;
-                padding: 8px 16px;
-                color: #e0e0e0;
-                cursor: pointer;
-                font-size: 14px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                transition: all 0.2s;
-              "
-              onmouseover="this.style.background='rgba(60, 60, 60, 0.95)'; this.style.borderColor='rgba(255, 255, 255, 0.4)';"
-              onmouseout="this.style.background='rgba(45, 45, 45, 0.9)'; this.style.borderColor='rgba(255, 255, 255, 0.2)';">
-        <img src="img/open-modal.svg" alt="Abrir en modal" style="width: 16px; height: 16px;" />
-        <span>Abrir en modal</span>
-      </button>
       <p style="color: var(--color-text-secondary); font-size: 14px;">Haz clic en el video para reproducirlo</p>
     </div>
   `;
@@ -6382,27 +6365,15 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
     });
     
     // Efecto hover en el overlay de play
-    const container = thumbnail.closest('div');
-    const overlay = container.querySelector('.video-play-overlay');
-    container.addEventListener('mouseenter', () => {
+    const thumbnailContainer = thumbnail.closest('div');
+    const overlay = thumbnailContainer.querySelector('.video-play-overlay');
+    thumbnailContainer.addEventListener('mouseenter', () => {
       overlay.style.transform = 'translate(-50%, -50%) scale(1.1)';
       overlay.style.background = 'rgba(255, 0, 0, 0.9)';
     });
-    container.addEventListener('mouseleave', () => {
+    thumbnailContainer.addEventListener('mouseleave', () => {
       overlay.style.transform = 'translate(-50%, -50%) scale(1)';
       overlay.style.background = 'rgba(0, 0, 0, 0.8)';
-    });
-  }
-  
-  // Añadir handler para abrir en modal
-  const openModalButton = contentDiv.querySelector('.video-open-modal-button');
-  if (openModalButton) {
-    openModalButton.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const videoUrl = openModalButton.dataset.videoUrl;
-      const videoCaption = openModalButton.dataset.videoCaption;
-      const videoType = openModalButton.dataset.videoType;
-      await showVideoModal(videoUrl, videoCaption, videoType);
     });
   }
   
