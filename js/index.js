@@ -4816,7 +4816,8 @@ function navigateConfigPath(config, path) {
 
 // Función para agregar carpeta desde la vista de page-list
 async function addCategoryToPageList(categoryPath, roomId) {
-  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  // Usar getPagesJSONFromLocalStorage para obtener la configuración más reciente
+  const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   
   showModalForm(
     'Add Folder',
@@ -4854,7 +4855,8 @@ async function addCategoryToPageList(categoryPath, roomId) {
 
 // Función para editar carpeta desde la vista de page-list
 async function editCategoryFromPageList(category, categoryPath, roomId) {
-  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  // Usar getPagesJSONFromLocalStorage para obtener la configuración más reciente
+  const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   const categoryOptions = getCategoryOptions(currentConfig);
   
   // Obtener el path del padre (si existe)
@@ -4979,7 +4981,8 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
 
 // Función para editar página desde la vista de page-list
 async function editPageFromPageList(page, pageCategoryPath, roomId) {
-  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  // Usar getPagesJSONFromLocalStorage para obtener la configuración más reciente
+  const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   const categoryOptions = getCategoryOptions(currentConfig);
   
   const pageCategoryPathValue = pageCategoryPath.length > 0 ? JSON.stringify(pageCategoryPath) : '';
@@ -5094,7 +5097,8 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
 
 // Función para editar página desde el header (actualiza título y visibilidad inmediatamente)
 async function editPageFromHeader(page, pageCategoryPath, roomId, currentUrl, currentName) {
-  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  // Usar getPagesJSONFromLocalStorage para obtener la configuración más reciente
+  const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   const categoryOptions = getCategoryOptions(currentConfig);
   
   const pageCategoryPathValue = pageCategoryPath.length > 0 ? JSON.stringify(pageCategoryPath) : '';
@@ -5603,7 +5607,8 @@ function getCategoryOptions(config, currentPath = [], level = 0) {
 
 // Función para agregar página desde la vista de page-list con selector de carpeta
 async function addPageToPageListWithCategorySelector(defaultCategoryPath, roomId) {
-  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  // Usar getPagesJSONFromLocalStorage para obtener la configuración más reciente
+  const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   const categoryOptions = getCategoryOptions(currentConfig);
   
   // Preparar campos del formulario
@@ -5705,7 +5710,8 @@ async function addPageToPageList(categoryPath, roomId) {
 
 // Función simple para agregar página en una carpeta específica (sin selector)
 async function addPageToPageListSimple(categoryPath, roomId) {
-  const currentConfig = getPagesJSON(roomId) || await getDefaultJSON();
+  // Usar getPagesJSONFromLocalStorage para obtener la configuración más reciente
+  const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   
   showModalForm(
     'Add Page',
