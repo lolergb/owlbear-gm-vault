@@ -6254,6 +6254,7 @@ async function loadImageContent(url, container, name) {
         justify-content: center;
         height: 100%;
         padding: var(--spacing-lg);
+        margin-top: var(--spacing-xl);
         gap: var(--spacing-lg);
         position: relative;
       ">
