@@ -7884,15 +7884,21 @@ async function showSettings() {
             // Limpiar el cache antes de guardar para evitar conflictos
             pagesConfigCache = null;
             
-            // Borrar el default del localStorage para evitar conflictos
-            // El vault cargado será el único para este roomId
-            const defaultStorageKey = 'notion-pages-json-default';
-            console.log('🔍 Verificando si existe default:', localStorage.getItem(defaultStorageKey) ? 'SÍ' : 'NO');
-            try {
-              localStorage.removeItem(defaultStorageKey);
-              console.log('🗑️ Default eliminado del localStorage (nuevo vault cargado)');
-            } catch (e) {
-              console.error('❌ Error al borrar default:', e);
+            // Asegurarnos de tener un roomId válido
+            console.log('🔍 currentRoomId antes de guardar:', currentRoomId);
+            
+            // Solo borrar default si tenemos un roomId válido (no queremos guardar en default)
+            if (currentRoomId) {
+              const defaultStorageKey = 'notion-pages-json-default';
+              console.log('🔍 Verificando si existe default:', localStorage.getItem(defaultStorageKey) ? 'SÍ' : 'NO');
+              try {
+                localStorage.removeItem(defaultStorageKey);
+                console.log('🗑️ Default eliminado del localStorage (nuevo vault cargado para roomId:', currentRoomId, ')');
+              } catch (e) {
+                console.error('❌ Error al borrar default:', e);
+              }
+            } else {
+              console.warn('⚠️ No hay roomId, el vault se guardará como default');
             }
             
             // Guardar la nueva configuración
