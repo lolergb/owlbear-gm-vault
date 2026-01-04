@@ -1,8 +1,6 @@
-console.log('🚀 Iniciando carga de index.js...');
+// Los logs iniciales se ejecutan después de definir la función log()
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
-
-console.log('✅ OBR SDK importado');
 
 // Sistema de logs controlado por variable de entorno de Netlify
 let DEBUG_MODE = false;
@@ -25,7 +23,7 @@ async function initDebugMode() {
         const data = await response.json();
         DEBUG_MODE = data.debug === true;
         if (DEBUG_MODE) {
-          console.log('🔍 Modo debug activado');
+          log('🔍 Modo debug activado');
         }
       }
     }
@@ -102,6 +100,10 @@ function logWarn(...args) {
   // Las advertencias siempre se muestran
   console.warn(...args);
 }
+
+// Logs iniciales (ahora que log() está definida)
+log('🚀 Iniciando carga de index.js...');
+log('✅ OBR SDK importado');
 
 // ============================================
 // MIXPANEL ANALYTICS
@@ -192,7 +194,7 @@ async function initMixpanel() {
   // Check consent first
   const consent = getAnalyticsConsent();
   if (consent === false) {
-    console.log('📊 Mixpanel disabled (user declined)');
+    log('📊 Mixpanel disabled (user declined)');
     return;
   }
   
@@ -205,7 +207,7 @@ async function initMixpanel() {
   try {
     // Only fetch token if we're on Netlify
     if (!window.location.origin.includes('netlify.app') && !window.location.origin.includes('netlify.com')) {
-      console.log('🔍 Mixpanel disabled (not on Netlify)');
+      log('🔍 Mixpanel disabled (not on Netlify)');
       return;
     }
     
@@ -229,11 +231,11 @@ async function initMixpanel() {
           }
         }
         
-        console.log('📊 Mixpanel analytics enabled');
-        console.log('📊 Token:', mixpanelToken ? mixpanelToken.substring(0, 10) + '...' : 'missing');
-        console.log('📊 Token length:', mixpanelToken ? mixpanelToken.length : 0, '(should be ~32 chars for project token)');
-        console.log('📊 Full token (first 20 chars):', mixpanelToken ? mixpanelToken.substring(0, 20) : 'missing');
-        console.log('📊 Distinct ID:', mixpanelDistinctId);
+        log('📊 Mixpanel analytics enabled');
+        log('📊 Token:', mixpanelToken ? mixpanelToken.substring(0, 10) + '...' : 'missing');
+        log('📊 Token length:', mixpanelToken ? mixpanelToken.length : 0, '(should be ~32 chars for project token)');
+        log('📊 Full token (first 20 chars):', mixpanelToken ? mixpanelToken.substring(0, 20) : 'missing');
+        log('📊 Distinct ID:', mixpanelDistinctId);
         
         // Verify token format (should be alphanumeric, ~32 chars)
         if (mixpanelToken && mixpanelToken.length < 20) {
@@ -248,7 +250,7 @@ async function initMixpanel() {
       console.warn('📊 Failed to fetch Mixpanel token:', response.status);
     }
   } catch (e) {
-    console.log('📊 Mixpanel disabled (fetch error)');
+    log('📊 Mixpanel disabled (fetch error)');
     mixpanelEnabled = false;
   }
 }
@@ -296,7 +298,7 @@ async function trackEvent(eventName, properties = {}) {
     const base64String = btoa(binaryString);
     
     // Debug: log the payload (first 100 chars only)
-    console.log('📊 Tracking event:', eventName, '| Payload length:', base64String.length);
+    log('📊 Tracking event:', eventName, '| Payload length:', base64String.length);
     
     // Send to Mixpanel via HTTP API using POST (more reliable than GET)
     // Use EU endpoint to match the SDK configuration
@@ -314,23 +316,23 @@ async function trackEvent(eventName, properties = {}) {
       
       if (response.ok) {
         const result = await response.json();
-        console.log(`📊 Mixpanel response:`, result);
+        log(`📊 Mixpanel response:`, result);
         
         // Always log decoded payload for debugging
         try {
           const decoded = JSON.parse(atob(base64String));
-          console.log(`📊 Decoded payload:`, decoded);
-          console.log(`📊 Event name:`, decoded[0]?.event);
-          console.log(`📊 Token in payload:`, decoded[0]?.properties?.token?.substring(0, 10) + '...');
-          console.log(`📊 Token match:`, decoded[0]?.properties?.token === mixpanelToken ? '✅' : '❌');
-          console.log(`📊 Distinct ID:`, decoded[0]?.properties?.distinct_id);
-          console.log(`📊 Full properties:`, JSON.stringify(decoded[0]?.properties, null, 2));
+          log(`📊 Decoded payload:`, decoded);
+          log(`📊 Event name:`, decoded[0]?.event);
+          log(`📊 Token in payload:`, decoded[0]?.properties?.token?.substring(0, 10) + '...');
+          log(`📊 Token match:`, decoded[0]?.properties?.token === mixpanelToken ? '✅' : '❌');
+          log(`📊 Distinct ID:`, decoded[0]?.properties?.distinct_id);
+          log(`📊 Full properties:`, JSON.stringify(decoded[0]?.properties, null, 2));
         } catch (e) {
           console.warn(`📊 Could not decode payload:`, e);
         }
         
         if (result.status === 1) {
-          console.log(`📊 Event tracked: ${eventName}`);
+          log(`📊 Event tracked: ${eventName}`);
         } else {
           console.warn(`📊 Mixpanel error:`, result);
         }
@@ -342,9 +344,9 @@ async function trackEvent(eventName, properties = {}) {
       }
     } catch (fetchError) {
       // Fallback: use image pixel tracking (most reliable, works even with CORS issues)
-      console.log(`📊 Using image pixel fallback for: ${eventName}`);
+      log(`📊 Using image pixel fallback for: ${eventName}`);
       const img = new Image();
-      img.onload = () => console.log(`📊 Image pixel sent for: ${eventName}`);
+      img.onload = () => log(`📊 Image pixel sent for: ${eventName}`);
       img.onerror = () => console.warn(`📊 Image pixel failed for: ${eventName}`);
       img.src = `https://api-eu.mixpanel.com/track?data=${encodeURIComponent(base64String)}&img=1`;
     }
@@ -561,11 +563,11 @@ function trackPageReloaded(pageName) {
  * Test Mixpanel connection - call this from console: testMixpanel()
  */
 window.testMixpanel = async function() {
-  console.log('🧪 Testing Mixpanel connection...');
-  console.log('📊 Enabled:', mixpanelEnabled);
-  console.log('📊 Token:', mixpanelToken ? mixpanelToken.substring(0, 10) + '...' : 'missing');
-  console.log('📊 Full Token:', mixpanelToken);
-  console.log('📊 Distinct ID:', mixpanelDistinctId);
+  log('🧪 Testing Mixpanel connection...');
+  log('📊 Enabled:', mixpanelEnabled);
+  log('📊 Token:', mixpanelToken ? mixpanelToken.substring(0, 10) + '...' : 'missing');
+  log('📊 Full Token:', mixpanelToken);
+  log('📊 Distinct ID:', mixpanelDistinctId);
   
   // Send a test event with unique identifier
   const testId = 'test_' + Date.now();
@@ -576,11 +578,11 @@ window.testMixpanel = async function() {
     user_agent: navigator.userAgent.substring(0, 50)
   });
   
-  console.log('🧪 Test event sent with ID:', testId);
-  console.log('🧪 Check Mixpanel Live View in 10-30 seconds:');
-  console.log('   https://mixpanel.com/project/[YOUR_PROJECT]/live');
-  console.log('🧪 Or search for event: test_event');
-  console.log('🧪 Test ID to search:', testId);
+  log('🧪 Test event sent with ID:', testId);
+  log('🧪 Check Mixpanel Live View in 10-30 seconds:');
+  log('   https://mixpanel.com/project/[YOUR_PROJECT]/live');
+  log('🧪 Or search for event: test_event');
+  log('🧪 Test ID to search:', testId);
 };
 
 // La aplicación funciona con localStorage y default-config.json
@@ -835,11 +837,11 @@ function broadcastVisiblePagesUpdate(visibleConfig) {
  */
 async function requestVisiblePagesFromGM() {
   return new Promise((resolve) => {
-    console.log('📡 Solicitando lista de páginas visibles al GM...');
+    log('📡 Solicitando lista de páginas visibles al GM...');
     
     // Timeout de 5 segundos
     const timeout = setTimeout(() => {
-      console.log('⏰ Timeout esperando lista de páginas visibles del GM');
+      log('⏰ Timeout esperando lista de páginas visibles del GM');
       unsubscribe();
       resolve(null);
     }, 5000);
@@ -848,7 +850,7 @@ async function requestVisiblePagesFromGM() {
     const unsubscribe = OBR.broadcast.onMessage(BROADCAST_CHANNEL_VISIBLE_PAGES, (event) => {
       const data = event.data;
       if (data && data.config) {
-        console.log('✅ Lista de páginas visibles recibida del GM');
+        log('✅ Lista de páginas visibles recibida del GM');
         clearTimeout(timeout);
         unsubscribe();
         resolve(data.config);
@@ -867,7 +869,7 @@ async function requestVisiblePagesFromGM() {
  */
 function setupGMVisiblePagesBroadcast() {
   OBR.broadcast.onMessage(BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES, async (event) => {
-    console.log('📨 Recibida solicitud de lista de páginas visibles');
+    log('📨 Recibida solicitud de lista de páginas visibles');
     
     // Obtener la configuración actual y filtrar
     const currentConfig = pagesConfigCache || getPagesJSON(OBR.room.id);
@@ -876,7 +878,7 @@ function setupGMVisiblePagesBroadcast() {
       broadcastVisiblePagesUpdate(visibleConfig);
     }
   });
-  console.log('🎧 GM escuchando solicitudes de lista de páginas visibles');
+  log('🎧 GM escuchando solicitudes de lista de páginas visibles');
 }
 
 // Caché local de HTML renderizado (solo en memoria del GM)
@@ -1172,7 +1174,7 @@ function getCachedBlocks(pageId) {
     if (cached) {
       const data = JSON.parse(cached);
       if (data.blocks) {
-        console.log('✅ Bloques obtenidos del caché para:', pageId);
+        log('✅ Bloques obtenidos del caché para:', pageId);
         return data.blocks;
       }
     }
@@ -1200,7 +1202,7 @@ function setCachedBlocks(pageId, blocks) {
       savedAt: new Date().toISOString() // Solo para referencia, no para expiración
     };
     localStorage.setItem(cacheKey, JSON.stringify(data));
-    console.log('💾 Bloques guardados en caché para:', pageId);
+    log('💾 Bloques guardados en caché para:', pageId);
     
     // Si es GM, también guardar en caché compartido para jugadores
     saveToSharedCache(pageId, blocks);
@@ -1330,14 +1332,14 @@ function saveHtmlToLocalCache(pageId, html) {
       }
     }
     delete localHtmlCache[oldestKey];
-    console.log('🗑️ Eliminada entrada más antigua del caché HTML local:', oldestKey);
+    log('🗑️ Eliminada entrada más antigua del caché HTML local:', oldestKey);
   }
   
   localHtmlCache[pageId] = {
     html: html,
     savedAt: Date.now()
   };
-  console.log('💾 HTML guardado en caché local para:', pageId, '- tamaño:', html.length, 'caracteres');
+  log('💾 HTML guardado en caché local para:', pageId, '- tamaño:', html.length, 'caracteres');
 }
 
 /**
@@ -1347,11 +1349,11 @@ function saveHtmlToLocalCache(pageId, html) {
  */
 async function requestHtmlFromGM(pageId) {
   return new Promise((resolve) => {
-    console.log('📡 Solicitando contenido al GM para:', pageId);
+    log('📡 Solicitando contenido al GM para:', pageId);
     
     // Timeout de 5 segundos
     const timeout = setTimeout(() => {
-      console.log('⏰ Timeout esperando respuesta del GM');
+      log('⏰ Timeout esperando respuesta del GM');
       unsubscribe();
       resolve(null);
     }, 5000);
@@ -1360,7 +1362,7 @@ async function requestHtmlFromGM(pageId) {
     const unsubscribe = OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE, (event) => {
       const data = event.data;
       if (data && data.pageId === pageId && data.html) {
-        console.log('✅ Recibido HTML del GM para:', pageId, '- tamaño:', data.html.length);
+        log('✅ Recibido HTML del GM para:', pageId, '- tamaño:', data.html.length);
         clearTimeout(timeout);
         unsubscribe();
         resolve(data.html);
@@ -1379,22 +1381,22 @@ function setupGMContentBroadcast() {
   OBR.broadcast.onMessage(BROADCAST_CHANNEL_REQUEST, async (event) => {
     const data = event.data;
     if (data && data.pageId) {
-      console.log('📨 Recibida solicitud de contenido para:', data.pageId);
+      log('📨 Recibida solicitud de contenido para:', data.pageId);
       
       // Buscar en caché local
       const cached = localHtmlCache[data.pageId];
       if (cached && cached.html) {
-        console.log('📤 Enviando HTML cacheado para:', data.pageId);
+        log('📤 Enviando HTML cacheado para:', data.pageId);
         OBR.broadcast.sendMessage(BROADCAST_CHANNEL_RESPONSE, {
           pageId: data.pageId,
           html: cached.html
         });
       } else {
-        console.log('⚠️ No hay HTML en caché local para:', data.pageId);
+        log('⚠️ No hay HTML en caché local para:', data.pageId);
       }
     }
   });
-  console.log('🎧 GM escuchando solicitudes de contenido');
+  log('🎧 GM escuchando solicitudes de contenido');
 }
 
 /**
@@ -1410,7 +1412,7 @@ function clearAllCache() {
       }
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
-    console.log('🗑️ Caché limpiado:', keysToRemove.length, 'entradas');
+    log('🗑️ Caché limpiado:', keysToRemove.length, 'entradas');
     return keysToRemove.length;
   } catch (e) {
     console.error('Error al limpiar caché:', e);
@@ -1427,7 +1429,7 @@ async function clearSharedContentCache() {
     await OBR.room.setMetadata({
       [ROOM_CONTENT_CACHE_KEY]: {}
     });
-    console.log('🗑️ Caché compartido (room metadata) limpiado');
+    log('🗑️ Caché compartido (room metadata) limpiado');
     return true;
   } catch (e) {
     console.error('Error al limpiar caché compartido:', e);
@@ -1445,7 +1447,7 @@ async function clearAllRoomMetadata() {
       [ROOM_METADATA_KEY]: null,
       [ROOM_CONTENT_CACHE_KEY]: null
     });
-    console.log('🗑️ Todos los metadatos de room limpiados');
+    log('🗑️ Todos los metadatos de room limpiados');
     return true;
   } catch (e) {
     console.error('Error al limpiar metadatos de room:', e);
@@ -1623,7 +1625,7 @@ function getCachedPageInfo(pageId) {
     if (cached) {
       const data = JSON.parse(cached);
       if (data.pageInfo) {
-        console.log('✅ Información de página obtenida del caché para:', pageId);
+        log('✅ Información de página obtenida del caché para:', pageId);
         return data.pageInfo;
       }
     }
@@ -1650,7 +1652,7 @@ function setCachedPageInfo(pageId, pageInfo) {
       savedAt: new Date().toISOString()
     };
     localStorage.setItem(cacheKey, JSON.stringify(data));
-    console.log('💾 Información de página guardada en caché para:', pageId);
+    log('💾 Información de página guardada en caché para:', pageId);
   } catch (e) {
     console.error('Error al guardar información de página en caché:', e);
     // Si el localStorage está lleno, mostrar modal al usuario
@@ -1781,12 +1783,12 @@ async function fetchNotionBlocks(pageId, useCache = true) {
   if (useCache) {
     const cachedBlocks = getCachedBlocks(pageId);
     if (cachedBlocks && cachedBlocks.length > 0) {
-      console.log('✅ Estado 2: Usando caché persistente para:', pageId, '-', cachedBlocks.length, 'bloques');
+      log('✅ Estado 2: Usando caché persistente para:', pageId, '-', cachedBlocks.length, 'bloques');
       return cachedBlocks;
     }
-    console.log('⚠️ Estado 1: No hay caché para:', pageId, '- se pedirá a la API');
+    log('⚠️ Estado 1: No hay caché para:', pageId, '- se pedirá a la API');
   } else {
-    console.log('🔄 Estado 3: Recarga forzada - ignorando caché para:', pageId);
+    log('🔄 Estado 3: Recarga forzada - ignorando caché para:', pageId);
   }
   
   // Estado 1: No tengo info o recarga forzada → pedir a la API
@@ -1819,7 +1821,7 @@ async function fetchNotionBlocks(pageId, useCache = true) {
         const metadata = await OBR.room.getMetadata();
         const sharedCache = metadata && metadata[ROOM_CONTENT_CACHE_KEY];
         if (sharedCache && sharedCache[pageId] && sharedCache[pageId].blocks) {
-          console.log('✅ Usando caché compartido (room metadata) para:', pageId);
+          log('✅ Usando caché compartido (room metadata) para:', pageId);
           return sharedCache[pageId].blocks;
         }
       } catch (e) {
@@ -1851,19 +1853,19 @@ async function fetchNotionBlocks(pageId, useCache = true) {
     const blocks = data.results || [];
     
     // Log detallado de los bloques recibidos
-    console.log('📦 Bloques recibidos de la API:', blocks.length);
+    log('📦 Bloques recibidos de la API:', blocks.length);
     if (blocks.length > 0) {
-      console.log('📋 Tipos de bloques encontrados:', blocks.map(b => b.type));
+      log('📋 Tipos de bloques encontrados:', blocks.map(b => b.type));
       // Log detallado de cada bloque
       blocks.forEach((block, index) => {
-        console.log(`  [${index}] Tipo: ${block.type}`, {
+        log(`  [${index}] Tipo: ${block.type}`, {
           id: block.id,
           hasContent: !!block[block.type],
           content: block[block.type] ? Object.keys(block[block.type]) : []
         });
         // Si es una imagen, mostrar más detalles
         if (block.type === 'image') {
-          console.log('    🖼️ Detalles de imagen:', {
+          log('    🖼️ Detalles de imagen:', {
             hasExternal: !!block.image?.external,
             hasFile: !!block.image?.file,
             externalUrl: block.image?.external?.url?.substring(0, 80),
@@ -1878,7 +1880,7 @@ async function fetchNotionBlocks(pageId, useCache = true) {
     // Estado 1: Guardar en caché persistente después de obtener exitosamente (sin expiración)
     if (blocks.length > 0) {
       setCachedBlocks(pageId, blocks);
-      console.log('💾 Estado 1: Bloques guardados en caché persistente para:', pageId);
+      log('💾 Estado 1: Bloques guardados en caché persistente para:', pageId);
     }
     
     return blocks;
@@ -1972,7 +1974,7 @@ function renderBlock(block) {
         const imageId = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
         // Log para debugging
-        console.log('🖼️ Renderizando imagen:', {
+        log('🖼️ Renderizando imagen:', {
           type: imageType,
           url: imageUrl.substring(0, 80) + (imageUrl.length > 80 ? '...' : ''),
           hasCaption: !!caption,
@@ -2087,7 +2089,7 @@ async function fetchBlockChildren(blockId, useCache = true) {
   if (useCache) {
     const cachedBlocks = getCachedBlocks(blockId);
     if (cachedBlocks && cachedBlocks.length > 0) {
-      console.log('✅ Usando caché para hijos del bloque:', blockId);
+      log('✅ Usando caché para hijos del bloque:', blockId);
       return cachedBlocks;
     }
   }
@@ -2117,7 +2119,7 @@ async function fetchBlockChildren(blockId, useCache = true) {
         const metadata = await OBR.room.getMetadata();
         const sharedCache = metadata && metadata[ROOM_CONTENT_CACHE_KEY];
         if (sharedCache && sharedCache[blockId] && sharedCache[blockId].blocks) {
-          console.log('✅ Usando caché compartido para hijos del bloque:', blockId);
+          log('✅ Usando caché compartido para hijos del bloque:', blockId);
           return sharedCache[blockId].blocks;
         }
       } catch (e) {
@@ -2155,24 +2157,24 @@ async function renderToggle(toggleBlock, blockTypes = null, headingLevelOffset =
   const toggle = toggleBlock.toggle;
   const toggleText = renderRichText(toggle?.rich_text);
   
-  console.log('🔽 Renderizando toggle:', toggleBlock.id, {
+  log('🔽 Renderizando toggle:', toggleBlock.id, {
     hasChildren: toggleBlock.has_children
   });
   
   let toggleContent = '';
   
   if (toggleBlock.has_children) {
-    console.log('  📦 Obteniendo hijos del toggle...');
+    log('  📦 Obteniendo hijos del toggle...');
       const children = await fetchBlockChildren(toggleBlock.id, useCache);
-    console.log(`  📦 Hijos obtenidos: ${children.length}`);
+    log(`  📦 Hijos obtenidos: ${children.length}`);
     if (children.length > 0) {
       toggleContent = await renderBlocks(children, blockTypes, headingLevelOffset, useCache);
-      console.log(`  ✅ Contenido del toggle renderizado: ${toggleContent.length} caracteres`);
+      log(`  ✅ Contenido del toggle renderizado: ${toggleContent.length} caracteres`);
     } else {
-      console.log(`  ⚠️ Toggle sin contenido`);
+      log(`  ⚠️ Toggle sin contenido`);
     }
   } else {
-    console.log(`  ℹ️ Toggle sin hijos`);
+    log(`  ℹ️ Toggle sin hijos`);
   }
   
   // Si hay un filtro activo y el toggle no coincide con el tipo filtrado,
@@ -2198,25 +2200,25 @@ async function renderToggleHeading(toggleHeadingBlock, headingLevel, blockTypes 
   const toggleHeading = toggleHeadingBlock[`heading_${headingLevel}`] || toggleHeadingBlock.toggle;
   const headingText = renderRichText(toggleHeading?.rich_text);
   
-  console.log(`🔽 Renderizando toggle_heading_${headingLevel}:`, toggleHeadingBlock.id, {
+  log(`🔽 Renderizando toggle_heading_${headingLevel}:`, toggleHeadingBlock.id, {
     hasChildren: toggleHeadingBlock.has_children
   });
   
   let toggleContent = '';
   
   if (toggleHeadingBlock.has_children) {
-    console.log(`  📦 Obteniendo hijos del toggle_heading_${headingLevel}...`);
+    log(`  📦 Obteniendo hijos del toggle_heading_${headingLevel}...`);
       const children = await fetchBlockChildren(toggleHeadingBlock.id, useCache);
-    console.log(`  📦 Hijos obtenidos: ${children.length}`);
+    log(`  📦 Hijos obtenidos: ${children.length}`);
     if (children.length > 0) {
       // Los hijos de un toggle heading deben tener un offset de nivel +1
       toggleContent = await renderBlocks(children, blockTypes, headingLevelOffset + 1, useCache);
-      console.log(`  ✅ Contenido del toggle_heading_${headingLevel} renderizado: ${toggleContent.length} caracteres`);
+      log(`  ✅ Contenido del toggle_heading_${headingLevel} renderizado: ${toggleContent.length} caracteres`);
     } else {
-      console.log(`  ⚠️ Toggle heading sin contenido`);
+      log(`  ⚠️ Toggle heading sin contenido`);
     }
   } else {
-    console.log(`  ℹ️ Toggle heading sin hijos`);
+    log(`  ℹ️ Toggle heading sin hijos`);
   }
   
   // Si hay un filtro activo y el toggle_heading no coincide con el tipo filtrado,
@@ -2246,7 +2248,7 @@ async function renderToggleHeading(toggleHeadingBlock, headingLevel, blockTypes 
 // Función para renderizar todas las columnas de una column_list
 // Devuelve un objeto con { html, siblingColumnsCount }
 async function renderColumnList(columnListBlock, allBlocks, currentIndex, blockTypes = null, headingLevelOffset = 0, useCache = true) {
-  console.log('📐 Renderizando column_list:', columnListBlock.id, {
+  log('📐 Renderizando column_list:', columnListBlock.id, {
     hasChildren: columnListBlock.has_children,
     currentIndex: currentIndex,
     totalBlocks: allBlocks.length
@@ -2257,16 +2259,16 @@ async function renderColumnList(columnListBlock, allBlocks, currentIndex, blockT
   
   // Opción 1: Las columnas son hijos del column_list (más común)
   if (columnListBlock.has_children) {
-    console.log('  📦 Obteniendo columnas como hijos del column_list...');
-    const children = await fetchBlockChildren(columnListBlock.id, useCache);
-    console.log(`  📦 Hijos obtenidos: ${children.length}`, children.map(c => c.type));
+    log('  📦 Obteniendo columnas como hijos del column_list...');
+      const children = await fetchBlockChildren(columnListBlock.id, useCache);
+    log(`  📦 Hijos obtenidos: ${children.length}`, children.map(c => c.type));
     columns = children.filter(block => block.type === 'column');
-    console.log(`  📐 Columnas encontradas como hijos: ${columns.length}`);
+    log(`  📐 Columnas encontradas como hijos: ${columns.length}`);
   }
   
   // Opción 2: Las columnas son bloques hermanos que siguen al column_list
   if (columns.length === 0) {
-    console.log('  🔍 Buscando columnas como bloques hermanos...');
+    log('  🔍 Buscando columnas como bloques hermanos...');
     let index = currentIndex + 1;
     
     while (index < allBlocks.length) {
@@ -2279,7 +2281,7 @@ async function renderColumnList(columnListBlock, allBlocks, currentIndex, blockT
       }
     }
     columnsFoundAsSiblings = true;
-    console.log(`  📐 Columnas encontradas como hermanos: ${columns.length}`);
+    log(`  📐 Columnas encontradas como hermanos: ${columns.length}`);
   }
   
   if (columns.length === 0) {
@@ -2287,29 +2289,29 @@ async function renderColumnList(columnListBlock, allBlocks, currentIndex, blockT
     return { html: '<div class="notion-column-list">[Sin columnas]</div>', siblingColumnsCount: 0 };
   }
   
-  console.log(`  ✅ Total de columnas encontradas: ${columns.length}`);
+  log(`  ✅ Total de columnas encontradas: ${columns.length}`);
   
   // Renderizar cada columna con sus bloques hijos
   const columnHtmls = await Promise.all(columns.map(async (columnBlock, colIndex) => {
     let columnContent = '';
     
-    console.log(`  📄 Procesando columna ${colIndex + 1}/${columns.length}:`, {
+    log(`  📄 Procesando columna ${colIndex + 1}/${columns.length}:`, {
       id: columnBlock.id,
       hasChildren: columnBlock.has_children
     });
     
     if (columnBlock.has_children) {
-      console.log(`    🔽 Obteniendo hijos de columna: ${columnBlock.id}`);
+      log(`    🔽 Obteniendo hijos de columna: ${columnBlock.id}`);
       const children = await fetchBlockChildren(columnBlock.id, useCache);
-      console.log(`    🔽 Hijos obtenidos: ${children.length}`);
+      log(`    🔽 Hijos obtenidos: ${children.length}`);
       if (children.length > 0) {
         columnContent = await renderBlocks(children, blockTypes, headingLevelOffset, useCache);
-        console.log(`    ✅ Contenido de columna renderizado: ${columnContent.length} caracteres`);
+        log(`    ✅ Contenido de columna renderizado: ${columnContent.length} caracteres`);
       } else {
-        console.log(`    ⚠️ Columna sin contenido`);
+        log(`    ⚠️ Columna sin contenido`);
       }
     } else {
-      console.log(`    ℹ️ Columna sin hijos`);
+      log(`    ℹ️ Columna sin hijos`);
     }
     
     // Si hay un filtro activo y la columna no tiene contenido filtrado, no mostrar la columna
@@ -2341,7 +2343,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
   let listType = null;
   let listItems = [];
   
-  console.log('🎨 Iniciando renderizado de', blocks.length, 'bloques', blockTypes ? `(filtro: ${Array.isArray(blockTypes) ? blockTypes.join(', ') : blockTypes})` : '');
+  log('🎨 Iniciando renderizado de', blocks.length, 'bloques', blockTypes ? `(filtro: ${Array.isArray(blockTypes) ? blockTypes.join(', ') : blockTypes})` : '');
   
   // Filtrar bloques por tipo si se especifica
   // IMPORTANTE: Si un bloque tiene hijos, NO lo filtramos aunque no coincida con el tipo,
@@ -2358,7 +2360,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       return matchesType || hasChildren;
     });
     if (filteredBlocks.length !== blocks.length) {
-      console.log(`  🔍 Filtrados: ${filteredBlocks.length} de ${blocks.length} bloques (manteniendo bloques con hijos para búsqueda recursiva)`);
+      log(`  🔍 Filtrados: ${filteredBlocks.length} de ${blocks.length} bloques (manteniendo bloques con hijos para búsqueda recursiva)`);
     }
   }
   
@@ -2366,7 +2368,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     const block = filteredBlocks[index];
     const type = block.type;
     
-    console.log(`  [${index}] Renderizando bloque:`, {
+    log(`  [${index}] Renderizando bloque:`, {
       type: type,
       id: block.id,
       hasChildren: block.has_children || false,
@@ -2380,9 +2382,9 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         // Solo agregar al HTML si hay contenido
         if (result.html.trim()) {
           html += result.html;
-          console.log(`    ✅ Column_list renderizado`);
+          log(`    ✅ Column_list renderizado`);
         } else {
-          console.log(`    ⏭️ Column_list filtrado, sin contenido que mostrar`);
+          log(`    ⏭️ Column_list filtrado, sin contenido que mostrar`);
         }
         
         // Saltar las columnas hermanas que ya procesamos (solo si fueron encontradas como hermanas)
@@ -2398,7 +2400,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           }
           if (skipCount > 0) {
             index += skipCount; // El for loop incrementará index después, así que esto está bien
-            console.log(`    ⏭️ Saltadas ${skipCount} columnas hermanas`);
+            log(`    ⏭️ Saltadas ${skipCount} columnas hermanas`);
           }
         }
         continue;
@@ -2411,7 +2413,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     
     // Ignorar bloques column individuales (ya se procesaron en column_list)
     if (type === 'column') {
-      console.log(`    ⏭️ Columna individual ignorada (ya procesada en column_list)`);
+      log(`    ⏭️ Columna individual ignorada (ya procesada en column_list)`);
       continue;
     }
     
@@ -2420,7 +2422,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       try {
         const toggleHtml = await renderToggle(block, blockTypes, headingLevelOffset, useCache);
         html += toggleHtml;
-        console.log(`    ✅ Toggle renderizado`);
+        log(`    ✅ Toggle renderizado`);
         continue;
       } catch (error) {
         console.error('Error al renderizar toggle:', error);
@@ -2438,7 +2440,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : 3;
         const toggleHeadingHtml = await renderToggleHeading(block, headingLevel, blockTypes, headingLevelOffset, useCache);
         html += toggleHeadingHtml;
-        console.log(`    ✅ Toggle heading ${headingLevel} renderizado`);
+        log(`    ✅ Toggle heading ${headingLevel} renderizado`);
         continue;
       } catch (error) {
         console.error(`Error al renderizar toggle_heading:`, error);
@@ -2460,15 +2462,15 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         const headingTag = `h${headingLevel}`;
         const headingText = renderRichText(block[`heading_${baseHeadingLevel}`]?.rich_text);
         
-        console.log(`  📦 Obteniendo hijos del heading_${baseHeadingLevel} (renderizado como ${headingTag})...`);
+        log(`  📦 Obteniendo hijos del heading_${baseHeadingLevel} (renderizado como ${headingTag})...`);
         const children = await fetchBlockChildren(block.id, useCache);
-        console.log(`  📦 Hijos obtenidos: ${children.length}`);
+        log(`  📦 Hijos obtenidos: ${children.length}`);
         
         let childrenContent = '';
         if (children.length > 0) {
           // Los hijos de un heading deben tener un offset de nivel +1
           childrenContent = await renderBlocks(children, blockTypes, headingLevelOffset + 1, useCache);
-          console.log(`  ✅ Contenido del heading renderizado: ${childrenContent.length} caracteres`);
+          log(`  ✅ Contenido del heading renderizado: ${childrenContent.length} caracteres`);
         }
         
         // Si hay un filtro activo, verificar si el heading debe mostrarse
@@ -2480,22 +2482,22 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             // El heading no está en el filtro, solo mostrar hijos si tienen contenido filtrado
             if (childrenContent.trim()) {
               html += childrenContent;
-              console.log(`    ✅ Heading ${baseHeadingLevel} filtrado, solo mostrando hijos`);
+              log(`    ✅ Heading ${baseHeadingLevel} filtrado, solo mostrando hijos`);
             } else {
-              console.log(`    ⏭️ Heading ${baseHeadingLevel} filtrado, sin contenido que mostrar`);
+              log(`    ⏭️ Heading ${baseHeadingLevel} filtrado, sin contenido que mostrar`);
             }
             continue;
           } else {
             // El heading SÍ está en el filtro, pero si no tiene contenido filtrado, no mostrarlo
             if (!childrenContent.trim()) {
-              console.log(`    ⏭️ Heading ${baseHeadingLevel} en filtro pero sin contenido filtrado en hijos`);
+              log(`    ⏭️ Heading ${baseHeadingLevel} en filtro pero sin contenido filtrado en hijos`);
               continue;
             }
           }
         }
         
         html += `<${headingTag}>${headingText}</${headingTag}>${childrenContent}`;
-        console.log(`    ✅ Heading ${baseHeadingLevel} (${headingTag}) con hijos renderizado`);
+        log(`    ✅ Heading ${baseHeadingLevel} (${headingTag}) con hijos renderizado`);
         continue;
       } catch (error) {
         console.error(`Error al renderizar heading con hijos:`, error);
@@ -2523,14 +2525,14 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         const icon = callout?.icon?.emoji || '💡';
         const calloutText = renderRichText(callout?.rich_text);
         
-        console.log(`  📦 Obteniendo hijos del callout...`);
+        log(`  📦 Obteniendo hijos del callout...`);
         const children = await fetchBlockChildren(block.id, useCache);
-        console.log(`  📦 Hijos obtenidos: ${children.length}`);
+        log(`  📦 Hijos obtenidos: ${children.length}`);
         
         let childrenContent = '';
         if (children.length > 0) {
           childrenContent = await renderBlocks(children, blockTypes, headingLevelOffset, useCache);
-          console.log(`  ✅ Contenido del callout renderizado: ${childrenContent.length} caracteres`);
+          log(`  ✅ Contenido del callout renderizado: ${childrenContent.length} caracteres`);
         }
         
         // Si hay un filtro activo, verificar si el callout debe mostrarse
@@ -2542,15 +2544,15 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             // El callout no está en el filtro, solo mostrar hijos si tienen contenido filtrado
             if (childrenContent.trim()) {
               html += childrenContent;
-              console.log(`    ✅ Callout filtrado, solo mostrando hijos`);
+              log(`    ✅ Callout filtrado, solo mostrando hijos`);
             } else {
-              console.log(`    ⏭️ Callout filtrado, sin contenido que mostrar`);
+              log(`    ⏭️ Callout filtrado, sin contenido que mostrar`);
             }
             continue;
           } else {
             // El callout SÍ está en el filtro, pero si no tiene contenido filtrado en hijos, no mostrarlo
             if (!childrenContent.trim()) {
-              console.log(`    ⏭️ Callout en filtro pero sin contenido filtrado en hijos`);
+              log(`    ⏭️ Callout en filtro pero sin contenido filtrado en hijos`);
               continue;
             }
           }
@@ -2566,7 +2568,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             </div>
           </div>
         `;
-        console.log(`    ✅ Callout con hijos renderizado`);
+        log(`    ✅ Callout con hijos renderizado`);
         continue;
       } catch (error) {
         console.error(`Error al renderizar callout con hijos:`, error);
@@ -2574,7 +2576,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         if (blockTypes) {
           const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
           if (!typesArray.includes('callout')) {
-            console.log(`    ⏭️ Callout filtrado (error en renderizado), no se muestra`);
+            log(`    ⏭️ Callout filtrado (error en renderizado), no se muestra`);
             continue;
           }
         }
@@ -2605,7 +2607,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       if (blockTypes) {
         const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
         if (!typesArray.includes('callout')) {
-          console.log(`    ⏭️ Callout sin hijos filtrado, no se muestra`);
+          log(`    ⏭️ Callout sin hijos filtrado, no se muestra`);
           continue;
         }
       }
@@ -2620,7 +2622,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             <div class="notion-callout-content">${calloutText}</div>
           </div>
         `;
-        console.log(`    ✅ Callout sin hijos renderizado`);
+        log(`    ✅ Callout sin hijos renderizado`);
         continue;
       } catch (error) {
         console.error(`Error al renderizar callout sin hijos:`, error);
@@ -2635,14 +2637,14 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         const quote = block.quote;
         const quoteText = renderRichText(quote?.rich_text);
         
-        console.log(`  📦 Obteniendo hijos del quote...`);
+        log(`  📦 Obteniendo hijos del quote...`);
         const children = await fetchBlockChildren(block.id, useCache);
-        console.log(`  📦 Hijos obtenidos: ${children.length}`);
+        log(`  📦 Hijos obtenidos: ${children.length}`);
         
         let childrenContent = '';
         if (children.length > 0) {
           childrenContent = await renderBlocks(children, blockTypes, headingLevelOffset, useCache);
-          console.log(`  ✅ Contenido del quote renderizado: ${childrenContent.length} caracteres`);
+          log(`  ✅ Contenido del quote renderizado: ${childrenContent.length} caracteres`);
         }
         
         // Si hay un filtro activo, verificar si el quote debe mostrarse
@@ -2654,15 +2656,15 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             // El quote no está en el filtro, solo mostrar hijos si tienen contenido filtrado
             if (childrenContent.trim()) {
               html += childrenContent;
-              console.log(`    ✅ Quote filtrado, solo mostrando hijos`);
+              log(`    ✅ Quote filtrado, solo mostrando hijos`);
             } else {
-              console.log(`    ⏭️ Quote filtrado, sin contenido válido en hijos`);
+              log(`    ⏭️ Quote filtrado, sin contenido válido en hijos`);
             }
             continue;
           } else {
             // El quote SÍ está en el filtro, pero si no tiene contenido, no mostrarlo
             if (!quoteText.trim() && !childrenContent.trim()) {
-              console.log(`    ⏭️ Quote vacío filtrado, no se muestra`);
+              log(`    ⏭️ Quote vacío filtrado, no se muestra`);
               continue;
             }
           }
@@ -2674,7 +2676,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
             ${childrenContent}
           </div>
         `;
-        console.log(`    ✅ Quote con hijos renderizado`);
+        log(`    ✅ Quote con hijos renderizado`);
         continue;
       } catch (error) {
         console.error(`Error al renderizar quote con hijos:`, error);
@@ -2692,7 +2694,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       if (blockTypes) {
         const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
         if (!typesArray.includes(type)) {
-          console.log(`    ⏭️ Bloque de lista [${index}] de tipo ${type} filtrado, no se muestra`);
+          log(`    ⏭️ Bloque de lista [${index}] de tipo ${type} filtrado, no se muestra`);
           continue;
         }
       }
@@ -2718,15 +2720,15 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       // Si tiene hijos, obtenerlos y renderizarlos como lista anidada
       if (block.has_children) {
         try {
-          console.log(`  📦 Obteniendo hijos del elemento de lista [${index}]...`);
+          log(`  📦 Obteniendo hijos del elemento de lista [${index}]...`);
           const children = await fetchBlockChildren(block.id, useCache);
-          console.log(`  📦 Hijos obtenidos: ${children.length}`);
+          log(`  📦 Hijos obtenidos: ${children.length}`);
           
           let nestedListContent = '';
           if (children.length > 0) {
             // Renderizar los hijos recursivamente (pueden ser más elementos de lista u otros bloques)
             nestedListContent = await renderBlocks(children, blockTypes, headingLevelOffset, useCache);
-            console.log(`  ✅ Contenido anidado renderizado: ${nestedListContent.length} caracteres`);
+            log(`  ✅ Contenido anidado renderizado: ${nestedListContent.length} caracteres`);
           }
           
           // Construir el elemento de lista con el contenido anidado
@@ -2757,14 +2759,14 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         if (blockTypes) {
           const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
           if (!typesArray.includes('table')) {
-            console.log(`    ⏭️ Tabla filtrada, no se muestra`);
+            log(`    ⏭️ Tabla filtrada, no se muestra`);
             continue;
           }
         }
         try {
           const tableHtml = await renderTable(block);
           html += tableHtml;
-          console.log(`    ✅ Tabla [${index}] renderizada`);
+          log(`    ✅ Tabla [${index}] renderizada`);
         } catch (error) {
           console.error('Error al renderizar tabla:', error);
           html += `
@@ -2779,7 +2781,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         if (blockTypes) {
           const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
           if (!typesArray.includes(type)) {
-            console.log(`    ⏭️ Bloque [${index}] de tipo ${type} filtrado (filtro: ${typesArray.join(', ')}), no se muestra`);
+            log(`    ⏭️ Bloque [${index}] de tipo ${type} filtrado (filtro: ${typesArray.join(', ')}), no se muestra`);
             continue;
           }
         }
@@ -2787,9 +2789,9 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           const rendered = renderBlock(block);
           if (rendered) {
             html += rendered;
-            console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
+            log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
           } else {
-            console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
+            log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
           }
         } catch (error) {
           console.error(`❌ Error al renderizar bloque [${index}] de tipo ${type}:`, error);
@@ -2805,7 +2807,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     html += `<${listType === 'ul' ? 'ul' : 'ol'} class="notion-${listType === 'ul' ? 'bulleted' : 'numbered'}-list">${listItems.join('')}</${listType === 'ul' ? 'ul' : 'ol'}>`;
   }
   
-  console.log('✅ Renderizado completo. HTML generado:', html.length, 'caracteres');
+  log('✅ Renderizado completo. HTML generado:', html.length, 'caracteres');
   return html;
 }
 
@@ -2902,7 +2904,7 @@ async function showImageModal(imageUrl, caption) {
       viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
     }
     
-    console.log('🔍 Abriendo modal de imagen:', {
+    log('🔍 Abriendo modal de imagen:', {
       imageUrl: absoluteImageUrl,
       viewerUrl: viewerUrl.toString(),
       baseUrl: baseUrl,
@@ -2990,7 +2992,7 @@ window.refreshImage = async function(button) {
     if (pageId) {
       const cacheKey = CACHE_PREFIX + pageId;
       localStorage.removeItem(cacheKey);
-      console.log('🗑️ Caché limpiado para recarga:', pageId);
+      log('🗑️ Caché limpiado para recarga:', pageId);
     }
     
     // Recargar el contenido
@@ -3044,7 +3046,7 @@ async function attachImageClickHandlers() {
     
     // Load handler para logging
     img.addEventListener('load', function() {
-      console.log('✅ Imagen cargada correctamente:', this.src.substring(0, 80));
+      log('✅ Imagen cargada correctamente:', this.src.substring(0, 80));
     });
     
     // Efecto hover para indicar que es clicable (solo si la imagen ya está cargada)
@@ -3065,7 +3067,7 @@ async function attachImageClickHandlers() {
   // Manejar botones de compartir imágenes (solo para GMs)
   const isGM = await getUserRole();
   const shareButtons = document.querySelectorAll('.notion-image-share-button');
-  console.log('🔍 Botones de compartir encontrados:', shareButtons.length, 'isGM:', isGM);
+  log('🔍 Botones de compartir encontrados:', shareButtons.length, 'isGM:', isGM);
   shareButtons.forEach(button => {
     // Ocultar botón para jugadores
     if (!isGM) {
@@ -3101,7 +3103,7 @@ async function attachImageClickHandlers() {
           url: absoluteImageUrl,
           caption: caption
         });
-        console.log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80));
+        log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80));
         trackImageShare(absoluteImageUrl);
         
         // Feedback visual
@@ -3209,15 +3211,15 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     
     // Si el jugador no tiene token, solicitar HTML al GM via broadcast
     if (!userToken && !isGM) {
-      console.log('👤 Jugador sin token, solicitando HTML al GM para:', pageId);
+      log('👤 Jugador sin token, solicitando HTML al GM para:', pageId);
       const cachedHtml = await requestHtmlFromGM(pageId);
       if (cachedHtml) {
-        console.log('✅ Usando HTML recibido del GM');
+        log('✅ Usando HTML recibido del GM');
         contentDiv.innerHTML = cachedHtml;
         await attachImageClickHandlers();
         return;
       }
-      console.log('⚠️ El GM no tiene el contenido disponible');
+      log('⚠️ El GM no tiene el contenido disponible');
       // Sin HTML disponible, mostrar mensaje más claro
       contentDiv.innerHTML = `
         <div class="notion-waiting notion-waiting--gm-offline">
@@ -3339,7 +3341,7 @@ const METADATA_KEY = "com.dmscreen";
 // Función para configurar menús contextuales en tokens
 async function setupTokenContextMenus(pagesConfig, roomId) {
   try {
-    console.log('🎯 Configurando menús contextuales para tokens...');
+    log('🎯 Configurando menús contextuales para tokens...');
     
     // Obtener la URL base para los iconos (debe ser absoluta)
     const baseUrl = window.location.origin;
@@ -3438,11 +3440,11 @@ async function setupTokenContextMenus(pagesConfig, roomId) {
           delete items[0].metadata[`${METADATA_KEY}/pageIcon`];
         });
         
-        console.log('🗑️ Página desvinculada del token:', item.name || item.id);
+        log('🗑️ Página desvinculada del token:', item.name || item.id);
       }
     });
     
-    console.log('✅ Menús contextuales para tokens configurados');
+    log('✅ Menús contextuales para tokens configurados');
     
   } catch (error) {
     console.error('❌ Error al configurar menús contextuales:', error);
@@ -3567,7 +3569,7 @@ async function showPageSelectorForToken(itemIds, pagesConfig, roomId) {
         
         // Registrar y mostrar mensaje de confirmación
         const tokenCount = items.length;
-        console.log(`✅ Página "${selectedPage.name}" vinculada a ${tokenCount} token(s)`);
+        log(`✅ Página "${selectedPage.name}" vinculada a ${tokenCount} token(s)`);
         
         // Trackear para cada token
         tokenIds.forEach(itemId => {
@@ -3591,7 +3593,7 @@ async function showPageSelectorForToken(itemIds, pagesConfig, roomId) {
 }
 
 // Intentar inicializar Owlbear con manejo de errores
-console.log('🔄 Intentando inicializar Owlbear SDK...');
+log('🔄 Intentando inicializar Owlbear SDK...');
 
 // Inicializar modo debug al cargar
 initDebugMode();
@@ -3606,9 +3608,9 @@ try {
       ]);
       
       if (isGM) {
-        console.log('✅ Owlbear SDK listo');
-        console.log('🌐 URL actual:', window.location.href);
-        console.log('🔗 Origen:', window.location.origin);
+        log('✅ Owlbear SDK listo');
+        log('🌐 URL actual:', window.location.href);
+        log('🔗 Origen:', window.location.origin);
         
         // Configurar el GM para responder a solicitudes de contenido de jugadores
         setupGMContentBroadcast();
@@ -3623,19 +3625,19 @@ try {
         // Intentar obtener el ID de la room usando la propiedad directa
         roomId = OBR.room.id;
         if (isGM) {
-          console.log('🏠 Room ID obtenido (OBR.room.id):', roomId);
-          console.log('🏠 Tipo de roomId:', typeof roomId);
-          console.log('🏠 Longitud de roomId:', roomId ? roomId.length : 0);
+          log('🏠 Room ID obtenido (OBR.room.id):', roomId);
+          log('🏠 Tipo de roomId:', typeof roomId);
+          log('🏠 Longitud de roomId:', roomId ? roomId.length : 0);
         }
         
         // Si no funciona, intentar con el método async
         if (!roomId) {
           if (isGM) {
-            console.log('🔄 Intentando con OBR.room.getId()...');
+            log('🔄 Intentando con OBR.room.getId()...');
           }
           roomId = await OBR.room.getId();
           if (isGM) {
-            console.log('🏠 Room ID obtenido (OBR.room.getId()):', roomId);
+            log('🏠 Room ID obtenido (OBR.room.getId()):', roomId);
           }
         }
       } catch (e) {
@@ -3646,7 +3648,7 @@ try {
         try {
           const context = await OBR.context.getId();
           if (isGM) {
-            console.log('🏠 Context ID obtenido:', context);
+            log('🏠 Context ID obtenido:', context);
           }
           roomId = context;
         } catch (e2) {
@@ -3658,7 +3660,7 @@ try {
           const obrref = urlParams.get('obrref');
           if (obrref) {
             if (isGM) {
-              console.log('🏠 Usando obrref de URL:', obrref);
+              log('🏠 Usando obrref de URL:', obrref);
             }
             roomId = obrref;
           } else {
@@ -3679,7 +3681,7 @@ try {
       }
       
       if (isGM) {
-        console.log('✅ Room ID final que se usará:', roomId);
+        log('✅ Room ID final que se usará:', roomId);
       }
       
       // Verificar si estamos en modo modal (abierto desde el botón de abrir en modal)
@@ -3802,9 +3804,9 @@ try {
       
       // Solo mostrar logs de debug si es GM
       if (isGM) {
-        console.log('🔍 Configuración room metadata - elementos:', roomMetadataCount);
-        console.log('🔍 Configuración localStorage roomId:', roomId, '- elementos:', currentRoomCount);
-        console.log('🔍 Configuración default - elementos:', defaultCount);
+        log('🔍 Configuración room metadata - elementos:', roomMetadataCount);
+        log('🔍 Configuración localStorage roomId:', roomId, '- elementos:', currentRoomCount);
+        log('🔍 Configuración default - elementos:', defaultCount);
       }
       
       // Prioridad diferenciada por rol:
@@ -3871,8 +3873,8 @@ try {
 
       // Solo mostrar logs de debug si es GM
       if (isGM) {
-        console.log('📊 Configuración cargada para room:', roomId);
-        console.log('📊 Número de carpetas:', pagesConfig?.categories?.length || 0);
+        log('📊 Configuración cargada para room:', roomId);
+        log('📊 Número de carpetas:', pagesConfig?.categories?.length || 0);
       }
       
       const pageList = document.getElementById("page-list");
@@ -4475,7 +4477,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
               if (pageId) {
                 const cacheKey = CACHE_PREFIX + pageId;
                 localStorage.removeItem(cacheKey);
-                console.log('🗑️ Caché limpiado para recarga:', pageId);
+                log('🗑️ Caché limpiado para recarga:', pageId);
               }
               
               // Recargar el contenido si estamos viendo esta página
@@ -5949,7 +5951,7 @@ function clearPageCache(url) {
     const pageInfoCacheKey = PAGE_INFO_CACHE_PREFIX + pageId;
     localStorage.removeItem(pageInfoCacheKey);
     
-    console.log('🗑️ Caché limpiado para página:', pageId);
+    log('🗑️ Caché limpiado para página:', pageId);
     return true;
   }
   return false;
@@ -6591,7 +6593,7 @@ async function shareVideoToPlayers(videoUrl, caption, videoType, shareButton) {
       caption: caption,
       type: videoType
     });
-    console.log('📤 Video compartido con jugadores:', videoUrl.substring(0, 80));
+    log('📤 Video compartido con jugadores:', videoUrl.substring(0, 80));
     
     // Feedback visual
     if (shareButton) {
@@ -6732,7 +6734,7 @@ async function loadIframeContent(url, container, selector = null) {
   // Si hay un selector, intentar cargar solo ese elemento
   if (selector) {
     try {
-      console.log('📄 Cargando elemento específico:', selector, 'de:', url);
+      log('📄 Cargando elemento específico:', selector, 'de:', url);
       
       // Obtener el HTML de la página (puede fallar por CORS)
       const response = await fetch(url, { 
@@ -6814,11 +6816,11 @@ async function loadIframeContent(url, container, selector = null) {
       
     } catch (error) {
       console.warn('⚠️ No se pudo cargar elemento específico (posible CORS):', error.message);
-      console.log('📄 Cargando URL completa como fallback:', url);
+      log('📄 Cargando URL completa como fallback:', url);
       // Fallback: cargar la URL completa con conversión
       const embedResult = convertToEmbedUrl(url);
       if (embedResult.converted) {
-        console.log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
+        log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
       }
       iframe.src = embedResult.url;
       // No usar estilos inline - CSS se encarga de la visibilidad
@@ -6828,11 +6830,11 @@ async function loadIframeContent(url, container, selector = null) {
     // Convertir URL si es de un servicio soportado
     const embedResult = convertToEmbedUrl(url);
     if (embedResult.converted) {
-      console.log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
+      log(`🔄 URL convertida para ${embedResult.service}: ${embedResult.url}`);
     } else if (embedResult.service) {
-      console.log(`📄 URL de ${embedResult.service} (sin conversión necesaria)`);
+      log(`📄 URL de ${embedResult.service} (sin conversión necesaria)`);
     }
-    console.log('📄 Cargando URL en iframe:', embedResult.url);
+    log('📄 Cargando URL en iframe:', embedResult.url);
     // Verificar que estamos en modo iframe antes de establecer src
     if (container.classList.contains('show-content')) {
       container.classList.remove('show-content');
@@ -6890,7 +6892,7 @@ async function shareGoogleDocToPlayers(iframeUrl, name, shareButton) {
       url: iframeUrl,
       name: name
     });
-    console.log('📤 Google Doc compartido con jugadores:', iframeUrl.substring(0, 80));
+    log('📤 Google Doc compartido con jugadores:', iframeUrl.substring(0, 80));
     
     // Feedback visual
     if (shareButton) {
@@ -6967,7 +6969,7 @@ async function loadDemoHtmlContent(url, container) {
   try {
     // Resolver la URL relativa a absoluta
     const absoluteUrl = resolveAppUrl(url);
-    console.log('📄 Cargando demo HTML desde:', absoluteUrl);
+    log('📄 Cargando demo HTML desde:', absoluteUrl);
     
     // Obtener el HTML del archivo
     const response = await fetch(absoluteUrl);
@@ -7064,10 +7066,10 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
     pageTitle.textContent = name;
     
     // Detectar si es un archivo HTML de demo local
-    console.log('🔍 Verificando URL:', url, '| isDemoHtmlFile:', isDemoHtmlFile(url), '| isNotionUrl:', isNotionUrl(url));
+    log('🔍 Verificando URL:', url, '| isDemoHtmlFile:', isDemoHtmlFile(url), '| isNotionUrl:', isNotionUrl(url));
     if (isDemoHtmlFile(url)) {
       // Es un archivo HTML de demo → cargar directamente
-      console.log('📄 Archivo HTML de demo detectado, cargando contenido local');
+      log('📄 Archivo HTML de demo detectado, cargando contenido local');
       
       // Ocultar botón de recargar si existe (solo para Notion)
       let refreshButton = document.getElementById("refresh-page-button");
@@ -7078,9 +7080,9 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       await loadDemoHtmlContent(url, notionContainer);
     } else if (isNotionUrl(url)) {
       // Es una URL de Notion → usar la API
-      console.log('📝 URL de Notion detectada, usando API');
+      log('📝 URL de Notion detectada, usando API');
       if (blockTypes) {
-        console.log('🔍 Filtro de tipos de bloques activado:', blockTypes);
+        log('🔍 Filtro de tipos de bloques activado:', blockTypes);
       }
       
       // Ocultar botón de recargar del header (ahora está en el menú contextual)
@@ -7093,7 +7095,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
     } else {
       // No es una URL de Notion → detectar tipo de contenido
       const linkType = getLinkType(url);
-      console.log('🌐 URL detectada:', linkType.type);
+      log('🌐 URL detectada:', linkType.type);
       
       // Ocultar botón de recargar si existe (solo para Notion)
       let refreshButton = document.getElementById("refresh-page-button");
@@ -7104,7 +7106,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       // Manejar según el tipo de contenido
       if (linkType.type === 'image') {
         // Es una imagen → abrir en image viewer
-        console.log('🖼️ Imagen detectada, abriendo en viewer');
+        log('🖼️ Imagen detectada, abriendo en viewer');
         await loadImageContent(url, notionContainer, name);
         // Ocultar botón de abrir en modal para imágenes
         const openModalButton = document.getElementById("page-open-modal-button-header");
@@ -7113,7 +7115,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         }
       } else if (linkType.type === 'youtube' || linkType.type === 'vimeo') {
         // Es un video → mostrar thumbnail (similar a imagen)
-        console.log('🎬 Video detectado, mostrando thumbnail');
+        log('🎬 Video detectado, mostrando thumbnail');
         await loadVideoThumbnailContent(url, notionContainer, name, linkType.type);
       } else {
         // Cargar en iframe (con selector opcional)
@@ -7206,8 +7208,8 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
             }
           }
           
-          console.log('🔍 URL actual obtenida para modal:', currentUrl);
-          console.log('🔍 Nombre actual obtenido para modal:', currentPageName);
+          log('🔍 URL actual obtenida para modal:', currentUrl);
+          log('🔍 Nombre actual obtenido para modal:', currentPageName);
           
           // Obtener blockTypes y selector desde los datos del botón
           let currentBlockTypes = null;
@@ -7252,7 +7254,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
           
           // Debug (solo en desarrollo)
           if (window.DEBUG_MODE) {
-            console.log('🔍 Modal URL:', modalUrl.toString());
+            log('🔍 Modal URL:', modalUrl.toString());
           }
           
           // Abrir modal - la URL tiene timestamp para evitar caché
@@ -7360,7 +7362,7 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
                 if (pageId) {
                   const cacheKey = CACHE_PREFIX + pageId;
                   localStorage.removeItem(cacheKey);
-                  console.log('🗑️ Caché limpiado para recarga:', pageId);
+                  log('🗑️ Caché limpiado para recarga:', pageId);
                 }
                 
                 // Recargar el contenido
@@ -7927,12 +7929,12 @@ async function showSettings() {
               if (typeof OBR !== 'undefined' && OBR.room && OBR.room.id) {
                 // Primero intentar con la propiedad directa (más confiable)
                 currentRoomId = OBR.room.id;
-                console.log('🔍 roomId obtenido de OBR.room.id:', currentRoomId);
+                log('🔍 roomId obtenido de OBR.room.id:', currentRoomId);
               }
               if (!currentRoomId && typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
                 // Fallback al método async
                 currentRoomId = await OBR.room.getId();
-                console.log('🔍 roomId obtenido de OBR.room.getId():', currentRoomId);
+                log('🔍 roomId obtenido de OBR.room.getId():', currentRoomId);
               }
             } catch (e) {
               console.warn('No se pudo obtener roomId de OBR:', e);
@@ -7941,22 +7943,22 @@ async function showSettings() {
             // Fallback: usar el roomId del scope si lo tenemos
             if (!currentRoomId && roomId) {
               currentRoomId = roomId;
-              console.log('🔍 roomId obtenido del scope:', currentRoomId);
+              log('🔍 roomId obtenido del scope:', currentRoomId);
             }
             
             // Limpiar el cache antes de guardar para evitar conflictos
             pagesConfigCache = null;
             
             // Asegurarnos de tener un roomId válido
-            console.log('🔍 currentRoomId antes de guardar:', currentRoomId);
+            log('🔍 currentRoomId antes de guardar:', currentRoomId);
             
             // Solo borrar default si tenemos un roomId válido (no queremos guardar en default)
             if (currentRoomId) {
               const defaultStorageKey = 'notion-pages-json-default';
-              console.log('🔍 Verificando si existe default:', localStorage.getItem(defaultStorageKey) ? 'SÍ' : 'NO');
+              log('🔍 Verificando si existe default:', localStorage.getItem(defaultStorageKey) ? 'SÍ' : 'NO');
               try {
                 localStorage.removeItem(defaultStorageKey);
-                console.log('🗑️ Default eliminado del localStorage (nuevo vault cargado para roomId:', currentRoomId, ')');
+                log('🗑️ Default eliminado del localStorage (nuevo vault cargado para roomId:', currentRoomId, ')');
               } catch (e) {
                 console.error('❌ Error al borrar default:', e);
               }
@@ -8313,7 +8315,7 @@ function showModalForm(title, fields, onSubmit, onCancel) {
         }
       }
     });
-    console.log('📝 Datos del formulario:', formData); // Debug
+    log('📝 Datos del formulario:', formData); // Debug
     if (onSubmit) onSubmit(formData);
     close();
   });
@@ -8374,7 +8376,7 @@ function showStorageLimitModal(context = 'saving data') {
   
   // Evitar mostrar múltiples modales
   if (storageLimitModalShown) {
-    console.log('⚠️ Storage limit modal already shown, skipping');
+    log('⚠️ Storage limit modal already shown, skipping');
     return;
   }
   storageLimitModalShown = true;
@@ -8570,7 +8572,7 @@ function showContentTooLargeModal(size, pageName) {
 // Función para mostrar el editor visual tipo Notion
 async function showVisualEditor(pagesConfig, roomId = null) {
   const currentConfig = getPagesJSON(roomId) || pagesConfig || await getDefaultJSON();
-  console.log('📖 Abriendo editor visual - Configuración cargada:', currentConfig);
+  log('📖 Abriendo editor visual - Configuración cargada:', currentConfig);
 
   // Ocultar el contenedor principal
   const mainContainer = document.querySelector('.container');
@@ -9116,7 +9118,7 @@ async function showVisualEditor(pagesConfig, roomId = null) {
     });
     filterBtn.addEventListener('click', () => {
       // TODO: Implementar funcionalidad de filtros
-      console.log('Filtros - funcionalidad pendiente');
+      log('Filtros - funcionalidad pendiente');
     });
   }
 
@@ -9138,5 +9140,5 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 }
 
 // Log adicional para verificar que el script se ejecutó completamente
-console.log('✅ index.js cargado completamente');
+log('✅ index.js cargado completamente');
 
