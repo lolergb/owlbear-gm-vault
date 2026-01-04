@@ -5964,6 +5964,551 @@ function isDndbeyond(url) {
   }
 }
 
+// ============================================================
+// 5E.TOOLS INTEGRATION
+// Soporte para cargar contenido de 5e.tools en formato Notion
+// ============================================================
+
+/**
+ * Detectar si una URL es de 5e.tools
+ */
+function is5eToolsUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname.includes('5e.tools');
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Detectar el tipo de contenido de 5e.tools y extraer información
+ * @param {string} url - URL de 5e.tools
+ * @returns {object|null} - { type, id, source } o null si no es soportado
+ */
+function detect5eToolsContent(url) {
+  if (!is5eToolsUrl(url)) return null;
+  
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    const hash = urlObj.hash.replace('#', '').split(',')[0]; // Eliminar parámetros como ,bookview:true
+    
+    if (!hash) return null;
+    
+    // Detectar tipo por pathname
+    if (pathname.includes('bestiary')) {
+      // El ID tiene formato: monstername_source (ej: cultist_mm)
+      const parts = hash.split('_');
+      const source = parts.pop(); // Último elemento es la fuente
+      const name = parts.join('_'); // El resto es el nombre
+      return { type: 'bestiary', id: hash, name, source };
+    }
+    
+    // Tipos adicionales para futuras implementaciones
+    // if (pathname.includes('items')) return { type: 'items', id: hash };
+    // if (pathname.includes('spells')) return { type: 'spells', id: hash };
+    
+    return null;
+  } catch (e) {
+    console.error('Error detectando contenido de 5e.tools:', e);
+    return null;
+  }
+}
+
+/**
+ * Obtener el JSON de un monstruo de 5e.tools
+ * @param {string} source - Código de fuente (mm, vgm, etc.)
+ * @param {string} monsterId - ID completo del monstruo (ej: cultist_mm)
+ * @returns {Promise<object|null>} - Datos del monstruo o null
+ */
+async function fetch5eToolsMonster(source, monsterId) {
+  try {
+    // Mapeo de fuentes a archivos JSON
+    const sourceMap = {
+      'mm': 'bestiary-mm.json',
+      'vgm': 'bestiary-vgm.json',
+      'mtf': 'bestiary-mtf.json',
+      'mpmm': 'bestiary-mpmm.json',
+      'phb': 'bestiary-phb.json',
+      'dmg': 'bestiary-dmg.json',
+      'xge': 'bestiary-xge.json',
+      'tce': 'bestiary-tce.json',
+      'ftd': 'bestiary-ftd.json',
+      'cos': 'bestiary-cos.json',
+      'skt': 'bestiary-skt.json',
+      'toa': 'bestiary-toa.json',
+      'wdh': 'bestiary-wdh.json',
+      'wdmm': 'bestiary-wdmm.json',
+      'bgdia': 'bestiary-bgdia.json',
+      'idrotf': 'bestiary-idrotf.json',
+      'cm': 'bestiary-cm.json',
+      'vrgr': 'bestiary-vrgr.json',
+      'bgg': 'bestiary-bgg.json',
+      'bam': 'bestiary-bam.json',
+      'dsotdq': 'bestiary-dsotdq.json',
+      'pabtso': 'bestiary-pabtso.json',
+      'xmm': 'bestiary-xmm.json'
+    };
+    
+    const jsonFile = sourceMap[source.toLowerCase()] || `bestiary-${source.toLowerCase()}.json`;
+    const jsonUrl = `https://5e.tools/data/bestiary/${jsonFile}`;
+    
+    console.log(`📦 Fetching 5e.tools bestiary from: ${jsonUrl}`);
+    
+    const response = await fetch(jsonUrl);
+    if (!response.ok) {
+      throw new Error(`Error fetching bestiary: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Buscar el monstruo por ID
+    // El ID es el nombre en minúsculas con espacios reemplazados por guiones bajos + _ + source
+    const monsters = data.monster || [];
+    
+    // Buscar coincidencia exacta primero
+    let monster = monsters.find(m => {
+      const generatedId = `${m.name.toLowerCase().replace(/[^a-z0-9]/g, '')}${m.source ? '_' + m.source.toLowerCase() : ''}`;
+      const simpleId = monsterId.toLowerCase().replace(/[^a-z0-9_]/g, '');
+      return generatedId === simpleId || 
+             `${m.name.toLowerCase().replace(/\s+/g, '-')}_${(m.source || source).toLowerCase()}` === monsterId.toLowerCase();
+    });
+    
+    // Si no hay coincidencia exacta, buscar por nombre parcial
+    if (!monster) {
+      const searchName = monsterId.split('_')[0].replace(/-/g, ' ');
+      monster = monsters.find(m => 
+        m.name.toLowerCase() === searchName.toLowerCase() ||
+        m.name.toLowerCase().replace(/[^a-z0-9]/g, '') === searchName.toLowerCase().replace(/[^a-z0-9]/g, '')
+      );
+    }
+    
+    if (!monster) {
+      console.warn(`⚠️ Monstruo no encontrado: ${monsterId} en ${jsonFile}`);
+      return null;
+    }
+    
+    console.log(`✅ Monstruo encontrado: ${monster.name}`);
+    return monster;
+    
+  } catch (e) {
+    console.error('Error fetching 5e.tools monster:', e);
+    return null;
+  }
+}
+
+/**
+ * Convertir un monstruo de 5e.tools a bloques de Notion
+ * @param {object} monster - Datos del monstruo de 5e.tools
+ * @returns {Array} - Array de bloques de Notion
+ */
+function convert5eMonsterToNotionBlocks(monster) {
+  const blocks = [];
+  
+  // Helper para crear bloques de texto
+  const createParagraph = (text) => ({
+    type: 'paragraph',
+    paragraph: { rich_text: [{ type: 'text', text: { content: text } }] }
+  });
+  
+  const createHeading2 = (text) => ({
+    type: 'heading_2',
+    heading_2: { rich_text: [{ type: 'text', text: { content: text } }] }
+  });
+  
+  const createHeading3 = (text) => ({
+    type: 'heading_3',
+    heading_3: { rich_text: [{ type: 'text', text: { content: text } }] }
+  });
+  
+  const createCallout = (emoji, text) => ({
+    type: 'callout',
+    callout: {
+      icon: { emoji: emoji },
+      rich_text: [{ type: 'text', text: { content: text } }]
+    }
+  });
+  
+  const createDivider = () => ({ type: 'divider' });
+  
+  const createBullet = (text) => ({
+    type: 'bulleted_list_item',
+    bulleted_list_item: { rich_text: [{ type: 'text', text: { content: text } }] }
+  });
+  
+  // Helper para formatear tamaño
+  const sizeMap = {
+    'T': 'Tiny', 'S': 'Small', 'M': 'Medium', 
+    'L': 'Large', 'H': 'Huge', 'G': 'Gargantuan'
+  };
+  
+  // Helper para formatear AC
+  const formatAC = (ac) => {
+    if (!ac) return 'N/A';
+    if (typeof ac === 'number') return ac.toString();
+    if (Array.isArray(ac)) {
+      return ac.map(a => {
+        if (typeof a === 'number') return a.toString();
+        if (typeof a === 'object') {
+          let acStr = a.ac?.toString() || '';
+          if (a.from) acStr += ` (${a.from.join(', ')})`;
+          return acStr;
+        }
+        return a;
+      }).join(', ');
+    }
+    return ac.toString();
+  };
+  
+  // Helper para formatear HP
+  const formatHP = (hp) => {
+    if (!hp) return 'N/A';
+    if (typeof hp === 'number') return hp.toString();
+    if (hp.average && hp.formula) return `${hp.average} (${hp.formula})`;
+    if (hp.average) return hp.average.toString();
+    return hp.toString();
+  };
+  
+  // Helper para formatear velocidad
+  const formatSpeed = (speed) => {
+    if (!speed) return 'N/A';
+    if (typeof speed === 'string') return speed;
+    const parts = [];
+    if (speed.walk) parts.push(`${speed.walk} ft.`);
+    if (speed.fly) parts.push(`fly ${typeof speed.fly === 'object' ? speed.fly.number : speed.fly} ft.${speed.fly.condition ? ` ${speed.fly.condition}` : ''}`);
+    if (speed.swim) parts.push(`swim ${speed.swim} ft.`);
+    if (speed.climb) parts.push(`climb ${speed.climb} ft.`);
+    if (speed.burrow) parts.push(`burrow ${speed.burrow} ft.`);
+    return parts.length > 0 ? parts.join(', ') : '30 ft.';
+  };
+  
+  // Helper para formatear modificador de atributo
+  const getModifier = (score) => {
+    if (!score) return '+0';
+    const mod = Math.floor((score - 10) / 2);
+    return mod >= 0 ? `+${mod}` : mod.toString();
+  };
+  
+  // Helper para formatear alineamiento
+  const formatAlignment = (alignment) => {
+    if (!alignment) return 'unaligned';
+    if (typeof alignment === 'string') return alignment;
+    if (Array.isArray(alignment)) {
+      const alignMap = {
+        'L': 'lawful', 'N': 'neutral', 'C': 'chaotic',
+        'G': 'good', 'E': 'evil', 'U': 'unaligned', 'A': 'any'
+      };
+      return alignment.map(a => alignMap[a] || a).join(' ');
+    }
+    return 'unaligned';
+  };
+  
+  // Helper para formatear tipo de criatura
+  const formatType = (type) => {
+    if (!type) return 'creature';
+    if (typeof type === 'string') return type;
+    if (typeof type === 'object') {
+      let typeStr = type.type || 'creature';
+      if (type.tags) typeStr += ` (${type.tags.join(', ')})`;
+      return typeStr;
+    }
+    return 'creature';
+  };
+  
+  // Helper para procesar entries (pueden ser strings u objetos complejos)
+  const processEntries = (entries) => {
+    if (!entries) return [];
+    const result = [];
+    
+    entries.forEach(entry => {
+      if (typeof entry === 'string') {
+        result.push(createParagraph(entry));
+      } else if (typeof entry === 'object') {
+        if (entry.type === 'entries' && entry.name) {
+          result.push(createHeading3(entry.name));
+          if (entry.entries) {
+            result.push(...processEntries(entry.entries));
+          }
+        } else if (entry.type === 'list' && entry.items) {
+          entry.items.forEach(item => {
+            result.push(createBullet(typeof item === 'string' ? item : JSON.stringify(item)));
+          });
+        } else if (entry.type === 'table') {
+          // Simplificar tablas como texto
+          result.push(createParagraph('[Table]'));
+        } else if (entry.entries) {
+          result.push(...processEntries(entry.entries));
+        }
+      }
+    });
+    
+    return result;
+  };
+  
+  // ==========================================
+  // CONSTRUIR BLOQUES
+  // ==========================================
+  
+  // Título (nombre del monstruo)
+  blocks.push({
+    type: 'heading_1',
+    heading_1: { rich_text: [{ type: 'text', text: { content: monster.name } }] }
+  });
+  
+  // Subtítulo: Tamaño, Tipo, Alineamiento
+  const size = sizeMap[monster.size?.[0]] || monster.size || 'Medium';
+  const type = formatType(monster.type);
+  const alignment = formatAlignment(monster.alignment);
+  blocks.push(createParagraph(`${size} ${type}, ${alignment}`));
+  
+  blocks.push(createDivider());
+  
+  // Stats principales
+  blocks.push(createCallout('🛡️', `Armor Class: ${formatAC(monster.ac)}`));
+  blocks.push(createCallout('❤️', `Hit Points: ${formatHP(monster.hp)}`));
+  blocks.push(createCallout('🏃', `Speed: ${formatSpeed(monster.speed)}`));
+  
+  blocks.push(createDivider());
+  
+  // Atributos
+  blocks.push(createHeading2('Ability Scores'));
+  const str = monster.str || 10;
+  const dex = monster.dex || 10;
+  const con = monster.con || 10;
+  const int = monster.int || 10;
+  const wis = monster.wis || 10;
+  const cha = monster.cha || 10;
+  
+  blocks.push(createParagraph(
+    `STR ${str} (${getModifier(str)}) | DEX ${dex} (${getModifier(dex)}) | CON ${con} (${getModifier(con)})`
+  ));
+  blocks.push(createParagraph(
+    `INT ${int} (${getModifier(int)}) | WIS ${wis} (${getModifier(wis)}) | CHA ${cha} (${getModifier(cha)})`
+  ));
+  
+  // Saving Throws
+  if (monster.save) {
+    const saves = Object.entries(monster.save).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(', ');
+    blocks.push(createParagraph(`Saving Throws: ${saves}`));
+  }
+  
+  // Skills
+  if (monster.skill) {
+    const skills = Object.entries(monster.skill).map(([k, v]) => `${k} ${v}`).join(', ');
+    blocks.push(createParagraph(`Skills: ${skills}`));
+  }
+  
+  // Damage Vulnerabilities, Resistances, Immunities
+  if (monster.vulnerable) {
+    blocks.push(createParagraph(`Damage Vulnerabilities: ${Array.isArray(monster.vulnerable) ? monster.vulnerable.join(', ') : monster.vulnerable}`));
+  }
+  if (monster.resist) {
+    const resistances = Array.isArray(monster.resist) 
+      ? monster.resist.map(r => typeof r === 'object' ? r.resist?.join(', ') || JSON.stringify(r) : r).join(', ')
+      : monster.resist;
+    blocks.push(createParagraph(`Damage Resistances: ${resistances}`));
+  }
+  if (monster.immune) {
+    const immunities = Array.isArray(monster.immune) 
+      ? monster.immune.map(i => typeof i === 'object' ? i.immune?.join(', ') || JSON.stringify(i) : i).join(', ')
+      : monster.immune;
+    blocks.push(createParagraph(`Damage Immunities: ${immunities}`));
+  }
+  if (monster.conditionImmune) {
+    blocks.push(createParagraph(`Condition Immunities: ${Array.isArray(monster.conditionImmune) ? monster.conditionImmune.join(', ') : monster.conditionImmune}`));
+  }
+  
+  // Senses
+  if (monster.senses) {
+    const senses = Array.isArray(monster.senses) ? monster.senses.join(', ') : monster.senses;
+    blocks.push(createParagraph(`Senses: ${senses}${monster.passive ? `, passive Perception ${monster.passive}` : ''}`));
+  } else if (monster.passive) {
+    blocks.push(createParagraph(`Senses: passive Perception ${monster.passive}`));
+  }
+  
+  // Languages
+  if (monster.languages) {
+    const languages = Array.isArray(monster.languages) ? monster.languages.join(', ') : monster.languages;
+    blocks.push(createParagraph(`Languages: ${languages || '—'}`));
+  }
+  
+  // Challenge Rating
+  if (monster.cr) {
+    const cr = typeof monster.cr === 'object' ? monster.cr.cr : monster.cr;
+    blocks.push(createParagraph(`Challenge: ${cr}`));
+  }
+  
+  blocks.push(createDivider());
+  
+  // Traits
+  if (monster.trait && monster.trait.length > 0) {
+    blocks.push(createHeading2('Traits'));
+    monster.trait.forEach(trait => {
+      if (trait.name) {
+        blocks.push(createHeading3(trait.name));
+      }
+      if (trait.entries) {
+        blocks.push(...processEntries(trait.entries));
+      }
+    });
+  }
+  
+  // Actions
+  if (monster.action && monster.action.length > 0) {
+    blocks.push(createHeading2('Actions'));
+    monster.action.forEach(action => {
+      if (action.name) {
+        blocks.push(createHeading3(action.name));
+      }
+      if (action.entries) {
+        blocks.push(...processEntries(action.entries));
+      }
+    });
+  }
+  
+  // Bonus Actions
+  if (monster.bonus && monster.bonus.length > 0) {
+    blocks.push(createHeading2('Bonus Actions'));
+    monster.bonus.forEach(bonus => {
+      if (bonus.name) {
+        blocks.push(createHeading3(bonus.name));
+      }
+      if (bonus.entries) {
+        blocks.push(...processEntries(bonus.entries));
+      }
+    });
+  }
+  
+  // Reactions
+  if (monster.reaction && monster.reaction.length > 0) {
+    blocks.push(createHeading2('Reactions'));
+    monster.reaction.forEach(reaction => {
+      if (reaction.name) {
+        blocks.push(createHeading3(reaction.name));
+      }
+      if (reaction.entries) {
+        blocks.push(...processEntries(reaction.entries));
+      }
+    });
+  }
+  
+  // Legendary Actions
+  if (monster.legendary && monster.legendary.length > 0) {
+    blocks.push(createHeading2('Legendary Actions'));
+    if (monster.legendaryHeader) {
+      blocks.push(...processEntries(monster.legendaryHeader));
+    } else {
+      blocks.push(createParagraph(`The ${monster.name.toLowerCase()} can take 3 legendary actions, choosing from the options below. Only one legendary action option can be used at a time and only at the end of another creature's turn. The ${monster.name.toLowerCase()} regains spent legendary actions at the start of its turn.`));
+    }
+    monster.legendary.forEach(legendary => {
+      if (legendary.name) {
+        blocks.push(createHeading3(legendary.name));
+      }
+      if (legendary.entries) {
+        blocks.push(...processEntries(legendary.entries));
+      }
+    });
+  }
+  
+  // Lair Actions
+  if (monster.lair && monster.lair.length > 0) {
+    blocks.push(createHeading2('Lair Actions'));
+    blocks.push(...processEntries(monster.lair));
+  }
+  
+  // Regional Effects
+  if (monster.regional && monster.regional.length > 0) {
+    blocks.push(createHeading2('Regional Effects'));
+    blocks.push(...processEntries(monster.regional));
+  }
+  
+  return blocks;
+}
+
+/**
+ * Cargar contenido de 5e.tools y renderizarlo como Notion
+ * @param {string} url - URL de 5e.tools
+ * @param {HTMLElement} container - Contenedor donde renderizar
+ * @returns {Promise<boolean>} - true si se cargó correctamente, false si hay que usar fallback
+ */
+async function load5eToolsContent(url, container) {
+  const contentDiv = container.querySelector('#notion-content');
+  if (!contentDiv) {
+    console.error('No se encontró el contenedor de contenido');
+    return false;
+  }
+  
+  // Mostrar loading
+  setNotionDisplayMode(container, 'content');
+  contentDiv.innerHTML = `
+    <div class="empty-state notion-loading">
+      <div class="empty-state-icon">📖</div>
+      <p class="empty-state-text">Loading from 5e.tools...</p>
+    </div>
+  `;
+  
+  try {
+    const detected = detect5eToolsContent(url);
+    if (!detected) {
+      console.warn('URL de 5e.tools no soportada:', url);
+      return false;
+    }
+    
+    console.log('📖 Contenido 5e.tools detectado:', detected);
+    
+    if (detected.type === 'bestiary') {
+      // Cargar monstruo
+      const monster = await fetch5eToolsMonster(detected.source, detected.id);
+      if (!monster) {
+        contentDiv.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <p class="empty-state-text">Monster not found: ${detected.id}</p>
+            <p class="empty-state-hint">Try opening the page directly on 5e.tools</p>
+          </div>
+        `;
+        return false;
+      }
+      
+      // Convertir a bloques de Notion
+      const notionBlocks = convert5eMonsterToNotionBlocks(monster);
+      
+      // Renderizar usando el sistema existente
+      const html = await renderBlocks(notionBlocks);
+      contentDiv.innerHTML = html;
+      
+      // Agregar event listeners a las imágenes si las hay
+      await attachImageClickHandlers();
+      
+      console.log('✅ Contenido de 5e.tools renderizado correctamente');
+      return true;
+    }
+    
+    // Otros tipos no soportados aún
+    console.warn('Tipo de contenido 5e.tools no soportado:', detected.type);
+    return false;
+    
+  } catch (error) {
+    console.error('Error cargando contenido de 5e.tools:', error);
+    contentDiv.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">❌</div>
+        <p class="empty-state-text">Error loading 5e.tools content</p>
+        <p class="empty-state-hint">${error.message}</p>
+      </div>
+    `;
+    return false;
+  }
+}
+
+// ============================================================
+// FIN 5E.TOOLS INTEGRATION
+// ============================================================
+
 // Función para obtener el tipo de link y su icono correspondiente
 // Preparado para añadir más tipos en el futuro
 function getLinkType(url) {
@@ -5983,6 +6528,11 @@ function getLinkType(url) {
     
     if (hostname.includes('dndbeyond.com')) {
       return { type: 'dndbeyond', icon: 'icon-dnd.svg' };
+    }
+    
+    // 5e.tools - Renderizado nativo como Notion
+    if (hostname.includes('5e.tools')) {
+      return { type: '5etools', icon: 'icon-dnd.svg' };
     }
     
     // ============================================================
@@ -7092,6 +7642,15 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
         // Es un video → mostrar thumbnail (similar a imagen)
         console.log('🎬 Video detectado, mostrando thumbnail');
         await loadVideoThumbnailContent(url, notionContainer, name, linkType.type);
+      } else if (linkType.type === '5etools') {
+        // Es 5e.tools → cargar con renderizado nativo
+        console.log('📖 URL de 5e.tools detectada, intentando renderizado nativo');
+        const success = await load5eToolsContent(url, notionContainer);
+        if (!success) {
+          // Fallback a iframe si falla el renderizado nativo
+          console.log('⚠️ Fallback a iframe para 5e.tools');
+          await loadIframeContent(url, notionContainer, selector);
+        }
       } else {
         // Cargar en iframe (con selector opcional)
         await loadIframeContent(url, notionContainer, selector);
