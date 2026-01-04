@@ -2757,6 +2757,13 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         listType = null;
       }
       
+      // Prioridad: Si el bloque tiene HTML personalizado, usarlo directamente
+      if (block._customHtml) {
+        html += block._customHtml;
+        console.log(`    ✅ Bloque [${index}] renderizado con HTML personalizado`);
+        continue; // Saltar el resto del procesamiento
+      }
+      
       // Manejar tablas de forma especial
       if (block.type === 'table') {
         // Verificar si la tabla coincide con el filtro
@@ -2790,18 +2797,20 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           }
         }
         try {
-          // Si el bloque tiene HTML personalizado, usarlo directamente
+          // Si el bloque tiene HTML personalizado, usarlo directamente (prioridad)
           if (block._customHtml) {
             html += block._customHtml;
             console.log(`    ✅ Bloque [${index}] renderizado con HTML personalizado`);
+            continue; // Saltar el resto del procesamiento
+          }
+          
+          // Renderizar bloque normal
+          const rendered = renderBlock(block);
+          if (rendered) {
+            html += rendered;
+            console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
           } else {
-            const rendered = renderBlock(block);
-            if (rendered) {
-              html += rendered;
-              console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
-            } else {
-              console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
-            }
+            console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
           }
         } catch (error) {
           console.error(`❌ Error al renderizar bloque [${index}] de tipo ${type}:`, error);
@@ -6273,13 +6282,22 @@ function convert5eMonsterToNotionBlocks(monster) {
         if (typeof a === 'number') return a.toString();
         if (typeof a === 'object') {
           let acStr = a.ac?.toString() || '';
-          if (a.from) acStr += ` (${a.from.join(', ')})`;
-          return acStr;
+          if (a.from) {
+            // a.from puede ser un array de strings o objetos con {@item}
+            const fromStr = Array.isArray(a.from) 
+              ? a.from.map(f => typeof f === 'string' ? f : f.name || JSON.stringify(f)).join(', ')
+              : a.from;
+            acStr += ` (${fromStr})`;
+          }
+          // Aplicar formateo de 5e.tools al resultado
+          return format5eToolsText(acStr);
         }
         return a;
       }).join(', ');
     }
-    return ac.toString();
+    // Aplicar formateo de 5e.tools si es string
+    const result = ac.toString();
+    return format5eToolsText(result);
   };
   
   // Helper para formatear HP
@@ -6411,7 +6429,7 @@ function convert5eMonsterToNotionBlocks(monster) {
   
   blocks.push(createDivider());
   
-  // Atributos - Usar tabla
+  // Atributos - Usar tabla HTML personalizada
   blocks.push(createHeading2('Ability Scores'));
   const str = monster.str || 10;
   const dex = monster.dex || 10;
@@ -6420,53 +6438,31 @@ function convert5eMonsterToNotionBlocks(monster) {
   const wis = monster.wis || 10;
   const cha = monster.cha || 10;
   
-  // Crear tabla de ability scores
-  blocks.push({
-    type: 'table',
-    table: {
-      table_width: 6,
-      has_column_header: true,
-      has_row_header: false
-    },
-    id: `ability-scores-${Date.now()}` // ID temporal para la tabla
-  });
-  
-  // Agregar filas de la tabla (se renderizarán después)
-  // Nota: Las tablas de Notion requieren filas como bloques hijos, pero para simplificar
-  // vamos a crear una tabla HTML directamente
-  const abilityScoresTable = {
-    type: 'table',
-    table: {
-      table_width: 6,
-      has_column_header: true,
-      has_row_header: false
-    },
-    // Simulamos las filas como HTML en un bloque especial
-    _customHtml: `
-      <table class="notion-table">
-        <thead>
-          <tr>
-            <th>STR</th>
-            <th>DEX</th>
-            <th>CON</th>
-            <th>INT</th>
-            <th>WIS</th>
-            <th>CHA</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>${str} (${getModifier(str)})</td>
-            <td>${dex} (${getModifier(dex)})</td>
-            <td>${con} (${getModifier(con)})</td>
-            <td>${int} (${getModifier(int)})</td>
-            <td>${wis} (${getModifier(wis)})</td>
-            <td>${cha} (${getModifier(cha)})</td>
-          </tr>
-        </tbody>
-      </table>
-    `
-  };
+  // Crear tabla HTML directamente (no usar tipo 'table' de Notion)
+  const abilityScoresTableHtml = `
+    <table class="notion-table">
+      <thead>
+        <tr>
+          <th>STR</th>
+          <th>DEX</th>
+          <th>CON</th>
+          <th>INT</th>
+          <th>WIS</th>
+          <th>CHA</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${str} (${getModifier(str)})</td>
+          <td>${dex} (${getModifier(dex)})</td>
+          <td>${con} (${getModifier(con)})</td>
+          <td>${int} (${getModifier(int)})</td>
+          <td>${wis} (${getModifier(wis)})</td>
+          <td>${cha} (${getModifier(cha)})</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
   
   // Insertar tabla HTML directamente usando un bloque personalizado
   blocks.push({
@@ -6478,7 +6474,7 @@ function convert5eMonsterToNotionBlocks(monster) {
         plain_text: ''
       }]
     },
-    _customHtml: abilityScoresTable._customHtml
+    _customHtml: abilityScoresTableHtml
   });
   
   // Saving Throws
