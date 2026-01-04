@@ -3678,50 +3678,50 @@ async function apply5eToolsStatsToToken(itemId, source, monsterId) {
     const item = items[0];
     
     // Actualizar el token con las stats
+    // Stat Bubbles usa metadatos con namespace "com.bubbles"
+    const BUBBLES_METADATA_KEY = "com.bubbles";
+    
     await OBR.scene.items.updateItems([item], (updateItems) => {
       const token = updateItems[0];
       
+      // Inicializar metadatos de Stat Bubbles si no existen
+      if (!token.metadata[BUBBLES_METADATA_KEY]) {
+        token.metadata[BUBBLES_METADATA_KEY] = {};
+      }
+      
+      const bubblesData = token.metadata[BUBBLES_METADATA_KEY];
+      
       // Actualizar HP si está disponible
       if (hp !== null) {
-        // Owlbear Rodeo puede usar diferentes estructuras para stats
-        // Intentar múltiples formatos para compatibilidad
+        // Stat Bubbles usa: hitPoints (current), maxHitPoints (max)
+        bubblesData.hitPoints = hp;
+        bubblesData.maxHitPoints = hp;
+        
+        // También guardar en formato alternativo para compatibilidad
         if (!token.dndStats) {
           token.dndStats = {};
         }
-        
-        // Formato estándar de Owlbear Rodeo
         token.dndStats.hitPoints = hp;
         token.dndStats.maxHitPoints = hp;
         
-        // También intentar formato alternativo
-        if (!token.stats) {
-          token.stats = {};
-        }
-        token.stats.hp = hp;
-        token.stats.maxHp = hp;
-        
-        console.log(`✅ HP configurado: ${hp}`);
+        console.log(`✅ HP configurado: ${hp} (current y max)`);
       }
       
       // Actualizar AC si está disponible
       if (ac !== null) {
+        // Stat Bubbles usa: armorClass
+        bubblesData.armorClass = ac;
+        
+        // También guardar en formato alternativo para compatibilidad
         if (!token.dndStats) {
           token.dndStats = {};
         }
-        
-        // Formato estándar de Owlbear Rodeo
         token.dndStats.armorClass = ac;
-        
-        // También intentar formato alternativo
-        if (!token.stats) {
-          token.stats = {};
-        }
-        token.stats.ac = ac;
         
         console.log(`✅ AC configurado: ${ac}`);
       }
       
-      // Guardar también en metadatos para referencia y compatibilidad
+      // Guardar también en nuestros metadatos para referencia
       if (hp !== null) {
         token.metadata[`${METADATA_KEY}/monsterHP`] = hp;
         token.metadata[`${METADATA_KEY}/monsterMaxHP`] = hp;
