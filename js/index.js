@@ -3755,14 +3755,20 @@ async function applyNotionStatsToToken(itemId, notionUrl) {
           if (richText && Array.isArray(richText)) {
             const text = richText.map(rt => rt.plain_text || '').join(' ').toLowerCase();
             
-            // Buscar HP (Hit Points)
+            // Buscar HP (Hit Points) - en inglés y español
             if (!hp) {
               // Patrones: "Hit Points: 18", "HP: 18", "Hit Points 18", "18 HP"
+              // También en español: "PG 45", "Puntos de Golpe: 45", "PG 45 (6d8+18)"
               const hpPatterns = [
                 /hit\s+points?[:\s]+(\d+)/i,
                 /hp[:\s]+(\d+)/i,
                 /(\d+)\s+hit\s+points?/i,
-                /(\d+)\s+hp/i
+                /(\d+)\s+hp/i,
+                // Español
+                /puntos?\s+de\s+golpe[:\s]+(\d+)/i,
+                /pg[:\s]+(\d+)/i,  // "PG 45" o "PG: 45"
+                /(\d+)\s+pg/i,     // "45 PG"
+                /pg\s+(\d+)\s*\(/i  // "PG 45 (" - para capturar el número antes de la fórmula
               ];
               
               for (const pattern of hpPatterns) {
@@ -3775,14 +3781,19 @@ async function applyNotionStatsToToken(itemId, notionUrl) {
               }
             }
             
-            // Buscar AC (Armor Class)
+            // Buscar AC (Armor Class) - en inglés y español
             if (!ac) {
               // Patrones: "Armor Class: 12", "AC: 12", "Armor Class 12", "12 AC"
+              // También en español: "CA 16", "Clase de Armadura: 16"
               const acPatterns = [
                 /armor\s+class[:\s]+(\d+)/i,
                 /ac[:\s]+(\d+)/i,
                 /(\d+)\s+armor\s+class/i,
-                /(\d+)\s+ac/i
+                /(\d+)\s+ac/i,
+                // Español
+                /clase\s+de\s+armadura[:\s]+(\d+)/i,
+                /ca[:\s]+(\d+)/i,  // "CA 16" o "CA: 16"
+                /(\d+)\s+ca/i      // "16 CA"
               ];
               
               for (const pattern of acPatterns) {
