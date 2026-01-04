@@ -6059,9 +6059,13 @@ async function fetch5eToolsMonster(source, monsterId) {
     
     console.log(`📦 Fetching 5e.tools bestiary from: ${jsonUrl}`);
     
-    const response = await fetch(jsonUrl);
+    // Usar proxy de Netlify para evitar CORS
+    const proxyUrl = `/.netlify/functions/5etools-api?url=${encodeURIComponent(jsonUrl)}`;
+    
+    const response = await fetch(proxyUrl);
     if (!response.ok) {
-      throw new Error(`Error fetching bestiary: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error fetching bestiary: ${response.status} - ${errorData.error || response.statusText}`);
     }
     
     const data = await response.json();
