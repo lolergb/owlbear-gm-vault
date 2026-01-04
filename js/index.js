@@ -3478,9 +3478,6 @@ async function showPageSelectorForToken(itemId, pagesConfig, roomId) {
         // Agregar página con su información
         const page = category.pages[item.index];
         if (page.url) {
-          // Crear indentación visual usando entidades HTML (&#8194; = en-space)
-          // 2 en-spaces por nivel para mejor visualización en el select
-          const indent = '&#8194;&#8194;'.repeat(level);
           const displayPath = currentPath.join(' / ');
           
           allPages.push({
@@ -3489,7 +3486,6 @@ async function showPageSelectorForToken(itemId, pagesConfig, roomId) {
             path: currentPath,
             displayPath: displayPath,
             level: level,
-            indent: indent,
             icon: page.icon || null
           });
         }
@@ -3510,11 +3506,10 @@ async function showPageSelectorForToken(itemId, pagesConfig, roomId) {
     return;
   }
   
-  // Crear opciones para el select con indentación visual
+  // Crear opciones para el select
   const pageOptions = allPages.map((page, index) => {
-    // Formato: indentación + path → nombre (similar al vault)
-    // Usar la indentación calculada para mostrar la jerarquía
-    const label = `${page.indent}${page.displayPath} → ${page.name}`;
+    // Formato: path → nombre (sin indentación)
+    const label = `${page.displayPath} → ${page.name}`;
     
     return {
       label: label,
