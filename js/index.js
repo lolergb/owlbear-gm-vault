@@ -1893,11 +1893,17 @@ function renderRichText(richTextArray) {
   if (!richTextArray || richTextArray.length === 0) return '';
   
   return richTextArray.map(text => {
-    let content = text.plain_text || '';
+    // Priorizar text.text.content si tiene HTML (de formateo de 5e.tools), sino usar plain_text
+    let content = (text.text && text.text.content) || text.plain_text || '';
     
-    // Convertir saltos de línea a <br> antes de aplicar formatos
-    // Esto asegura que los <br> queden dentro de los tags de formato
-    content = content.replace(/\n/g, '<br>');
+    // Si el content ya tiene HTML (de formateo de 5e.tools), usarlo directamente
+    // pero aún aplicar anotaciones si existen
+    const hasHtml = content.includes('<') && content.includes('>');
+    
+    if (!hasHtml) {
+      // Convertir saltos de línea a <br> antes de aplicar formatos
+      content = content.replace(/\n/g, '<br>');
+    }
     
     if (text.annotations) {
       if (text.annotations.bold) content = `<strong class="notion-text-bold">${content}</strong>`;
@@ -2784,12 +2790,18 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           }
         }
         try {
-          const rendered = renderBlock(block);
-          if (rendered) {
-            html += rendered;
-            console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
+          // Si el bloque tiene HTML personalizado, usarlo directamente
+          if (block._customHtml) {
+            html += block._customHtml;
+            console.log(`    ✅ Bloque [${index}] renderizado con HTML personalizado`);
           } else {
-            console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
+            const rendered = renderBlock(block);
+            if (rendered) {
+              html += rendered;
+              console.log(`    ✅ Bloque [${index}] renderizado (${rendered.length} caracteres)`);
+            } else {
+              console.log(`    ⚠️ Bloque [${index}] no devolvió HTML`);
+            }
           }
         } catch (error) {
           console.error(`❌ Error al renderizar bloque [${index}] de tipo ${type}:`, error);
@@ -6159,41 +6171,91 @@ function convert5eMonsterToNotionBlocks(monster) {
   
   const blocks = [];
   
+  // Helper para formatear texto especial de 5e.tools
+  // Convierte {@atk mw}, {@hit 4}, {@h}5, {@damage 1d6 + 2} a formato legible
+  const format5eToolsText = (text) => {
+    if (!text || typeof text !== 'string') return text;
+    
+    return text
+      // {@atk mw} -> "melee weapon attack" o "ranged weapon attack"
+      .replace(/\{@atk\s+(\w+)\}/gi, (match, type) => {
+        const typeMap = { mw: 'melee weapon', rw: 'ranged weapon', ms: 'melee spell', rs: 'ranged spell' };
+        return typeMap[type.toLowerCase()] || `${type} attack`;
+      })
+      // {@hit X} -> "+X to hit"
+      .replace(/\{@hit\s+(-?\d+)\}/gi, (match, bonus) => {
+        const num = parseInt(bonus);
+        return num >= 0 ? `+${num}` : `${num}`;
+      })
+      // {@h}X -> "Hit: X"
+      .replace(/\{@h\}(-?\d+)/gi, (match, damage) => `Hit: ${damage}`)
+      // {@damage XdY + Z} -> "XdY + Z damage" (con formato especial)
+      .replace(/\{@damage\s+([^}]+)\}/gi, (match, formula) => {
+        return `<strong>${formula}</strong>`;
+      })
+      // {@dice XdY} -> "XdY" (dados)
+      .replace(/\{@dice\s+([^}]+)\}/gi, (match, dice) => `<strong>${dice}</strong>`)
+      // {@skill X} -> "X"
+      .replace(/\{@skill\s+([^}]+)\}/gi, (match, skill) => skill)
+      // {@spell X} -> "X" (en cursiva)
+      .replace(/\{@spell\s+([^}]+)\}/gi, (match, spell) => `<em>${spell}</em>`)
+      // {@item X} -> "X" (en cursiva)
+      .replace(/\{@item\s+([^}]+)\}/gi, (match, item) => `<em>${item}</em>`)
+      // {@creature X} -> "X" (en cursiva)
+      .replace(/\{@creature\s+([^}]+)\}/gi, (match, creature) => `<em>${creature}</em>`)
+      // {@condition X} -> "X" (en cursiva)
+      .replace(/\{@condition\s+([^}]+)\}/gi, (match, condition) => `<em>${condition}</em>`)
+      // {@filter X} -> "X"
+      .replace(/\{@filter\s+([^}]+)\}/gi, (match, filter) => filter)
+      // {@recharge X} -> "Recharge X"
+      .replace(/\{@recharge\s+([^}]+)\}/gi, (match, recharge) => `Recharge ${recharge}`)
+      // {@scaledamage X|Y|Z} -> simplificado
+      .replace(/\{@scaledamage[^}]+\}/gi, '')
+      // {@scaledice X|Y|Z} -> simplificado
+      .replace(/\{@scaledice[^}]+\}/gi, '')
+      // Cualquier otro {@...} -> eliminar
+      .replace(/\{@[^}]+\}/gi, '');
+  };
+  
   // Helper para crear bloques de texto (formato compatible con renderRichText)
-  const createTextBlock = (text) => ({
-    type: 'text',
-    text: { content: text },
-    plain_text: text  // Necesario para renderRichText
-  });
+  // Aplica formateo de 5e.tools al texto
+  const createTextBlock = (text, apply5eFormatting = true) => {
+    const formattedText = apply5eFormatting ? format5eToolsText(text) : text;
+    return {
+      type: 'text',
+      text: { content: formattedText },
+      plain_text: text  // Mantener texto original sin formato para accesibilidad
+    };
+  };
   
-  const createParagraph = (text) => ({
+  const createParagraph = (text, apply5eFormatting = true) => ({
     type: 'paragraph',
-    paragraph: { rich_text: [createTextBlock(text)] }
+    paragraph: { rich_text: [createTextBlock(text, apply5eFormatting)] }
   });
   
-  const createHeading2 = (text) => ({
+  const createHeading2 = (text, apply5eFormatting = true) => ({
     type: 'heading_2',
-    heading_2: { rich_text: [createTextBlock(text)] }
+    heading_2: { rich_text: [createTextBlock(text, apply5eFormatting)] }
   });
   
-  const createHeading3 = (text) => ({
+  const createHeading3 = (text, apply5eFormatting = true) => ({
     type: 'heading_3',
-    heading_3: { rich_text: [createTextBlock(text)] }
+    heading_3: { rich_text: [createTextBlock(text, apply5eFormatting)] }
   });
   
-  const createCallout = (emoji, text) => ({
+  const createCallout = (emoji, text, apply5eFormatting = true) => ({
     type: 'callout',
     callout: {
       icon: { emoji: emoji },
-      rich_text: [createTextBlock(text)]
+      rich_text: [createTextBlock(text, apply5eFormatting)]
     }
   });
   
   const createDivider = () => ({ type: 'divider' });
   
-  const createBullet = (text) => ({
+  const createBullet = (text, apply5eFormatting = true) => ({
     type: 'bulleted_list_item',
-    bulleted_list_item: { rich_text: [createTextBlock(text)] }
+    bulleted_list_item: { rich_text: [createTextBlock(text, apply5eFormatting)] }
   });
   
   // Helper para formatear tamaño
@@ -6276,27 +6338,34 @@ function convert5eMonsterToNotionBlocks(monster) {
   };
   
   // Helper para procesar entries (pueden ser strings u objetos complejos)
+  // Aplica formateo de 5e.tools a todos los textos
   const processEntries = (entries) => {
     if (!entries) return [];
     const result = [];
     
     entries.forEach(entry => {
       if (typeof entry === 'string') {
-        result.push(createParagraph(entry));
+        // Aplicar formateo de 5e.tools al texto
+        result.push(createParagraph(entry, true));
       } else if (typeof entry === 'object') {
         if (entry.type === 'entries' && entry.name) {
-          result.push(createHeading3(entry.name));
+          result.push(createHeading3(entry.name, true));
           if (entry.entries) {
             result.push(...processEntries(entry.entries));
           }
         } else if (entry.type === 'list' && entry.items) {
           entry.items.forEach(item => {
-            result.push(createBullet(typeof item === 'string' ? item : JSON.stringify(item)));
+            const itemText = typeof item === 'string' ? item : JSON.stringify(item);
+            result.push(createBullet(itemText, true));
           });
         } else if (entry.type === 'table') {
           // Simplificar tablas como texto
           result.push(createParagraph('[Table]'));
         } else if (entry.entries) {
+          result.push(...processEntries(entry.entries));
+        } else if (entry.name && entry.entries) {
+          // Entries con nombre (como traits, actions)
+          result.push(createHeading3(entry.name, true));
           result.push(...processEntries(entry.entries));
         }
       }
@@ -6342,7 +6411,7 @@ function convert5eMonsterToNotionBlocks(monster) {
   
   blocks.push(createDivider());
   
-  // Atributos
+  // Atributos - Usar tabla
   blocks.push(createHeading2('Ability Scores'));
   const str = monster.str || 10;
   const dex = monster.dex || 10;
@@ -6351,12 +6420,66 @@ function convert5eMonsterToNotionBlocks(monster) {
   const wis = monster.wis || 10;
   const cha = monster.cha || 10;
   
-  blocks.push(createParagraph(
-    `STR ${str} (${getModifier(str)}) | DEX ${dex} (${getModifier(dex)}) | CON ${con} (${getModifier(con)})`
-  ));
-  blocks.push(createParagraph(
-    `INT ${int} (${getModifier(int)}) | WIS ${wis} (${getModifier(wis)}) | CHA ${cha} (${getModifier(cha)})`
-  ));
+  // Crear tabla de ability scores
+  blocks.push({
+    type: 'table',
+    table: {
+      table_width: 6,
+      has_column_header: true,
+      has_row_header: false
+    },
+    id: `ability-scores-${Date.now()}` // ID temporal para la tabla
+  });
+  
+  // Agregar filas de la tabla (se renderizarán después)
+  // Nota: Las tablas de Notion requieren filas como bloques hijos, pero para simplificar
+  // vamos a crear una tabla HTML directamente
+  const abilityScoresTable = {
+    type: 'table',
+    table: {
+      table_width: 6,
+      has_column_header: true,
+      has_row_header: false
+    },
+    // Simulamos las filas como HTML en un bloque especial
+    _customHtml: `
+      <table class="notion-table">
+        <thead>
+          <tr>
+            <th>STR</th>
+            <th>DEX</th>
+            <th>CON</th>
+            <th>INT</th>
+            <th>WIS</th>
+            <th>CHA</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${str} (${getModifier(str)})</td>
+            <td>${dex} (${getModifier(dex)})</td>
+            <td>${con} (${getModifier(con)})</td>
+            <td>${int} (${getModifier(int)})</td>
+            <td>${wis} (${getModifier(wis)})</td>
+            <td>${cha} (${getModifier(cha)})</td>
+          </tr>
+        </tbody>
+      </table>
+    `
+  };
+  
+  // Insertar tabla HTML directamente usando un bloque personalizado
+  blocks.push({
+    type: 'paragraph',
+    paragraph: { 
+      rich_text: [{
+        type: 'text',
+        text: { content: '' },
+        plain_text: ''
+      }]
+    },
+    _customHtml: abilityScoresTable._customHtml
+  });
   
   // Saving Throws
   if (monster.save) {
