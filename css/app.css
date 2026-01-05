@@ -355,7 +355,6 @@
   
   /* Formulario con separación visual (borde superior) */
   .form--separated {
-    padding-top: var(--spacing-xl);
     margin-top: calc(var(--spacing-xl) + var(--spacing-lg));
   }
   
@@ -1450,9 +1449,7 @@
   }
 }
 
-.icon-loading {
-  /* Animación removida - solo se aplica al reloj ⏳ en empty-state */
-}
+/* .icon-loading - Animación removida, solo se aplica al reloj ⏳ en empty-state */
 
 /* ==========================================================================
   Share Buttons - Estilos unificados
@@ -1592,8 +1589,10 @@
 .cogm-toast {
   position: fixed;
   bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%) translateY(100px);
+  left: 20px;
+  right: 20px;
+  width: calc(100% - 40px);
+  transform: translateY(100px);
   z-index: 9999;
   background: var(--color-bg-surface);
   border: 1px solid rgba(150, 122, 204, 0.4);
@@ -1601,11 +1600,10 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   opacity: 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
-  max-width: calc(100% - 40px);
 }
 
 .cogm-toast--visible {
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
   opacity: 1;
 }
 

@@ -892,7 +892,6 @@ async function setVaultOwner(roomId) {
     // Guardar sessionId para verificación de heartbeat
     localStorage.setItem('com.dmscreen/ownerSession-' + roomId, sessionId);
     
-    console.log('✅ Vault owner set:', playerName);
     return ownerInfo;
   } catch (e) {
     console.error('Error setting vault owner:', e);
@@ -1060,7 +1059,6 @@ function startRoleChangeDetection() {
     }
   }, 3000);
   
-  console.log('👁️ Role change detection started');
 }
 
 /**
@@ -1227,11 +1225,6 @@ async function savePagesJSON(json, roomId) {
       const fullConfigSize = getConfigSize(fullConfigCompressed);
       const pageCountForSync = countPages(json);
       
-      console.log('💾 [FULL_CONFIG] Intentando guardar para Co-GM:');
-      console.log('  - Size:', (fullConfigSize / 1024).toFixed(1), 'KB');
-      console.log('  - Pages:', pageCountForSync);
-      console.log('  - Categories:', json?.categories?.length || 0);
-      
       // Verificar si cabe en metadata (16KB limit)
       if (fullConfigSize < MAX_METADATA_SIZE) {
         // Limpiar caches primero para maximizar espacio disponible
@@ -1245,7 +1238,6 @@ async function savePagesJSON(json, roomId) {
           [FULL_CONFIG_KEY]: fullConfigCompressed
         });
         
-        console.log('✅ [FULL_CONFIG] Guardado exitosamente');
         log(`✅ Config completa sincronizada para Co-GM (${(fullConfigSize / 1024).toFixed(1)}KB, ${pageCountForSync} páginas)`);
       } else {
         // Config demasiado grande, solo guardar para Players (visible)
@@ -8040,10 +8032,10 @@ function showCoGMBanner(ownershipInfo) {
     toast.classList.add('cogm-toast--visible');
   });
   
-  // Auto-ocultar después de 5 segundos
+  // Auto-ocultar después de 10 segundos
   coGMToastTimeout = setTimeout(() => {
     hideCoGMToast();
-  }, 5000);
+  }, 10000);
 }
 
 /**
@@ -8121,7 +8113,6 @@ async function showSettings() {
     roomId = 'default';
   }
   
-  console.log('🔧 [Settings] roomId:', roomId, 'isCoGMGlobal:', isCoGMGlobal);
   const pageList = document.getElementById("page-list");
   const notionContainer = document.getElementById("notion-container");
   const settingsContainer = document.getElementById("settings-container");
@@ -8218,30 +8209,24 @@ async function showSettings() {
   
   if (isGM) {
     ownershipInfo = await checkVaultOwnership();
-    console.log('🔧 [Settings] ownershipInfo:', ownershipInfo);
     
     if (isCoGMGlobal) {
       // Co-GM: obtener config desde metadata
       try {
         const metadata = await OBR.room.getMetadata();
         vaultConfig = metadata ? metadata[FULL_CONFIG_KEY] : null;
-        console.log('🔧 [Settings Co-GM] metadata keys:', metadata ? Object.keys(metadata) : 'null');
-        console.log('🔧 [Settings Co-GM] vaultConfig:', vaultConfig ? 'exists' : 'null');
       } catch (e) {
         console.warn('Error getting metadata for Co-GM:', e);
       }
     } else {
       // Master GM: obtener config desde localStorage
       vaultConfig = getPagesJSONFromLocalStorage(roomId);
-      console.log('🔧 [Settings Master GM] vaultConfig from localStorage:', vaultConfig ? 'exists' : 'null');
     }
     
     pageCount = countPages(vaultConfig || { categories: [] });
     categoryCount = countCategories(vaultConfig || { categories: [] });
     configSize = getConfigSize(vaultConfig || { categories: [] });
     canSync = configSize < MAX_METADATA_SIZE;
-    
-    console.log('🔧 [Settings] pageCount:', pageCount, 'categoryCount:', categoryCount, 'configSize:', configSize, 'canSync:', canSync);
   }
   
   // Ocultar/mostrar secciones según rol
@@ -8249,9 +8234,6 @@ async function showSettings() {
   const notionTokenForm = allForms[0]; // Primera sección: Notion Token
   const exportVaultForm = allForms[1]; // Segunda sección: Export vault
   const feedbackForm = allForms[2]; // Tercera sección: Feedback
-  
-  console.log('🔧 [Settings] allForms count:', allForms.length);
-  console.log('🔧 [Settings] exportVaultForm:', exportVaultForm ? 'exists' : 'null');
   
   if (!isGM) {
     // Player: solo mostrar feedback
@@ -8279,13 +8261,9 @@ async function showSettings() {
     existingVaultStatus.remove();
   }
   
-  console.log('🔧 [Settings] Creating vault status box:', isGM, exportVaultForm ? 'form exists' : 'form null');
-  
   if (isGM && exportVaultForm) {
     const vaultStatusBox = document.createElement('div');
     vaultStatusBox.id = 'vault-status-box';
-    
-    console.log('🔧 [Settings] vaultStatusBox created');
     
     if (isCoGMGlobal) {
       // Co-GM: modo solo lectura
@@ -8318,20 +8296,22 @@ async function showSettings() {
       `;
     }
     
-    // Insertar vault status al principio del form de export
-    const exportLabel = exportVaultForm.querySelector('.form__label');
-    console.log('🔧 [Settings] exportLabel:', exportLabel ? 'exists' : 'null');
+    // Insertar vault status antes de la descripción
+    const exportDescription = exportVaultForm.querySelector('.settings__description');
     
-    if (exportLabel) {
-      exportLabel.insertAdjacentElement('afterend', vaultStatusBox);
-      console.log('🔧 [Settings] vaultStatusBox inserted after label');
+    if (exportDescription) {
+      exportDescription.insertAdjacentElement('beforebegin', vaultStatusBox);
     } else {
-      exportVaultForm.insertBefore(vaultStatusBox, exportVaultForm.firstChild);
-      console.log('🔧 [Settings] vaultStatusBox inserted at beginning');
+      // Fallback: insertar después del label si no hay descripción
+      const exportLabel = exportVaultForm.querySelector('.form__label');
+      if (exportLabel) {
+        exportLabel.insertAdjacentElement('afterend', vaultStatusBox);
+      } else {
+        exportVaultForm.insertBefore(vaultStatusBox, exportVaultForm.firstChild);
+      }
     }
     
     // Actualizar descripción del export según rol
-    const exportDescription = exportVaultForm.querySelector('.settings__description');
     if (exportDescription) {
       if (isCoGMGlobal) {
         exportDescription.textContent = 'You can download a copy of the vault. Share content with players using the eye button on pages.';
