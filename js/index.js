@@ -1021,7 +1021,83 @@ async function savePagesJSON(json, roomId) {
       throw storageError;
     }
     
-    // Filtrar solo páginas visibles para guardar en room metadata
+    // PASO 1: Guardar config completa PRIMERO (alta prioridad para herencia de GM)
+    try {
+      const fullConfigCompressed = compressJson(json);
+      const fullConfigSize = getConfigSize(json);
+      const pageCount = countPages(json);
+      const categoryCount = countCategories(json);
+      const fitsInMetadata = fullConfigSize < MAX_METADATA_SIZE;
+      
+      console.log('💾 [VAULT SAVE - Step 1: Full Config]');
+      console.log('  - Config size:', Math.round(fullConfigSize / 1024), 'KB');
+      console.log('  - Pages:', pageCount);
+      console.log('  - Fits in metadata:', fitsInMetadata);
+      
+      // Track tamaño del vault a Mixpanel
+      trackEvent('vault_size_measured', {
+        size_bytes: fullConfigSize,
+        size_kb: Math.round(fullConfigSize / 1024),
+        fits_in_metadata: fitsInMetadata,
+        page_count: pageCount,
+        category_count: categoryCount
+      });
+      
+      if (fitsInMetadata) {
+        // Intentar guardar config completa
+        try {
+          await OBR.room.setMetadata({
+            [FULL_CONFIG_KEY]: fullConfigCompressed
+          });
+          console.log(`✅ Full config saved (${Math.round(fullConfigSize/1024)}KB, ${pageCount} pages)`);
+        } catch (metadataError) {
+          // Si es error de límite, limpiar cachés y reintentar
+          if (metadataError.message && metadataError.message.includes('size limit')) {
+            console.log('⚠️ Metadata full, clearing caches and retrying full config...');
+            
+            try {
+              // Limpiar cachés para hacer espacio
+              await OBR.room.setMetadata({
+                [ROOM_CONTENT_CACHE_KEY]: {},
+                [ROOM_HTML_CACHE_KEY]: {}
+              });
+              
+              // Reintentar
+              await OBR.room.setMetadata({
+                [FULL_CONFIG_KEY]: fullConfigCompressed
+              });
+              console.log(`✅ Full config saved after clearing caches (${Math.round(fullConfigSize/1024)}KB, ${pageCount} pages)`);
+            } catch (retryError) {
+              console.error('❌ Failed to save full config even after clearing caches:', retryError.message);
+              trackEvent('vault_save_failed_after_cache_clear', {
+                size_kb: Math.round(fullConfigSize / 1024)
+              });
+            }
+          } else {
+            console.error('❌ Error saving full config:', metadataError.message);
+          }
+        }
+      } else {
+        console.log(`⚠️ Full config (${Math.round(fullConfigSize/1024)}KB) exceeds 16KB, not syncing`);
+        
+        // Track que no cabe
+        trackEvent('vault_too_large_for_sync', {
+          size_kb: Math.round(fullConfigSize / 1024)
+        });
+        
+        // Mostrar warning al GM si es primera vez
+        const warningShown = localStorage.getItem(VAULT_SIZE_WARNING_SHOWN_KEY);
+        if (!warningShown) {
+          showVaultSizeWarning(fullConfigSize);
+          localStorage.setItem(VAULT_SIZE_WARNING_SHOWN_KEY, 'true');
+        }
+      }
+    } catch (e) {
+      console.error('❌ Error in full config save step:', e.message);
+    }
+    
+    // PASO 2: Filtrar solo páginas visibles para guardar en room metadata
+    console.log('💾 [VAULT SAVE - Step 2: Visible Pages]');
     const visibleOnlyConfig = filterVisiblePagesForMetadata(json);
     
     // Obtener metadatos actuales para validar tamaño TOTAL
@@ -1090,81 +1166,6 @@ async function savePagesJSON(json, roomId) {
         // Enviar solo vía broadcast
         broadcastVisiblePagesUpdate(visibleOnlyConfig);
       }
-    }
-    
-    // NUEVO: Intentar guardar configuración completa para herencia de GM
-    try {
-      const fullConfigCompressed = compressJson(json);
-      const fullConfigSize = getConfigSize(json);
-      const pageCount = countPages(json);
-      const categoryCount = countCategories(json);
-      const fitsInMetadata = fullConfigSize < MAX_METADATA_SIZE;
-      
-      console.log('💾 [VAULT SAVE - Full Config Attempt]');
-      console.log('  - Config size:', Math.round(fullConfigSize / 1024), 'KB');
-      console.log('  - Fits in metadata:', fitsInMetadata);
-      
-      // Track tamaño del vault a Mixpanel
-      trackEvent('vault_size_measured', {
-        size_bytes: fullConfigSize,
-        size_kb: Math.round(fullConfigSize / 1024),
-        fits_in_metadata: fitsInMetadata,
-        page_count: pageCount,
-        category_count: categoryCount
-      });
-      
-      if (fitsInMetadata) {
-        // Intentar guardar config completa
-        // Si falla por límite total, limpiar cachés y reintentar
-        try {
-          await OBR.room.setMetadata({
-            [FULL_CONFIG_KEY]: fullConfigCompressed
-          });
-          console.log(`✅ Config completa sincronizada (${Math.round(fullConfigSize/1024)}KB)`);
-        } catch (metadataError) {
-          // Si es error de límite, limpiar cachés y reintentar
-          if (metadataError.message && metadataError.message.includes('size limit')) {
-            console.log('⚠️ Metadata full, clearing caches and retrying...');
-            
-            try {
-              // Limpiar cachés para hacer espacio
-              await OBR.room.setMetadata({
-                [ROOM_CONTENT_CACHE_KEY]: {},
-                [ROOM_HTML_CACHE_KEY]: {}
-              });
-              
-              // Reintentar
-              await OBR.room.setMetadata({
-                [FULL_CONFIG_KEY]: fullConfigCompressed
-              });
-              console.log(`✅ Config completa guardada después de limpiar cachés (${Math.round(fullConfigSize/1024)}KB)`);
-            } catch (retryError) {
-              console.error('❌ No se pudo guardar config completa ni después de limpiar cachés:', retryError.message);
-              trackEvent('vault_save_failed_after_cache_clear', {
-                size_kb: Math.round(fullConfigSize / 1024)
-              });
-            }
-          } else {
-            throw metadataError;
-          }
-        }
-      } else {
-        console.log(`⚠️ Config completa (${Math.round(fullConfigSize/1024)}KB) excede 16KB, no se sincroniza`);
-        
-        // Track que no cabe
-        trackEvent('vault_too_large_for_sync', {
-          size_kb: Math.round(fullConfigSize / 1024)
-        });
-        
-        // Mostrar warning al GM si es primera vez
-        const warningShown = localStorage.getItem(VAULT_SIZE_WARNING_SHOWN_KEY);
-        if (!warningShown) {
-          showVaultSizeWarning(fullConfigSize);
-          localStorage.setItem(VAULT_SIZE_WARNING_SHOWN_KEY, 'true');
-        }
-      }
-    } catch (e) {
-      console.error('❌ Error al sincronizar config completa:', e.message);
     }
     
     log('✅ Configuración guardada exitosamente para room:', roomId);
