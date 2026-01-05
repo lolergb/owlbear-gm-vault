@@ -1225,6 +1225,12 @@ async function savePagesJSON(json, roomId) {
     try {
       const fullConfigCompressed = compressJson(json);
       const fullConfigSize = getConfigSize(fullConfigCompressed);
+      const pageCountForSync = countPages(json);
+      
+      console.log('💾 [FULL_CONFIG] Intentando guardar para Co-GM:');
+      console.log('  - Size:', (fullConfigSize / 1024).toFixed(1), 'KB');
+      console.log('  - Pages:', pageCountForSync);
+      console.log('  - Categories:', json?.categories?.length || 0);
       
       // Verificar si cabe en metadata (16KB limit)
       if (fullConfigSize < MAX_METADATA_SIZE) {
@@ -1239,8 +1245,8 @@ async function savePagesJSON(json, roomId) {
           [FULL_CONFIG_KEY]: fullConfigCompressed
         });
         
-        const pageCount = countPages(json);
-        log(`✅ Config completa sincronizada para Co-GM (${(fullConfigSize / 1024).toFixed(1)}KB, ${pageCount} páginas)`);
+        console.log('✅ [FULL_CONFIG] Guardado exitosamente');
+        log(`✅ Config completa sincronizada para Co-GM (${(fullConfigSize / 1024).toFixed(1)}KB, ${pageCountForSync} páginas)`);
       } else {
         // Config demasiado grande, solo guardar para Players (visible)
         logWarn(`⚠️ Config completa demasiado grande para Co-GM sync (${(fullConfigSize / 1024).toFixed(1)}KB > 16KB)`);
@@ -4185,7 +4191,12 @@ try {
           const metadata = await OBR.room.getMetadata();
           const fullConfig = metadata ? metadata[FULL_CONFIG_KEY] : null;
           
-          if (fullConfig && fullConfig.categories) {
+          console.log('📥 [Co-GM] Metadata recibida:');
+          console.log('  - FULL_CONFIG_KEY exists:', !!fullConfig);
+          console.log('  - Categories:', fullConfig?.categories?.length || 0);
+          console.log('  - Pages total:', countPages(fullConfig || { categories: [] }));
+          
+          if (fullConfig && fullConfig.categories && fullConfig.categories.length > 0) {
             pagesConfig = fullConfig;
             const pageCount = countPages(fullConfig);
             log('✅ [Co-GM] Vault cargado desde metadata:', pageCount, 'páginas');
@@ -8335,6 +8346,11 @@ async function showSettings() {
   const viewJsonBtn = document.getElementById('view-json-btn');
   const loadJsonBtn = document.getElementById('load-json-btn');
   const downloadJsonBtn = document.getElementById('download-json-btn');
+  
+  // Ocultar botón "Load vault" para Co-GM (solo lectura)
+  if (loadJsonBtn && isCoGMGlobal) {
+    loadJsonBtn.style.display = 'none';
+  }
   
   // Mostrar botón "Ver JSON" solo si es tu cuenta (DEBUG_MODE activado)
   // Esto se controla desde Netlify Environment Variables (DEBUG_MODE=true)
