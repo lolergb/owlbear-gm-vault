@@ -664,9 +664,16 @@ const ROOM_HTML_CACHE_KEY = 'com.dmscreen/htmlCache';
 const BROADCAST_CHANNEL_REQUEST = 'com.dmscreen/requestContent';
 const BROADCAST_CHANNEL_RESPONSE = 'com.dmscreen/responseContent';
 
+// Claves para sistema de ownership (Master GM / Co-GM)
+const FULL_CONFIG_KEY = 'com.dmscreen/fullConfig';
+const VAULT_OWNER_KEY = 'com.dmscreen/vaultOwner';
+const OWNER_HEARTBEAT_INTERVAL = 120000; // 2 minutos
+const OWNER_TIMEOUT = 900000; // 15 minutos
+
 // Límite de tamaño para room metadata (16KB en bytes)
 const ROOM_METADATA_SIZE_LIMIT = 16 * 1024; // 16384 bytes
 const ROOM_METADATA_SAFE_LIMIT = ROOM_METADATA_SIZE_LIMIT - 1024; // Dejar 1KB de margen
+const MAX_METADATA_SIZE = ROOM_METADATA_SIZE_LIMIT; // Alias
 
 /**
  * Calcula el tamaño aproximado de un objeto en bytes cuando se serializa a JSON
@@ -811,6 +818,216 @@ function filterVisiblePagesForMetadata(config) {
   };
 }
 
+// ============================================
+// SISTEMA DE OWNERSHIP (Master GM / Co-GM)
+// ============================================
+
+// Variable para almacenar el intervalo del heartbeat
+let ownerHeartbeatInterval = null;
+
+// Variable global para indicar si el usuario es Co-GM (solo lectura)
+let isCoGMGlobal = false;
+
+/**
+ * Verifica el estado de ownership del vault
+ * @returns {Promise<{hasOwner: boolean, ownerInfo: object|null, isStale: boolean, isMe: boolean}>}
+ */
+async function checkVaultOwnership() {
+  try {
+    const metadata = await OBR.room.getMetadata();
+    const ownerInfo = metadata ? metadata[VAULT_OWNER_KEY] : null;
+    
+    if (!ownerInfo) {
+      return { hasOwner: false, ownerInfo: null, isStale: false, isMe: false };
+    }
+    
+    const myId = await OBR.player.getId();
+    const isMe = ownerInfo.playerId === myId;
+    const timeSinceLastActivity = Date.now() - (ownerInfo.timestamp || 0);
+    const isStale = timeSinceLastActivity > OWNER_TIMEOUT;
+    
+    return {
+      hasOwner: true,
+      ownerInfo,
+      isStale,
+      isMe,
+      minutesInactive: Math.round(timeSinceLastActivity / 60000)
+    };
+  } catch (e) {
+    console.error('Error checking vault ownership:', e);
+    return { hasOwner: false, ownerInfo: null, isStale: false, isMe: false };
+  }
+}
+
+/**
+ * Establece el owner actual del vault
+ * @param {string} roomId - ID de la room
+ */
+async function setVaultOwner(roomId) {
+  try {
+    const playerId = await OBR.player.getId();
+    const playerName = await OBR.player.getName();
+    const sessionId = Math.random().toString(36).substring(7);
+    
+    const ownerInfo = {
+      playerId,
+      playerName,
+      timestamp: Date.now(),
+      sessionId
+    };
+    
+    await OBR.room.setMetadata({
+      [VAULT_OWNER_KEY]: ownerInfo
+    });
+    
+    // Guardar sessionId para verificación de heartbeat
+    localStorage.setItem('com.dmscreen/ownerSession-' + roomId, sessionId);
+    
+    console.log('✅ Vault owner set:', playerName);
+    return ownerInfo;
+  } catch (e) {
+    console.error('Error setting vault owner:', e);
+    return null;
+  }
+}
+
+/**
+ * Inicia el heartbeat del owner
+ * @param {string} roomId - ID de la room
+ */
+function startOwnerHeartbeat(roomId) {
+  // Cancelar heartbeat previo si existe
+  stopOwnerHeartbeat();
+  
+  ownerHeartbeatInterval = setInterval(async () => {
+    try {
+      const metadata = await OBR.room.getMetadata();
+      const ownerInfo = metadata ? metadata[VAULT_OWNER_KEY] : null;
+      const myId = await OBR.player.getId();
+      const mySession = localStorage.getItem('com.dmscreen/ownerSession-' + roomId);
+      
+      // Solo actualizar si sigo siendo el owner con la misma sesión
+      if (ownerInfo && 
+          ownerInfo.playerId === myId && 
+          ownerInfo.sessionId === mySession) {
+        
+        await OBR.room.setMetadata({
+          [VAULT_OWNER_KEY]: {
+            ...ownerInfo,
+            timestamp: Date.now()
+          }
+        });
+        
+        log('💓 Owner heartbeat sent');
+      } else {
+        // Ya no soy el owner, detener heartbeat
+        console.log('⚠️ No longer owner, stopping heartbeat');
+        stopOwnerHeartbeat();
+      }
+    } catch (e) {
+      console.error('Error sending heartbeat:', e);
+    }
+  }, OWNER_HEARTBEAT_INTERVAL);
+  
+  console.log('💓 Owner heartbeat started');
+}
+
+/**
+ * Detiene el heartbeat del owner
+ */
+function stopOwnerHeartbeat() {
+  if (ownerHeartbeatInterval) {
+    clearInterval(ownerHeartbeatInterval);
+    ownerHeartbeatInterval = null;
+    console.log('💓 Owner heartbeat stopped');
+  }
+}
+
+/**
+ * Detecta si el GM actual está en modo Co-GM (solo lectura)
+ * @returns {Promise<boolean>}
+ */
+async function isCoGMMode() {
+  try {
+    const role = await OBR.player.getRole();
+    if (role !== 'GM') return false;
+    
+    const ownership = await checkVaultOwnership();
+    
+    // Es Co-GM si hay un owner activo y no soy yo
+    return ownership.hasOwner && !ownership.isMe && !ownership.isStale;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Cuenta el total de páginas en una configuración
+ * @param {object} config - Configuración del vault
+ * @returns {number}
+ */
+function countPages(config) {
+  if (!config || !config.categories) return 0;
+  let count = 0;
+  
+  const countRecursive = (categories) => {
+    if (!Array.isArray(categories)) return;
+    categories.forEach(cat => {
+      if (cat.pages && Array.isArray(cat.pages)) {
+        count += cat.pages.filter(p => p && p.url).length;
+      }
+      if (cat.categories) {
+        countRecursive(cat.categories);
+      }
+    });
+  };
+  
+  countRecursive(config.categories);
+  return count;
+}
+
+/**
+ * Cuenta el total de categorías en una configuración
+ * @param {object} config - Configuración del vault
+ * @returns {number}
+ */
+function countCategories(config) {
+  if (!config || !config.categories) return 0;
+  let count = config.categories.length;
+  
+  const countRecursive = (categories) => {
+    if (!Array.isArray(categories)) return;
+    categories.forEach(cat => {
+      if (cat.categories && Array.isArray(cat.categories)) {
+        count += cat.categories.length;
+        countRecursive(cat.categories);
+      }
+    });
+  };
+  
+  countRecursive(config.categories);
+  return count;
+}
+
+/**
+ * Calcula el tamaño en bytes de una configuración comprimida
+ * @param {object} config - Configuración del vault
+ * @returns {number}
+ */
+function getConfigSize(config) {
+  try {
+    const compressed = compressJson(config);
+    return new Blob([JSON.stringify(compressed)]).size;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// Detener heartbeat al cerrar la ventana
+window.addEventListener('beforeunload', () => {
+  stopOwnerHeartbeat();
+});
+
 // Canal de broadcast para sincronizar lista de páginas visibles
 const BROADCAST_CHANNEL_VISIBLE_PAGES = 'com.dmscreen/visiblePages';
 const BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES = 'com.dmscreen/requestVisiblePages';
@@ -950,6 +1167,41 @@ async function savePagesJSON(json, roomId) {
       console.warn('No se pudo obtener metadatos actuales:', e);
     }
     
+    // ============================================
+    // GUARDAR FULL_CONFIG_KEY PARA CO-GM
+    // ============================================
+    // Intentar guardar la configuración completa para que Co-GM pueda leerla
+    try {
+      const fullConfigCompressed = compressJson(json);
+      const fullConfigSize = getConfigSize(fullConfigCompressed);
+      
+      // Verificar si cabe en metadata (16KB limit)
+      if (fullConfigSize < MAX_METADATA_SIZE) {
+        // Limpiar caches primero para maximizar espacio disponible
+        await OBR.room.setMetadata({
+          [ROOM_CONTENT_CACHE_KEY]: null,
+          [ROOM_HTML_CACHE_KEY]: null
+        });
+        
+        // Guardar configuración completa
+        await OBR.room.setMetadata({
+          [FULL_CONFIG_KEY]: fullConfigCompressed
+        });
+        
+        const pageCount = countPages(json);
+        log(`✅ Config completa sincronizada para Co-GM (${(fullConfigSize / 1024).toFixed(1)}KB, ${pageCount} páginas)`);
+      } else {
+        // Config demasiado grande, solo guardar para Players (visible)
+        logWarn(`⚠️ Config completa demasiado grande para Co-GM sync (${(fullConfigSize / 1024).toFixed(1)}KB > 16KB)`);
+        // Limpiar FULL_CONFIG_KEY ya que no podemos mantenerlo actualizado
+        await OBR.room.setMetadata({
+          [FULL_CONFIG_KEY]: null
+        });
+      }
+    } catch (e) {
+      console.warn('No se pudo guardar FULL_CONFIG_KEY para Co-GM:', e);
+    }
+    
     // Validar tamaño TOTAL considerando todos los metadatos (solo con páginas visibles)
     const validation = validateTotalMetadataSize(ROOM_METADATA_KEY, visibleOnlyConfig, currentMetadata);
     
@@ -1044,8 +1296,7 @@ async function loadPagesFromRoomMetadata() {
 function setupRoomMetadataListener(roomId) {
   try {
     OBR.room.onMetadataChange(async (metadata) => {
-      // Verificar si es GM - si es GM, ignorar los cambios de room metadata
-      // porque él es quien los genera
+      // Verificar si es GM
       let isGM = false;
       try {
         const role = await OBR.player.getRole();
@@ -1054,12 +1305,46 @@ function setupRoomMetadataListener(roomId) {
         // Si falla, asumir que no es GM para ser seguro
       }
       
-      // Solo los Players deben actualizar desde room metadata
-      if (isGM) {
-        log('🔄 [GM] Ignorando cambio en room metadata (el GM genera la config)');
+      // Master GM: ignorar los cambios (él los genera)
+      if (isGM && !isCoGMGlobal) {
+        log('🔄 [Master GM] Ignorando cambio en room metadata (el GM genera la config)');
         return;
       }
       
+      // Co-GM: actualizar desde FULL_CONFIG_KEY (vault completo)
+      if (isCoGMGlobal) {
+        if (metadata && metadata[FULL_CONFIG_KEY]) {
+          const newConfig = metadata[FULL_CONFIG_KEY];
+          // Solo actualizar si es diferente
+          if (JSON.stringify(newConfig) !== JSON.stringify(pagesConfigCache)) {
+            log('🔄 [Co-GM] Vault actualizado desde Master GM');
+            pagesConfigCache = newConfig;
+            
+            // Recargar la vista
+            const pageList = document.getElementById("page-list");
+            if (pageList) {
+              await renderPagesByCategories(newConfig, pageList, roomId);
+            }
+          }
+        }
+        
+        // Verificar si el Master GM se desconectó
+        if (metadata && metadata[VAULT_OWNER_KEY]) {
+          const ownerInfo = metadata[VAULT_OWNER_KEY];
+          const timeSinceLastActivity = Date.now() - (ownerInfo.timestamp || 0);
+          
+          if (timeSinceLastActivity > OWNER_TIMEOUT) {
+            // Master GM inactivo, mostrar banner de warning
+            showMasterGMDisconnectedBanner({
+              ownerInfo,
+              minutesInactive: Math.round(timeSinceLastActivity / 60000)
+            });
+          }
+        }
+        return;
+      }
+      
+      // Player: actualizar desde ROOM_METADATA_KEY (solo páginas visibles)
       if (metadata && metadata[ROOM_METADATA_KEY]) {
         const newConfig = metadata[ROOM_METADATA_KEY];
         // Solo actualizar si es diferente
@@ -3064,20 +3349,14 @@ async function attachImageClickHandlers() {
     });
   });
   
-  // Manejar botones de compartir imágenes (solo para GMs)
+  // Manejar botones de compartir imágenes (para todos: GMs, Co-GMs y Players)
   const isGM = await getUserRole();
   const shareButtons = document.querySelectorAll('.notion-image-share-button');
   log('🔍 Botones de compartir encontrados:', shareButtons.length, 'isGM:', isGM);
   shareButtons.forEach(button => {
-    // Ocultar botón para jugadores
-    if (!isGM) {
-      button.style.display = 'none';
-      return;
-    }
-    
-    // Asegurarse de que el botón sea visible para GMs
+    // Mostrar botón de share para todos (GMs, Co-GMs y Players pueden compartir)
     button.style.display = 'flex';
-    // Hacer el botón más visible por defecto para GMs
+    // Hacer el botón más visible por defecto
     button.style.opacity = '0.7';
     
     // Click handler para compartir imagen
@@ -3684,6 +3963,33 @@ try {
         log('✅ Room ID final que se usará:', roomId);
       }
       
+      // ============================================
+      // DETECCIÓN DE CO-GM (GM promovido)
+      // ============================================
+      let isCoGM = false;
+      let ownershipInfo = null;
+      
+      if (isGM) {
+        ownershipInfo = await checkVaultOwnership();
+        isCoGM = ownershipInfo.hasOwner && !ownershipInfo.isMe && !ownershipInfo.isStale;
+        
+        // Actualizar variable global para que otras funciones puedan verificar
+        isCoGMGlobal = isCoGM;
+        
+        if (isCoGM) {
+          log('👁️ [Co-GM] Modo solo lectura - Master GM:', ownershipInfo.ownerInfo?.playerName);
+        } else if (!ownershipInfo.hasOwner || ownershipInfo.isStale) {
+          // No hay owner o está inactivo → establecer como Master GM
+          await setVaultOwner(roomId);
+          startOwnerHeartbeat(roomId);
+          log('👑 [Master GM] Establecido como owner del vault');
+        } else if (ownershipInfo.isMe) {
+          // Ya soy el owner, solo reiniciar heartbeat
+          startOwnerHeartbeat(roomId);
+          log('👑 [Master GM] Reconectado, heartbeat reiniciado');
+        }
+      }
+      
       // Verificar si estamos en modo modal (abierto desde el botón de abrir en modal)
       const urlParams = new URLSearchParams(window.location.search);
       const isModalMode = urlParams.get('modal') === 'true';
@@ -3810,21 +4116,42 @@ try {
       }
       
       // Prioridad diferenciada por rol:
-      // - GM: localStorage > default (él genera la configuración completa)
+      // - Master GM: localStorage > default (él genera la configuración completa)
+      // - Co-GM: metadata[FULL_CONFIG_KEY] (lee vault completo del Master GM, solo lectura)
       // - Player: room metadata > broadcast (recibe configuración filtrada del GM)
-      if (isGM) {
-        // GM siempre usa su localStorage (configuración completa)
+      if (isCoGM) {
+        // Co-GM lee desde metadata (solo lectura)
+        log('👁️ [Co-GM] Cargando vault desde metadata (solo lectura)...');
+        try {
+          const metadata = await OBR.room.getMetadata();
+          const fullConfig = metadata ? metadata[FULL_CONFIG_KEY] : null;
+          
+          if (fullConfig && fullConfig.categories) {
+            pagesConfig = fullConfig;
+            const pageCount = countPages(fullConfig);
+            log('✅ [Co-GM] Vault cargado desde metadata:', pageCount, 'páginas');
+          } else {
+            // No hay vault completo, usar lo que haya disponible
+            log('⚠️ [Co-GM] No hay vault completo en metadata');
+            pagesConfig = roomMetadataConfig || { categories: [] };
+          }
+        } catch (e) {
+          console.error('Error cargando vault para Co-GM:', e);
+          pagesConfig = { categories: [] };
+        }
+      } else if (isGM) {
+        // Master GM usa su localStorage (configuración completa)
         // Prioridad: roomId específico > default
         if (currentRoomConfig) {
           // Si hay configuración para este roomId, usarla
-          log('✅ [GM] Usando configuración del localStorage para roomId:', roomId, 'con', currentRoomCount, 'elementos');
+          log('✅ [Master GM] Usando configuración del localStorage para roomId:', roomId, 'con', currentRoomCount, 'elementos');
           pagesConfig = currentRoomConfig;
           // Sincronizar con room metadata para que los players la vean
           await savePagesJSON(pagesConfig, roomId);
         } else if (defaultCount > 0) {
           // Solo usar default si NO hay configuración para este roomId
           // NO copiar al roomId - usar directamente hasta que el GM cargue su propio vault
-          log('✅ [GM] No hay configuración para este roomId, usando "default" con', defaultCount, 'elementos');
+          log('✅ [Master GM] No hay configuración para este roomId, usando "default" con', defaultCount, 'elementos');
           pagesConfig = defaultConfig;
           // Solo sincronizar con room metadata, pero NO guardar como roomId
           pagesConfigCache = pagesConfig;
@@ -3857,14 +4184,14 @@ try {
         }
       }
       
-      // Si no hay ninguna configuración (solo para GM), crear una nueva por defecto
-      if (!pagesConfig && isGM) {
-        log('📝 [GM] No se encontró ninguna configuración, creando una nueva por defecto');
+      // Si no hay ninguna configuración (solo para Master GM), crear una nueva por defecto
+      if (!pagesConfig && isGM && !isCoGM) {
+        log('📝 [Master GM] No se encontró ninguna configuración, creando una nueva por defecto');
         pagesConfig = await getDefaultJSON();
         await savePagesJSON(pagesConfig, roomId);
-        log('✅ [GM] Configuración por defecto creada para room:', roomId);
+        log('✅ [Master GM] Configuración por defecto creada para room:', roomId);
       } else if (!pagesConfig) {
-        // Player sin configuración
+        // Player o Co-GM sin configuración
         pagesConfig = { categories: [] };
       }
       
@@ -3990,13 +4317,18 @@ try {
       buttonContainer.appendChild(settingsButton);
       buttonContainer.appendChild(collapseAllButton);
       
-      // Solo añadir botón de agregar para GMs
-      if (isGM) {
+      // Solo añadir botón de agregar para Master GM (no para Co-GM ni Players)
+      if (isGM && !isCoGM) {
         buttonContainer.appendChild(addButton);
       }
       
       // Mostrar button-container para todos
       header.appendChild(buttonContainer);
+      
+      // Mostrar banner para Co-GM
+      if (isCoGM) {
+        showCoGMBanner(ownershipInfo);
+      }
 
       // Renderizar páginas agrupadas por carpetas
       await renderPagesByCategories(pagesConfig, pageList, roomId);
@@ -4183,7 +4515,8 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   contextMenuButton.title = 'Menú';
   
   // Mostrar botones al hover (solo para GMs)
-  if (isGM) {
+  // Mostrar botón contextual en hover (solo para Master GM, no para Co-GM)
+  if (isGM && !isCoGMGlobal) {
     titleContainer.addEventListener('mouseenter', () => {
       if (!contextMenuButton.classList.contains('context-menu-active')) {
         contextMenuButton.style.opacity = '1';
@@ -4207,8 +4540,8 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
     });
   }
   
-  // Menú contextual para carpetas (solo para GMs)
-  if (isGM) {
+  // Menú contextual para carpetas (solo para Master GM, no para Co-GM)
+  if (isGM && !isCoGMGlobal) {
   contextMenuButton.addEventListener('click', async (e) => {
     e.stopPropagation();
     const rect = contextMenuButton.getBoundingClientRect();
@@ -4407,7 +4740,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       if (isGM) {
         button.addEventListener('mouseenter', () => {
           if (!pageContextMenuButton.classList.contains('context-menu-active')) {
-            pageContextMenuButton.style.opacity = '1';
+            // Solo mostrar menú contextual si no es Co-GM
+            if (!isCoGMGlobal) {
+              pageContextMenuButton.style.opacity = '1';
+            }
             pageVisibilityButton.style.opacity = '1';
           }
         });
@@ -4427,8 +4763,8 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
         });
       }
       
-      // Menú contextual para páginas (solo para GMs)
-      if (isGM) {
+      // Menú contextual para páginas (solo para Master GM, no Co-GM)
+      if (isGM && !isCoGMGlobal) {
       pageContextMenuButton.addEventListener('click', async (e) => {
         e.stopPropagation();
         const rect = pageContextMenuButton.getBoundingClientRect();
@@ -4550,10 +4886,13 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           ${linkIconHtml}
         </div>
       `;
-      // Solo mostrar botones de administración para GMs
+      // Mostrar botón de visibilidad (share) para GMs y Co-GMs
+      // Pero solo mostrar menú contextual para Master GM
       if (isGM) {
         button.appendChild(pageVisibilityButton);
-        button.appendChild(pageContextMenuButton);
+        if (!isCoGMGlobal) {
+          button.appendChild(pageContextMenuButton);
+        }
       }
       
       // Hover effect
@@ -5875,8 +6214,8 @@ async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
       const emptyState = document.createElement('div');
       emptyState.className = 'empty-state';
       
-      if (isGM) {
-        // GM: mostrar opción de agregar carpeta
+      if (isGM && !isCoGMGlobal) {
+        // Master GM: mostrar opción de agregar carpeta
         emptyState.innerHTML = `
           <div class="empty-state-icon">🫥</div>
           <p class="empty-state-text">No pages configured</p>
@@ -5892,6 +6231,14 @@ async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
             await addCategoryToPageList([], roomId);
           });
         }
+      } else if (isCoGMGlobal) {
+        // Co-GM: esperando vault del Master GM
+        emptyState.innerHTML = `
+          <div class="empty-state-icon">👁️</div>
+          <p class="empty-state-text">No vault available</p>
+          <p class="empty-state-hint">The Master GM's vault is empty or not yet configured</p>
+        `;
+        pageList.appendChild(emptyState);
       } else {
         // Player: mostrar mensaje de espera
         emptyState.innerHTML = `
@@ -7568,6 +7915,83 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
   }
 }
 
+// ============================================
+// BANNERS PARA CO-GM
+// ============================================
+
+/**
+ * Muestra el banner de Co-GM (solo lectura)
+ * @param {object} ownershipInfo - Información del ownership
+ */
+function showCoGMBanner(ownershipInfo) {
+  // Eliminar banner existente si hay
+  const existingBanner = document.getElementById('cogm-banner');
+  if (existingBanner) {
+    existingBanner.remove();
+  }
+  
+  const banner = document.createElement('div');
+  banner.id = 'cogm-banner';
+  banner.className = 'cogm-banner';
+  
+  const ownerName = ownershipInfo?.ownerInfo?.playerName || 'Master GM';
+  
+  banner.innerHTML = `
+    <div class="cogm-banner-content">
+      <span class="cogm-banner-icon">👁️</span>
+      <div class="cogm-banner-text">
+        <strong>Viewing ${ownerName}'s vault</strong>
+        <span class="cogm-banner-hint">Read-only • You can share content with players</span>
+      </div>
+    </div>
+  `;
+  
+  // Insertar al principio del body
+  const container = document.querySelector('.container');
+  if (container) {
+    container.insertBefore(banner, container.firstChild);
+  } else {
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+}
+
+/**
+ * Muestra el banner de Master GM desconectado
+ * @param {object} ownershipInfo - Información del ownership
+ */
+function showMasterGMDisconnectedBanner(ownershipInfo) {
+  // Eliminar banner existente si hay
+  const existingBanner = document.getElementById('cogm-banner');
+  if (existingBanner) {
+    existingBanner.remove();
+  }
+  
+  const banner = document.createElement('div');
+  banner.id = 'cogm-banner';
+  banner.className = 'cogm-banner cogm-banner-warning';
+  
+  const ownerName = ownershipInfo?.ownerInfo?.playerName || 'Master GM';
+  const minutesInactive = ownershipInfo?.minutesInactive || 0;
+  
+  banner.innerHTML = `
+    <div class="cogm-banner-content">
+      <span class="cogm-banner-icon">⚠️</span>
+      <div class="cogm-banner-text">
+        <strong>${ownerName} disconnected</strong>
+        <span class="cogm-banner-hint">Inactive for ${minutesInactive}m • Export vault from Settings if needed</span>
+      </div>
+    </div>
+  `;
+  
+  // Insertar al principio del body
+  const container = document.querySelector('.container');
+  if (container) {
+    container.insertBefore(banner, container.firstChild);
+  } else {
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+}
+
 // Función para mostrar configuración de token
 async function showSettings() {
   // Obtener roomId de forma segura
@@ -7660,6 +8084,77 @@ async function showSettings() {
   
   // Detectar si es GM o player
   const isGM = await getUserRole();
+  
+  // ============================================
+  // VAULT STATUS SECTION (para GMs)
+  // ============================================
+  // Eliminar sección anterior si existe
+  const existingVaultStatus = document.getElementById('vault-status-section');
+  if (existingVaultStatus) {
+    existingVaultStatus.remove();
+  }
+  
+  // Añadir sección de Vault Status para GMs
+  if (isGM) {
+    const settingsContent = document.querySelector('#settings-container .settings__content');
+    if (settingsContent) {
+      const vaultStatusSection = document.createElement('div');
+      vaultStatusSection.id = 'vault-status-section';
+      vaultStatusSection.className = 'form form--separated';
+      
+      // Obtener info del vault
+      const localConfig = getPagesJSONFromLocalStorage(roomId);
+      const pageCount = countPages(localConfig || { categories: [] });
+      const categoryCount = countCategories(localConfig || { categories: [] });
+      const configSize = getConfigSize(localConfig || { categories: [] });
+      const canSync = configSize < MAX_METADATA_SIZE;
+      
+      // Obtener info de ownership
+      const ownershipInfo = await checkVaultOwnership();
+      
+      if (isCoGMGlobal) {
+        // Co-GM: modo solo lectura
+        const masterGMName = ownershipInfo?.ownerInfo?.playerName || 'Master GM';
+        vaultStatusSection.innerHTML = `
+          <label class="form__label">Vault Status</label>
+          <div class="vault-status vault-status--readonly">
+            <div class="vault-status__icon">👁️</div>
+            <div class="vault-status__info">
+              <span class="vault-status__title">Read-only mode</span>
+              <span class="vault-status__detail">Viewing ${masterGMName}'s vault</span>
+              <span class="vault-status__detail">${pageCount} pages in ${categoryCount} folders</span>
+            </div>
+          </div>
+          <p class="settings__description">
+            You can share content with players but cannot edit the vault.
+          </p>
+        `;
+      } else {
+        // Master GM: mostrar info completa
+        const syncStatus = canSync 
+          ? `<span class="vault-status__sync vault-status__sync--ok">✅ Synced for Co-GM</span>`
+          : `<span class="vault-status__sync vault-status__sync--warn">⚠️ Too large for Co-GM sync</span>`;
+        
+        vaultStatusSection.innerHTML = `
+          <label class="form__label">Vault Status</label>
+          <div class="vault-status vault-status--master">
+            <div class="vault-status__icon">👑</div>
+            <div class="vault-status__info">
+              <span class="vault-status__title">Master GM</span>
+              <span class="vault-status__detail">${(configSize / 1024).toFixed(1)} KB • ${pageCount} pages • ${categoryCount} folders</span>
+              ${syncStatus}
+            </div>
+          </div>
+          <p class="settings__description">
+            Your changes sync automatically to Co-GMs (if vault < 16KB).
+          </p>
+        `;
+      }
+      
+      // Insertar al principio del settings content
+      settingsContent.insertBefore(vaultStatusSection, settingsContent.firstChild);
+    }
+  }
   
   // Ocultar secciones que no son de feedback para players
   const allForms = document.querySelectorAll('#settings-container .form');
