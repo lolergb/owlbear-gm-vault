@@ -4724,9 +4724,9 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   
   titleContainer.appendChild(collapseButton);
   titleContainer.appendChild(categoryTitle);
-  // Solo mostrar botones de administración para GMs
-  if (isGM) {
-    // Botón de visibilidad temporalmente oculto
+  // Solo mostrar botones de administración para Master GM (no para Co-GM)
+  if (isGM && !isCoGMGlobal) {
+    // Botón de visibilidad de carpetas deshabilitado (solo lectura para Co-GM)
     // titleContainer.appendChild(categoryVisibilityButton);
     titleContainer.appendChild(contextMenuButton);
   }
@@ -4823,14 +4823,11 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       pageContextMenuButton.appendChild(pageContextMenuIcon);
       pageContextMenuButton.title = 'Menú';
       
-      // Mostrar botones al hover (solo para GMs)
-      if (isGM) {
+      // Mostrar botones al hover (solo para Master GM, no para Co-GM)
+      if (isGM && !isCoGMGlobal) {
         button.addEventListener('mouseenter', () => {
           if (!pageContextMenuButton.classList.contains('context-menu-active')) {
-            // Solo mostrar menú contextual si no es Co-GM
-            if (!isCoGMGlobal) {
-              pageContextMenuButton.style.opacity = '1';
-            }
+            pageContextMenuButton.style.opacity = '1';
             pageVisibilityButton.style.opacity = '1';
           }
         });
@@ -4973,13 +4970,12 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           ${linkIconHtml}
         </div>
       `;
-      // Mostrar botón de visibilidad (share) para GMs y Co-GMs
-      // Pero solo mostrar menú contextual para Master GM
-      if (isGM) {
+      // Mostrar botón de visibilidad (share) solo para Master GM
+      // Co-GM no puede cambiar visibilidad (solo lectura)
+      // Mostrar menú contextual solo para Master GM
+      if (isGM && !isCoGMGlobal) {
         button.appendChild(pageVisibilityButton);
-        if (!isCoGMGlobal) {
-          button.appendChild(pageContextMenuButton);
-        }
+        button.appendChild(pageContextMenuButton);
       }
       
       // Hover effect
