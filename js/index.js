@@ -3352,19 +3352,42 @@ window.refreshImage = async function(button) {
 async function attachImageClickHandlers() {
   // Primero, procesar imágenes normales que aún no tienen la funcionalidad de Notion
   const notionContent = document.querySelector('#notion-content');
-  if (notionContent) {
-    // Buscar todas las imágenes que NO son de Notion (sin clase notion-image-clickable)
-    const regularImages = notionContent.querySelectorAll('img:not(.notion-image-clickable):not(.notion-cover-image)');
-    
-    regularImages.forEach(img => {
+  if (!notionContent) {
+    log('⚠️ #notion-content no encontrado, no se pueden procesar imágenes');
+    return;
+  }
+  
+  // Buscar todas las imágenes que NO son de Notion (sin clase notion-image-clickable)
+  const regularImages = notionContent.querySelectorAll('img:not(.notion-image-clickable):not(.notion-cover-image)');
+  log('🔍 Imágenes normales encontradas:', regularImages.length);
+  
+  regularImages.forEach((img, index) => {
       // Si la imagen ya está dentro de un contenedor notion-image, no hacer nada
       if (img.closest('.notion-image')) {
         return;
       }
       
       // Obtener URL y caption de la imagen
-      const imageUrl = img.src || img.getAttribute('src');
+      let imageUrl = img.src || img.getAttribute('src');
       const caption = img.alt || img.getAttribute('alt') || '';
+      
+      // Asegurarse de que la URL sea absoluta
+      if (imageUrl && !imageUrl.match(/^https?:\/\//i) && !imageUrl.match(/^data:/i)) {
+        try {
+          // Si es una ruta relativa, intentar resolverla
+          if (imageUrl.startsWith('/')) {
+            // Ruta absoluta desde el origen
+            imageUrl = new URL(imageUrl, window.location.origin).toString();
+          } else {
+            // Ruta relativa, usar la URL actual como base
+            const currentUrl = window.location.href;
+            const baseUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+            imageUrl = new URL(imageUrl, baseUrl).toString();
+          }
+        } catch (e) {
+          console.warn('No se pudo resolver URL de imagen:', imageUrl, e);
+        }
+      }
       
       // Crear contenedor similar al de Notion
       const imageWrapper = document.createElement('div');
@@ -3381,17 +3404,31 @@ async function attachImageClickHandlers() {
       
       // Clonar la imagen y añadir atributos necesarios
       const newImg = img.cloneNode(true);
+      // Asegurarse de que el src esté establecido correctamente (puede perderse al clonar)
+      if (imageUrl && newImg.src !== imageUrl) {
+        newImg.src = imageUrl;
+      }
       newImg.classList.add('notion-image-clickable');
       newImg.setAttribute('data-image-url', imageUrl);
       newImg.setAttribute('data-image-caption', caption);
       newImg.setAttribute('data-image-id', `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
       
-      // Añadir handler de carga
-      newImg.addEventListener('load', function() {
-        this.classList.add('loaded');
-        const loading = this.parentElement.querySelector('.image-loading');
-        if (loading) loading.remove();
-      });
+      // Si la imagen ya está cargada, añadir la clase loaded inmediatamente
+      if (img.complete && img.naturalHeight !== 0) {
+        newImg.classList.add('loaded');
+        // Remover el loading spinner inmediatamente
+        setTimeout(() => {
+          const loading = imageContainer.querySelector('.image-loading');
+          if (loading) loading.remove();
+        }, 0);
+      } else {
+        // Añadir handler de carga solo si aún no está cargada
+        newImg.addEventListener('load', function() {
+          this.classList.add('loaded');
+          const loading = this.parentElement.querySelector('.image-loading');
+          if (loading) loading.remove();
+        });
+      }
       
       imageContainer.appendChild(newImg);
       
@@ -3415,8 +3452,17 @@ async function attachImageClickHandlers() {
       }
       
       // Reemplazar la imagen original con el nuevo contenedor
-      img.parentNode.replaceChild(imageWrapper, img);
+      try {
+        img.parentNode.replaceChild(imageWrapper, img);
+        log(`✅ Imagen ${index + 1} convertida a formato Notion:`, imageUrl.substring(0, 50));
+      } catch (e) {
+        console.error('Error al reemplazar imagen:', e, img);
+      }
     });
+    
+    log('✅ Procesadas', regularImages.length, 'imágenes normales');
+  } else {
+    log('⚠️ #notion-content no encontrado');
   }
   
   // Manejar imágenes normales y cover (tanto las de Notion como las que acabamos de convertir)
@@ -7582,6 +7628,9 @@ async function loadLocalhostContent(url, container) {
       styleElement.textContent = style.textContent;
       document.head.appendChild(styleElement);
     });
+    
+    // Esperar un momento para que el DOM se actualice antes de procesar imágenes
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // Agregar event listeners a las imágenes para abrirlas en modal
     await attachImageClickHandlers();
