@@ -3348,6 +3348,97 @@ window.refreshImage = async function(button) {
   }
 };
 
+// Función para aplicar estilos de Notion a HTML genérico
+function applyNotionStyles(container) {
+  if (!container) return;
+  
+  // Asegurarse de que el contenedor tenga la clase notion-content
+  if (!container.classList.contains('notion-content')) {
+    container.classList.add('notion-content');
+  }
+  
+  // Normalizar elementos HTML comunes a clases de Notion
+  const elements = container.querySelectorAll('*');
+  
+  elements.forEach(el => {
+    // Normalizar párrafos
+    if (el.tagName === 'P' && !el.classList.contains('notion-paragraph')) {
+      el.classList.add('notion-paragraph');
+    }
+    
+    // Normalizar listas
+    if (el.tagName === 'UL' && !el.classList.contains('notion-bulleted-list')) {
+      el.classList.add('notion-bulleted-list');
+    }
+    if (el.tagName === 'OL' && !el.classList.contains('notion-numbered-list')) {
+      el.classList.add('notion-numbered-list');
+    }
+    if (el.tagName === 'LI') {
+      if (el.parentElement?.tagName === 'UL' && !el.classList.contains('notion-bulleted-list-item')) {
+        el.classList.add('notion-bulleted-list-item');
+      }
+      if (el.parentElement?.tagName === 'OL' && !el.classList.contains('notion-numbered-list-item')) {
+        el.classList.add('notion-numbered-list-item');
+      }
+    }
+    
+    // Normalizar código
+    if (el.tagName === 'CODE' && !el.classList.contains('notion-text-code')) {
+      // Si está dentro de un pre, es un bloque de código
+      if (el.parentElement?.tagName === 'PRE') {
+        if (!el.parentElement.classList.contains('notion-code')) {
+          el.parentElement.classList.add('notion-code');
+        }
+      } else {
+        // Es código inline
+        el.classList.add('notion-text-code');
+      }
+    }
+    
+    // Normalizar enlaces
+    if (el.tagName === 'A' && !el.classList.contains('notion-text-link')) {
+      el.classList.add('notion-text-link');
+    }
+    
+    // Normalizar texto en negrita
+    if ((el.tagName === 'STRONG' || el.tagName === 'B') && !el.classList.contains('notion-text-bold')) {
+      el.classList.add('notion-text-bold');
+    }
+    
+    // Normalizar texto en cursiva
+    if ((el.tagName === 'EM' || el.tagName === 'I') && !el.classList.contains('notion-text-italic')) {
+      el.classList.add('notion-text-italic');
+    }
+    
+    // Normalizar texto subrayado
+    if (el.tagName === 'U' && !el.classList.contains('notion-text-underline')) {
+      el.classList.add('notion-text-underline');
+    }
+    
+    // Normalizar texto tachado
+    if ((el.tagName === 'S' || el.tagName === 'DEL') && !el.classList.contains('notion-text-strikethrough')) {
+      el.classList.add('notion-text-strikethrough');
+    }
+    
+    // Normalizar blockquotes
+    if (el.tagName === 'BLOCKQUOTE' && !el.classList.contains('notion-quote')) {
+      el.classList.add('notion-quote');
+    }
+    
+    // Normalizar tablas
+    if (el.tagName === 'TABLE' && !el.classList.contains('notion-table')) {
+      el.classList.add('notion-table');
+    }
+    
+    // Normalizar separadores
+    if ((el.tagName === 'HR' || el.classList.contains('hr')) && !el.classList.contains('notion-divider')) {
+      el.classList.add('notion-divider');
+    }
+  });
+  
+  log('✅ Estilos de Notion aplicados al contenido HTML');
+}
+
 // Agregar event listeners a las imágenes después de renderizar
 async function attachImageClickHandlers() {
   // Primero, procesar imágenes normales que aún no tienen la funcionalidad de Notion
@@ -7653,6 +7744,9 @@ async function loadLocalhostContent(url, container) {
       styleElement.textContent = style.textContent;
       document.head.appendChild(styleElement);
     });
+    
+    // Aplicar estilos de Notion al contenido cargado
+    applyNotionStyles(contentDiv);
     
     // Esperar un momento para que el DOM se actualice antes de procesar imágenes
     await new Promise(resolve => setTimeout(resolve, 100));
