@@ -3461,8 +3461,6 @@ async function attachImageClickHandlers() {
     });
     
     log('✅ Procesadas', regularImages.length, 'imágenes normales');
-  } else {
-    log('⚠️ #notion-content no encontrado');
   }
   
   // Manejar imágenes normales y cover (tanto las de Notion como las que acabamos de convertir)
