@@ -3350,13 +3350,82 @@ window.refreshImage = async function(button) {
 
 // Agregar event listeners a las imágenes después de renderizar
 async function attachImageClickHandlers() {
-  // Manejar imágenes normales y cover
+  // Primero, procesar imágenes normales que aún no tienen la funcionalidad de Notion
+  const notionContent = document.querySelector('#notion-content');
+  if (notionContent) {
+    // Buscar todas las imágenes que NO son de Notion (sin clase notion-image-clickable)
+    const regularImages = notionContent.querySelectorAll('img:not(.notion-image-clickable):not(.notion-cover-image)');
+    
+    regularImages.forEach(img => {
+      // Si la imagen ya está dentro de un contenedor notion-image, no hacer nada
+      if (img.closest('.notion-image')) {
+        return;
+      }
+      
+      // Obtener URL y caption de la imagen
+      const imageUrl = img.src || img.getAttribute('src');
+      const caption = img.alt || img.getAttribute('alt') || '';
+      
+      // Crear contenedor similar al de Notion
+      const imageWrapper = document.createElement('div');
+      imageWrapper.className = 'notion-image';
+      
+      const imageContainer = document.createElement('div');
+      imageContainer.className = 'notion-image-container';
+      
+      // Añadir loading spinner
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'image-loading';
+      loadingDiv.innerHTML = '<div class="loading-spinner"></div>';
+      imageContainer.appendChild(loadingDiv);
+      
+      // Clonar la imagen y añadir atributos necesarios
+      const newImg = img.cloneNode(true);
+      newImg.classList.add('notion-image-clickable');
+      newImg.setAttribute('data-image-url', imageUrl);
+      newImg.setAttribute('data-image-caption', caption);
+      newImg.setAttribute('data-image-id', `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+      
+      // Añadir handler de carga
+      newImg.addEventListener('load', function() {
+        this.classList.add('loaded');
+        const loading = this.parentElement.querySelector('.image-loading');
+        if (loading) loading.remove();
+      });
+      
+      imageContainer.appendChild(newImg);
+      
+      // Crear botón de compartir
+      const shareButton = document.createElement('button');
+      shareButton.className = 'notion-image-share-button share-button';
+      shareButton.setAttribute('data-image-url', imageUrl);
+      shareButton.setAttribute('data-image-caption', caption);
+      shareButton.setAttribute('title', 'Show to players');
+      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Share" />';
+      imageContainer.appendChild(shareButton);
+      
+      imageWrapper.appendChild(imageContainer);
+      
+      // Añadir caption si existe
+      if (caption) {
+        const captionDiv = document.createElement('div');
+        captionDiv.className = 'notion-image-caption';
+        captionDiv.textContent = caption;
+        imageWrapper.appendChild(captionDiv);
+      }
+      
+      // Reemplazar la imagen original con el nuevo contenedor
+      img.parentNode.replaceChild(imageWrapper, img);
+    });
+  }
+  
+  // Manejar imágenes normales y cover (tanto las de Notion como las que acabamos de convertir)
   const images = document.querySelectorAll('.notion-image-clickable, .notion-cover-image');
   images.forEach(img => {
     // Click handler para abrir modal
     img.addEventListener('click', () => {
-      const imageUrl = img.getAttribute('data-image-url');
-      const caption = img.getAttribute('data-image-caption') || '';
+      const imageUrl = img.getAttribute('data-image-url') || img.src;
+      const caption = img.getAttribute('data-image-caption') || img.alt || '';
       showImageModal(imageUrl, caption);
     });
     
