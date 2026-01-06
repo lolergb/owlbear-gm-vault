@@ -3362,106 +3362,105 @@ async function attachImageClickHandlers() {
   log('🔍 Imágenes normales encontradas:', regularImages.length);
   
   regularImages.forEach((img, index) => {
-      // Si la imagen ya está dentro de un contenedor notion-image, no hacer nada
-      if (img.closest('.notion-image')) {
-        return;
-      }
-      
-      // Obtener URL y caption de la imagen
-      let imageUrl = img.src || img.getAttribute('src');
-      const caption = img.alt || img.getAttribute('alt') || '';
-      
-      // Asegurarse de que la URL sea absoluta
-      if (imageUrl && !imageUrl.match(/^https?:\/\//i) && !imageUrl.match(/^data:/i)) {
-        try {
-          // Si es una ruta relativa, intentar resolverla
-          if (imageUrl.startsWith('/')) {
-            // Ruta absoluta desde el origen
-            imageUrl = new URL(imageUrl, window.location.origin).toString();
-          } else {
-            // Ruta relativa, usar la URL actual como base
-            const currentUrl = window.location.href;
-            const baseUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
-            imageUrl = new URL(imageUrl, baseUrl).toString();
-          }
-        } catch (e) {
-          console.warn('No se pudo resolver URL de imagen:', imageUrl, e);
-        }
-      }
-      
-      // Crear contenedor similar al de Notion
-      const imageWrapper = document.createElement('div');
-      imageWrapper.className = 'notion-image';
-      
-      const imageContainer = document.createElement('div');
-      imageContainer.className = 'notion-image-container';
-      
-      // Añadir loading spinner
-      const loadingDiv = document.createElement('div');
-      loadingDiv.className = 'image-loading';
-      loadingDiv.innerHTML = '<div class="loading-spinner"></div>';
-      imageContainer.appendChild(loadingDiv);
-      
-      // Clonar la imagen y añadir atributos necesarios
-      const newImg = img.cloneNode(true);
-      // Asegurarse de que el src esté establecido correctamente (puede perderse al clonar)
-      if (imageUrl && newImg.src !== imageUrl) {
-        newImg.src = imageUrl;
-      }
-      newImg.classList.add('notion-image-clickable');
-      newImg.setAttribute('data-image-url', imageUrl);
-      newImg.setAttribute('data-image-caption', caption);
-      newImg.setAttribute('data-image-id', `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-      
-      // Si la imagen ya está cargada, añadir la clase loaded inmediatamente
-      if (img.complete && img.naturalHeight !== 0) {
-        newImg.classList.add('loaded');
-        // Remover el loading spinner inmediatamente
-        setTimeout(() => {
-          const loading = imageContainer.querySelector('.image-loading');
-          if (loading) loading.remove();
-        }, 0);
-      } else {
-        // Añadir handler de carga solo si aún no está cargada
-        newImg.addEventListener('load', function() {
-          this.classList.add('loaded');
-          const loading = this.parentElement.querySelector('.image-loading');
-          if (loading) loading.remove();
-        });
-      }
-      
-      imageContainer.appendChild(newImg);
-      
-      // Crear botón de compartir
-      const shareButton = document.createElement('button');
-      shareButton.className = 'notion-image-share-button share-button';
-      shareButton.setAttribute('data-image-url', imageUrl);
-      shareButton.setAttribute('data-image-caption', caption);
-      shareButton.setAttribute('title', 'Show to players');
-      shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Share" />';
-      imageContainer.appendChild(shareButton);
-      
-      imageWrapper.appendChild(imageContainer);
-      
-      // Añadir caption si existe
-      if (caption) {
-        const captionDiv = document.createElement('div');
-        captionDiv.className = 'notion-image-caption';
-        captionDiv.textContent = caption;
-        imageWrapper.appendChild(captionDiv);
-      }
-      
-      // Reemplazar la imagen original con el nuevo contenedor
-      try {
-        img.parentNode.replaceChild(imageWrapper, img);
-        log(`✅ Imagen ${index + 1} convertida a formato Notion:`, imageUrl.substring(0, 50));
-      } catch (e) {
-        console.error('Error al reemplazar imagen:', e, img);
-      }
-    });
+    // Si la imagen ya está dentro de un contenedor notion-image, no hacer nada
+    if (img.closest('.notion-image')) {
+      return;
+    }
     
-    log('✅ Procesadas', regularImages.length, 'imágenes normales');
-  }
+    // Obtener URL y caption de la imagen
+    let imageUrl = img.src || img.getAttribute('src');
+    const caption = img.alt || img.getAttribute('alt') || '';
+    
+    // Asegurarse de que la URL sea absoluta
+    if (imageUrl && !imageUrl.match(/^https?:\/\//i) && !imageUrl.match(/^data:/i)) {
+      try {
+        // Si es una ruta relativa, intentar resolverla
+        if (imageUrl.startsWith('/')) {
+          // Ruta absoluta desde el origen
+          imageUrl = new URL(imageUrl, window.location.origin).toString();
+        } else {
+          // Ruta relativa, usar la URL actual como base
+          const currentUrl = window.location.href;
+          const baseUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+          imageUrl = new URL(imageUrl, baseUrl).toString();
+        }
+      } catch (e) {
+        console.warn('No se pudo resolver URL de imagen:', imageUrl, e);
+      }
+    }
+    
+    // Crear contenedor similar al de Notion
+    const imageWrapper = document.createElement('div');
+    imageWrapper.className = 'notion-image';
+    
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'notion-image-container';
+    
+    // Añadir loading spinner
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'image-loading';
+    loadingDiv.innerHTML = '<div class="loading-spinner"></div>';
+    imageContainer.appendChild(loadingDiv);
+    
+    // Clonar la imagen y añadir atributos necesarios
+    const newImg = img.cloneNode(true);
+    // Asegurarse de que el src esté establecido correctamente (puede perderse al clonar)
+    if (imageUrl && newImg.src !== imageUrl) {
+      newImg.src = imageUrl;
+    }
+    newImg.classList.add('notion-image-clickable');
+    newImg.setAttribute('data-image-url', imageUrl);
+    newImg.setAttribute('data-image-caption', caption);
+    newImg.setAttribute('data-image-id', `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    
+    // Si la imagen ya está cargada, añadir la clase loaded inmediatamente
+    if (img.complete && img.naturalHeight !== 0) {
+      newImg.classList.add('loaded');
+      // Remover el loading spinner inmediatamente
+      setTimeout(() => {
+        const loading = imageContainer.querySelector('.image-loading');
+        if (loading) loading.remove();
+      }, 0);
+    } else {
+      // Añadir handler de carga solo si aún no está cargada
+      newImg.addEventListener('load', function() {
+        this.classList.add('loaded');
+        const loading = this.parentElement.querySelector('.image-loading');
+        if (loading) loading.remove();
+      });
+    }
+    
+    imageContainer.appendChild(newImg);
+    
+    // Crear botón de compartir
+    const shareButton = document.createElement('button');
+    shareButton.className = 'notion-image-share-button share-button';
+    shareButton.setAttribute('data-image-url', imageUrl);
+    shareButton.setAttribute('data-image-caption', caption);
+    shareButton.setAttribute('title', 'Show to players');
+    shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Share" />';
+    imageContainer.appendChild(shareButton);
+    
+    imageWrapper.appendChild(imageContainer);
+    
+    // Añadir caption si existe
+    if (caption) {
+      const captionDiv = document.createElement('div');
+      captionDiv.className = 'notion-image-caption';
+      captionDiv.textContent = caption;
+      imageWrapper.appendChild(captionDiv);
+    }
+    
+    // Reemplazar la imagen original con el nuevo contenedor
+    try {
+      img.parentNode.replaceChild(imageWrapper, img);
+      log(`✅ Imagen ${index + 1} convertida a formato Notion:`, imageUrl.substring(0, 50));
+    } catch (e) {
+      console.error('Error al reemplazar imagen:', e, img);
+    }
+  });
+  
+  log('✅ Procesadas', regularImages.length, 'imágenes normales');
   
   // Manejar imágenes normales y cover (tanto las de Notion como las que acabamos de convertir)
   const images = document.querySelectorAll('.notion-image-clickable, .notion-cover-image');
