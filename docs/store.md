@@ -5,13 +5,12 @@ author: Lole Román - lolergb
 image: https://owlbear-gm-vault.netlify.app/img/cover-dmpanel.jpg
 icon: https://owlbear-gm-vault.netlify.app/icon.svg
 tags:
-  - dm-tools
-  - handouts
-  - notion
-  - reference
+  - tool
 manifest: https://owlbear-gm-vault.netlify.app/manifest.json
 learn-more: https://github.com/lolergb/owlbear-gm-vault
 ---
+
+[dice, fog, tool, content-pack, drawing, audio, combat, automation, other]
 
 # GM Vault
 
