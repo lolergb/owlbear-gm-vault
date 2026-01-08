@@ -19,6 +19,10 @@
     {
       "type": "category",
       "index": 3
+    },
+    {
+      "type": "category",
+      "index": 5
     }
   ],
   "categories": [
@@ -44,30 +48,30 @@
       ],
       "pages": [
         {
-          "url": "/content-demo/opening-scene.html",
-          "name": "Opening scene"
+          "url": "https://owlbear-gm-vault.netlify.app/content-demo/quick-start.html",
+          "name": "Quick Start"
         },
         {
-          "url": "https://media.wizards.com/2018/dnd/downloads/DnD_BasicRules_2018.pdf",
-          "name": "Basic Rules DnD"
+          "url": "https://media.wizards.com/2023/downloads/dnd/SRD_CC_v5.1.pdf",
+          "name": "SRD CC 5.1"
         },
         {
-          "url": "https://5e.tools/img/adventure/LMoP/The%20Sword%20Coast.webp",
-          "name": "Handout — Mysterious Map (Player)"
+          "url": "https://www.5esrd.com/wp-content/uploads/2016/12/DeanSpencer-elfrogue-reduced.png",
+          "name": "Race - Elf"
         },
         {
-          "url": "https://5e.tools/bestiary.html#goblin_mm,bookview:true",
+          "url": "https://www.5esrd.com/gamemastering/monsters-foes/monsters-by-type/humanoids/goblin/",
           "name": "Enemy — Goblin (Link to token)"
         }
       ],
       "categories": []
     },
     {
-      "name": "Session",
+      "name": "Session Notes",
       "pages": [
         {
-          "name": "Session Notes (Template)",
-          "url": "/content-demo/session-notes.html"
+          "name": "Template",
+          "url": "https://owlbear-gm-vault.netlify.app/content-demo/session-notes.html"
         }
       ],
       "categories": [],
@@ -90,12 +94,8 @@
           "name": "Encounter - The Watched Crossroads",
           "pages": [
             {
-              "name": "Map – Sword Coast (Player)",
-              "url": "https://5e.tools/img/adventure/LMoP/The%20Sword%20Coast%20(Player).webp"
-            },
-            {
               "name": "Scene — The Watched Crossroads",
-              "url": "/content-demo/scene-the-watched-crossroads.html"
+              "url": "https://owlbear-gm-vault.netlify.app/content-demo/scene-the-watched-crossroads.html"
             }
           ],
           "categories": [],
@@ -115,10 +115,58 @@
           "pages": [
             {
               "name": "Maera",
-              "url": "/content-demo/maera-manos-secas.html"
+              "url": "https://owlbear-gm-vault.netlify.app/content-demo/maera-manos-secas.html"
             }
           ],
           "categories": []
+        }
+      ]
+    },
+    {
+      "name": "Compatible formats",
+      "pages": [
+        {
+          "name": "Presentation",
+          "url": "https://docs.google.com/presentation/d/1oIMHW9qRPMSauD16w6uxTbRBtSZGaTBWC57OnM7MKnU/edit?usp=sharing"
+        },
+        {
+          "name": "Spreadsheet",
+          "url": "https://docs.google.com/spreadsheets/d/1YG2RgqGYro4nedTnCiaaUxDHGHoyxSQlLtqUAGua010/edit?usp=sharing"
+        },
+        {
+          "name": "Document",
+          "url": "https://docs.google.com/document/d/1tza3tqn9fAFn5ppfm4eR2oz5JSAvXMa0LZ-EpJaQ7n0/edit?usp=sharing"
+        },
+        {
+          "name": "Video (Vimeo)",
+          "url": "https://vimeo.com/148751763"
+        },
+        {
+          "name": "Video (YouTube)",
+          "url": "https://www.youtube.com/watch?v=YE7VzlLtp-4"
+        }
+      ],
+      "categories": [],
+      "order": [
+        {
+          "type": "page",
+          "index": 0
+        },
+        {
+          "type": "page",
+          "index": 1
+        },
+        {
+          "type": "page",
+          "index": 2
+        },
+        {
+          "type": "page",
+          "index": 3
+        },
+        {
+          "type": "page",
+          "index": 4
         }
       ]
     }
