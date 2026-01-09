@@ -4,7 +4,7 @@
  * Orquesta todos los servicios, renderers y componentes de la aplicación.
  */
 
-import { log, logError, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole } from '../utils/logger.js';
+import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole } from '../utils/logger.js';
 import { filterVisiblePages } from '../utils/helpers.js';
 
 // Models
@@ -1083,12 +1083,41 @@ export class ExtensionController {
   // ============================================
 
   /**
+   * Gestiona la visibilidad entre notion-content y notion-iframe
+   * @param {HTMLElement} container - El contenedor notion-container
+   * @param {'content' | 'iframe'} mode - Qué elemento mostrar
+   * @private
+   */
+  _setNotionDisplayMode(container, mode) {
+    const contentDiv = container.querySelector('#notion-content');
+    const iframe = container.querySelector('#notion-iframe');
+    
+    if (mode === 'content') {
+      // Mostrar content, ocultar y limpiar iframe
+      if (iframe) {
+        iframe.src = 'about:blank';
+      }
+      container.classList.add('show-content');
+    } else if (mode === 'iframe') {
+      // Mostrar iframe, ocultar y limpiar content
+      if (contentDiv) {
+        contentDiv.innerHTML = '';
+      }
+      container.classList.remove('show-content');
+    }
+  }
+
+  /**
    * Renderiza una página de Notion
    * @private
    */
   async _renderNotionPage(page, pageId) {
+    const notionContainer = document.getElementById('notion-container');
     const notionContent = document.getElementById('notion-content');
-    if (!notionContent) return;
+    if (!notionContainer || !notionContent) return;
+
+    // Mostrar content, ocultar iframe
+    this._setNotionDisplayMode(notionContainer, 'content');
 
     const blocks = await this.notionService.fetchBlocks(pageId);
     const html = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
@@ -1106,21 +1135,12 @@ export class ExtensionController {
   }
 
   /**
-   * Renderiza una página de imagen
+   * Renderiza una página de imagen (abre en modal de OBR)
    * @private
    */
-  _renderImagePage(page) {
-    const notionContent = document.getElementById('notion-content');
-    if (!notionContent) return;
-
-    notionContent.innerHTML = `
-      <h1 class="page-title">${page.name}</h1>
-      <div class="image-container">
-        <img src="${page.url}" alt="${page.name}" class="notion-image-clickable" data-image-url="${page.url}" />
-      </div>
-    `;
-    
-    this._attachImageHandlers(notionContent);
+  async _renderImagePage(page) {
+    // Las imágenes se abren directamente en modal de OBR
+    await this._showImageModal(page.url, page.name);
   }
 
   /**
@@ -1128,51 +1148,39 @@ export class ExtensionController {
    * @private
    */
   _renderVideoPage(page) {
-    const notionContent = document.getElementById('notion-content');
-    if (!notionContent) return;
+    const notionContainer = document.getElementById('notion-container');
+    const notionIframe = document.getElementById('notion-iframe');
+    if (!notionContainer || !notionIframe) return;
 
-    let embedHtml = '';
+    // Cambiar a modo iframe
+    this._setNotionDisplayMode(notionContainer, 'iframe');
+
+    let embedUrl = '';
     const url = page.url;
 
     // YouTube
     if (url.includes('youtube.com') || url.includes('youtu.be')) {
       const videoId = this._extractYouTubeId(url);
       if (videoId) {
-        embedHtml = `
-          <div class="video-container" style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; border-radius: 8px;">
-            <iframe 
-              src="https://www.youtube.com/embed/${videoId}" 
-              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
-              frameborder="0" 
-              allowfullscreen
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-            </iframe>
-          </div>
-        `;
+        embedUrl = `https://www.youtube.com/embed/${videoId}`;
       }
     }
     // Vimeo
     else if (url.includes('vimeo.com')) {
       const vimeoId = url.match(/vimeo\.com\/(\d+)/)?.[1];
       if (vimeoId) {
-        embedHtml = `
-          <div class="video-container" style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; border-radius: 8px;">
-            <iframe 
-              src="https://player.vimeo.com/video/${vimeoId}" 
-              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
-              frameborder="0" 
-              allowfullscreen>
-            </iframe>
-          </div>
-        `;
+        embedUrl = `https://player.vimeo.com/video/${vimeoId}`;
       }
     }
+    // Video directo
+    else if (url.includes('.mp4')) {
+      embedUrl = url;
+    }
 
-    if (embedHtml) {
-      notionContent.innerHTML = `
-        <h1 class="page-title">${page.name}</h1>
-        ${embedHtml}
-      `;
+    if (embedUrl) {
+      notionIframe.src = embedUrl;
+      notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
+      notionIframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
     } else {
       // Fallback a iframe genérico
       this._renderExternalPage(page);
@@ -1194,8 +1202,12 @@ export class ExtensionController {
    * @private
    */
   _renderGoogleDocPage(page) {
-    const notionContent = document.getElementById('notion-content');
-    if (!notionContent) return;
+    const notionContainer = document.getElementById('notion-container');
+    const notionIframe = document.getElementById('notion-iframe');
+    if (!notionContainer || !notionIframe) return;
+
+    // Cambiar a modo iframe
+    this._setNotionDisplayMode(notionContainer, 'iframe');
 
     // Convertir URL de Google Docs a embed
     let embedUrl = page.url;
@@ -1217,17 +1229,8 @@ export class ExtensionController {
       }
     }
 
-    notionContent.innerHTML = `
-      <h1 class="page-title">${page.name}</h1>
-      <div style="width: 100%; height: calc(100vh - 150px); min-height: 500px; border-radius: 8px; overflow: hidden;">
-        <iframe 
-          src="${embedUrl}" 
-          frameborder="0" 
-          style="width: 100%; height: 100%;"
-          allowfullscreen>
-        </iframe>
-      </div>
-    `;
+    notionIframe.src = embedUrl;
+    notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
   }
 
   /**
@@ -1235,20 +1238,16 @@ export class ExtensionController {
    * @private
    */
   _renderExternalPage(page) {
-    const notionContent = document.getElementById('notion-content');
-    if (!notionContent) return;
-    
-    notionContent.innerHTML = `
-      <h1 class="page-title">${page.name}</h1>
-      <div style="width: 100%; height: calc(100vh - 150px); min-height: 500px; border-radius: 8px; overflow: hidden;">
-        <iframe 
-          src="${page.url}" 
-          frameborder="0" 
-          style="width: 100%; height: 100%;"
-          allowfullscreen>
-        </iframe>
-      </div>
-    `;
+    const notionContainer = document.getElementById('notion-container');
+    const notionIframe = document.getElementById('notion-iframe');
+    if (!notionContainer || !notionIframe) return;
+
+    // Cambiar a modo iframe
+    this._setNotionDisplayMode(notionContainer, 'iframe');
+
+    notionIframe.src = page.url;
+    notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
+    notionIframe.allowfullscreen = true;
   }
 
   /**
@@ -1300,11 +1299,15 @@ export class ExtensionController {
    * @private
    */
   async _renderDemoHtmlPage(page) {
+    const notionContainer = document.getElementById('notion-container');
     const notionContent = document.getElementById('notion-content');
-    if (!notionContent) {
+    if (!notionContainer || !notionContent) {
       logError('No se encontró el contenedor de contenido');
       return;
     }
+
+    // Mostrar content, ocultar iframe
+    this._setNotionDisplayMode(notionContainer, 'content');
 
     // Mostrar loading
     notionContent.innerHTML = `
@@ -1408,58 +1411,50 @@ export class ExtensionController {
   }
 
   /**
-   * Muestra un modal con la imagen ampliada
+   * Muestra un modal con la imagen ampliada usando OBR.modal
    * @private
    */
-  _showImageModal(url, caption) {
-    // Crear modal
-    const modal = document.createElement('div');
-    modal.className = 'image-modal';
-    modal.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.9);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      cursor: zoom-out;
-    `;
-    
-    const img = document.createElement('img');
-    img.src = url;
-    img.alt = caption || 'Image';
-    img.style.cssText = `
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      border-radius: 8px;
-    `;
-    
-    modal.appendChild(img);
-    
-    if (caption) {
-      const captionDiv = document.createElement('div');
-      captionDiv.style.cssText = `
-        position: absolute;
-        bottom: 20px;
-        left: 0;
-        right: 0;
-        text-align: center;
-        color: white;
-        padding: 10px;
-        background: rgba(0, 0, 0, 0.5);
-      `;
-      captionDiv.textContent = caption;
-      modal.appendChild(captionDiv);
+  async _showImageModal(imageUrl, caption) {
+    if (!this.OBR || !this.OBR.modal) {
+      logError('OBR.modal no disponible');
+      return;
     }
-    
-    modal.addEventListener('click', () => modal.remove());
-    document.body.appendChild(modal);
+
+    try {
+      // Asegurarse de que imageUrl sea una URL absoluta
+      let absoluteImageUrl = imageUrl;
+      if (imageUrl && !imageUrl.match(/^https?:\/\//i)) {
+        try {
+          absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
+        } catch (e) {
+          logWarn('No se pudo construir URL absoluta, usando original:', imageUrl);
+          absoluteImageUrl = imageUrl;
+        }
+      }
+      
+      // Construir URL del viewer
+      const currentPath = window.location.pathname;
+      const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+      const baseUrl = window.location.origin + baseDir;
+      
+      const viewerUrl = new URL('html/image-viewer.html', baseUrl);
+      viewerUrl.searchParams.set('url', encodeURIComponent(absoluteImageUrl));
+      if (caption) {
+        viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
+      }
+      
+      // Abrir modal usando Owlbear SDK
+      await this.OBR.modal.open({
+        id: 'notion-image-viewer',
+        url: viewerUrl.toString(),
+        height: 800,
+        width: 1200
+      });
+    } catch (error) {
+      logError('Error al abrir modal de Owlbear:', error);
+      // Fallback: abrir en nueva ventana
+      window.open(imageUrl, '_blank', 'noopener,noreferrer');
+    }
   }
 
   /**
