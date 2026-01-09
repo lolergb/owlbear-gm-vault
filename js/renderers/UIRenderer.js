@@ -198,7 +198,7 @@ export class UIRenderer {
     } else if (page.url.includes('youtube.com') || page.url.includes('youtu.be')) {
       linkIconHtml = '<img src="img/icon-youtube.svg" alt="YouTube" class="page-link-icon">';
     } else if (page.url.includes('drive.google.com') || page.url.includes('docs.google.com')) {
-      linkIconHtml = '<img src="img/icon-google-docs.svg" alt="Google Docs" class="page-link-icon">';
+      linkIconHtml = '<img src="img/icon-gdocs.svg" alt="Google Docs" class="page-link-icon">';
     }
 
     // Indicador de visible para players
@@ -232,7 +232,7 @@ export class UIRenderer {
       // Botón de menú contextual (editar/eliminar)
       const contextMenuButton = document.createElement('button');
       contextMenuButton.className = 'page-context-menu-button';
-      contextMenuButton.innerHTML = '<img src="img/icon-contextualmenu.svg" alt="Menu">';
+      contextMenuButton.innerHTML = '<img src="img/icon-dots.svg" alt="Menu">';
       contextMenuButton.title = 'Options';
       contextMenuButton.style.cssText = 'position: absolute; right: 8px; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity 0.2s; background: transparent; border: none; cursor: pointer; padding: 4px;';
       
@@ -323,29 +323,57 @@ export class UIRenderer {
     // Marcar botón como activo
     const pageButton = button.closest('.page-button');
     if (pageButton) pageButton.classList.add('context-menu-open');
-    button.classList.add('context-menu-active');
 
     const rect = button.getBoundingClientRect();
     
     const menu = document.createElement('div');
     menu.className = 'context-menu';
-    menu.style.left = `${rect.right + 8}px`;
-    menu.style.top = `${rect.top}px`;
+    menu.style.cssText = `
+      position: fixed;
+      left: ${rect.right + 8}px;
+      top: ${rect.top}px;
+      z-index: 1000;
+      background: var(--color-bg-secondary, #2a2a2a);
+      border: 1px solid var(--color-border, #444);
+      border-radius: 8px;
+      padding: 4px 0;
+      min-width: 120px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
 
     const items = [
       { icon: 'img/icon-edit.svg', text: 'Edit', action: () => this._editPage(page, categoryPath, pageIndex) },
-      { icon: 'img/icon-trash.svg', text: 'Delete', action: () => this._deletePage(page, categoryPath, pageIndex) }
+      { icon: 'img/icon-delete.svg', text: 'Delete', action: () => this._deletePage(page, categoryPath, pageIndex) }
     ];
 
     items.forEach(item => {
-      const menuItem = document.createElement('div');
+      const menuItem = document.createElement('button');
       menuItem.className = 'context-menu-item';
-      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu__icon"><span>${item.text}</span>`;
+      menuItem.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 12px;
+        background: transparent;
+        border: none;
+        color: var(--color-text-primary, #fff);
+        cursor: pointer;
+        font-size: 14px;
+        text-align: left;
+      `;
+      menuItem.innerHTML = `<img src="${item.icon}" alt="" style="width: 16px; height: 16px; opacity: 0.7;"><span>${item.text}</span>`;
+      
+      menuItem.addEventListener('mouseenter', () => {
+        menuItem.style.background = 'var(--color-bg-hover, #3a3a3a)';
+      });
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.background = 'transparent';
+      });
       
       menuItem.addEventListener('click', () => {
         item.action();
         menu.remove();
-        button.classList.remove('context-menu-active');
         if (pageButton) pageButton.classList.remove('context-menu-open');
       });
       menu.appendChild(menuItem);
@@ -357,7 +385,6 @@ export class UIRenderer {
     const closeHandler = (e) => {
       if (!menu.contains(e.target) && e.target !== button) {
         menu.remove();
-        button.classList.remove('context-menu-active');
         if (pageButton) pageButton.classList.remove('context-menu-open');
         document.removeEventListener('click', closeHandler);
       }

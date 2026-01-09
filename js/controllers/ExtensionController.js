@@ -4,12 +4,11 @@
  * Orquesta todos los servicios, renderers y componentes de la aplicación.
  */
 
-import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole } from '../utils/logger.js';
+import { log, logError, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole } from '../utils/logger.js';
 import { filterVisiblePages } from '../utils/helpers.js';
 
 // Models
 import { Page } from '../models/Page.js';
-import { Config } from '../models/Config.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js';
@@ -186,16 +185,10 @@ export class ExtensionController {
     try {
       const pageId = page.getNotionPageId();
       
-      // Detectar tipo de contenido en orden de prioridad
-      if (this._isDemoHtmlFile(page.url)) {
-        // Archivos HTML de demo se cargan directamente (no en iframe)
-        await this._renderDemoHtmlPage(page);
-      } else if (page.isNotionPage() && pageId) {
+      if (page.isNotionPage() && pageId) {
         await this._renderNotionPage(page, pageId);
       } else if (page.isImage()) {
         this._renderImagePage(page);
-      } else if (page.isVideo()) {
-        this._renderVideoPage(page);
       } else if (page.isGoogleDoc()) {
         this._renderGoogleDocPage(page);
       } else {
@@ -220,51 +213,23 @@ export class ExtensionController {
   async saveConfig(config) {
     log('💾 Guardando configuración...');
 
-    try {
-      // Asegurar que config es una instancia de Config
-      if (!(config instanceof Config)) {
-        log('⚠️ Config no es instancia de Config, parseando...');
-        config = this.configParser.parse(config);
-      }
+    this.config = config;
+    this.configBuilder = new ConfigBuilder(config);
 
-      this.config = config;
-      this.configBuilder = new ConfigBuilder(config);
+    // Guardar en localStorage
+    this.storageService.saveLocalConfig(config.toJSON ? config.toJSON() : config);
 
-      // Serializar a JSON
-      const configJson = config.toJSON ? config.toJSON() : config;
-      log('💾 Config serializada, guardando en localStorage...');
-
-      // Guardar en localStorage
-      const saved = this.storageService.saveLocalConfig(configJson);
-      if (!saved) {
-        logError('❌ Error al guardar en localStorage');
-        return;
-      }
-      log('✅ Config guardada en localStorage');
-
-      // Si es GM, guardar en room metadata y broadcast
-      if (this.isGM) {
-        log('💾 Guardando en room metadata...');
-        const roomSaved = await this.storageService.saveRoomConfig(configJson);
-        if (roomSaved) {
-          log('✅ Config guardada en room metadata');
-        } else {
-          logWarn('⚠️ No se pudo guardar en room metadata');
-        }
-        
-        // Broadcast páginas visibles
-        const visibleConfig = filterVisiblePages(configJson);
-        this.broadcastService.broadcastVisiblePages(visibleConfig);
-        log('✅ Config visible broadcasted');
-      }
-
-      // Re-renderizar
-      await this.render();
-      log('✅ Configuración guardada y renderizada');
-    } catch (e) {
-      logError('❌ Error crítico al guardar configuración:', e);
-      throw e;
+    // Si es GM, guardar en room metadata y broadcast
+    if (this.isGM) {
+      await this.storageService.saveRoomConfig(config.toJSON ? config.toJSON() : config);
+      
+      // Broadcast páginas visibles
+      const visibleConfig = filterVisiblePages(config.toJSON ? config.toJSON() : config);
+      this.broadcastService.broadcastVisiblePages(visibleConfig);
     }
+
+    // Re-renderizar
+    await this.render();
   }
 
   /**
@@ -529,14 +494,18 @@ export class ExtensionController {
     } else if (isNotionContainerVisible) {
       // Volver a la lista desde notion-container
       notionContainer.classList.add('hidden');
+      notionContainer.classList.remove('show-content');
+      
       if (notionContent) {
         notionContent.innerHTML = '';
-        notionContent.style.display = '';
+        notionContent.style.removeProperty('display');
+        notionContent.style.removeProperty('visibility');
       }
       // Limpiar iframe
       if (notionIframe) {
         notionIframe.src = 'about:blank';
-        notionIframe.style.display = '';
+        notionIframe.style.removeProperty('display');
+        notionIframe.style.removeProperty('visibility');
       }
     }
 
@@ -793,13 +762,9 @@ export class ExtensionController {
     const existingMenu = document.querySelector('.context-menu');
     if (existingMenu) existingMenu.remove();
 
-    // Marcar botón como activo
-    button.classList.add('context-menu-active');
-
     const menu = document.createElement('div');
     menu.className = 'context-menu';
-    menu.style.left = `${rect.right + 8}px`;
-    menu.style.top = `${rect.bottom + 8}px`;
+    menu.style.cssText = `position: fixed; left: ${rect.right + 8}px; top: ${rect.bottom + 8}px; z-index: 1000;`;
 
     const items = [
       { icon: 'img/folder-close.svg', text: 'Add folder', action: () => this._addCategory() },
@@ -807,13 +772,12 @@ export class ExtensionController {
     ];
 
     items.forEach(item => {
-      const menuItem = document.createElement('div');
+      const menuItem = document.createElement('button');
       menuItem.className = 'context-menu-item';
-      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu__icon"><span>${item.text}</span>`;
+      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu-icon"><span>${item.text}</span>`;
       menuItem.addEventListener('click', () => {
         item.action();
         menu.remove();
-        button.classList.remove('context-menu-active');
       });
       menu.appendChild(menuItem);
     });
@@ -824,7 +788,6 @@ export class ExtensionController {
     const closeHandler = (e) => {
       if (!menu.contains(e.target) && e.target !== button) {
         menu.remove();
-        button.classList.remove('context-menu-active');
         document.removeEventListener('click', closeHandler);
       }
     };
@@ -849,25 +812,30 @@ export class ExtensionController {
    * @private
    */
   async _addPage() {
-    // Usar prompts simples
-    const name = prompt('Page name:');
-    if (!name) return;
-    
-    const url = prompt('URL:');
-    if (!url) return;
-    
-    // Añadir a la primera categoría o crear una
-    if (!this.config.categories || this.config.categories.length === 0) {
-      this.config.categories = [{ name: 'Pages', pages: [], categories: [] }];
-    }
-    
-    this.config.categories[0].pages.push({
-      name: name,
-      url: url,
-      visibleToPlayers: false
+    // Mostrar modal para añadir página
+    this.modalManager.showPrompt({
+      title: 'Add Page',
+      fields: [
+        { name: 'name', label: 'Page name', type: 'text', required: true },
+        { name: 'url', label: 'URL', type: 'text', required: true }
+      ],
+      onConfirm: async (values) => {
+        if (!values.name || !values.url) return;
+        
+        // Añadir a la primera categoría o crear una
+        if (!this.config.categories || this.config.categories.length === 0) {
+          this.config.categories = [{ name: 'Pages', pages: [], categories: [] }];
+        }
+        
+        this.config.categories[0].pages.push({
+          name: values.name,
+          url: values.url,
+          visibleToPlayers: false
+        });
+        
+        await this.saveConfig(this.config);
+      }
     });
-    
-    await this.saveConfig(this.config);
   }
 
   /**
@@ -1084,26 +1052,38 @@ export class ExtensionController {
 
   /**
    * Gestiona la visibilidad entre notion-content y notion-iframe
-   * @param {HTMLElement} container - El contenedor notion-container
    * @param {'content' | 'iframe'} mode - Qué elemento mostrar
    * @private
    */
-  _setNotionDisplayMode(container, mode) {
-    const contentDiv = container.querySelector('#notion-content');
-    const iframe = container.querySelector('#notion-iframe');
+  _setNotionDisplayMode(mode) {
+    const notionContainer = document.getElementById('notion-container');
+    const notionContent = document.getElementById('notion-content');
+    const notionIframe = document.getElementById('notion-iframe');
+    
+    if (!notionContainer) return;
+    
+    // Limpiar estilos inline
+    if (notionContent) {
+      notionContent.style.removeProperty('display');
+      notionContent.style.removeProperty('visibility');
+    }
+    if (notionIframe) {
+      notionIframe.style.removeProperty('display');
+      notionIframe.style.removeProperty('visibility');
+    }
     
     if (mode === 'content') {
       // Mostrar content, ocultar y limpiar iframe
-      if (iframe) {
-        iframe.src = 'about:blank';
+      if (notionIframe) {
+        notionIframe.src = 'about:blank';
       }
-      container.classList.add('show-content');
+      notionContainer.classList.add('show-content');
     } else if (mode === 'iframe') {
       // Mostrar iframe, ocultar y limpiar content
-      if (contentDiv) {
-        contentDiv.innerHTML = '';
+      if (notionContent) {
+        notionContent.innerHTML = '';
       }
-      container.classList.remove('show-content');
+      notionContainer.classList.remove('show-content');
     }
   }
 
@@ -1112,12 +1092,14 @@ export class ExtensionController {
    * @private
    */
   async _renderNotionPage(page, pageId) {
-    const notionContainer = document.getElementById('notion-container');
     const notionContent = document.getElementById('notion-content');
-    if (!notionContainer || !notionContent) return;
+    if (!notionContent) return;
 
-    // Mostrar content, ocultar iframe
-    this._setNotionDisplayMode(notionContainer, 'content');
+    // Cambiar a modo content
+    this._setNotionDisplayMode('content');
+
+    // Restaurar clases originales
+    notionContent.className = 'notion-container__content notion-content';
 
     const blocks = await this.notionService.fetchBlocks(pageId);
     const html = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
@@ -1135,79 +1117,24 @@ export class ExtensionController {
   }
 
   /**
-   * Renderiza una página de imagen (abre en modal de OBR)
+   * Renderiza una página de imagen (abre directamente en modal OBR)
    * @private
    */
   async _renderImagePage(page) {
     // Las imágenes se abren directamente en modal de OBR
-    await this._showImageModal(page.url, page.name);
+    await this._showImageModal(page.url, page.name, true);
   }
 
   /**
-   * Renderiza una página de video (YouTube, Vimeo)
-   * @private
-   */
-  _renderVideoPage(page) {
-    const notionContainer = document.getElementById('notion-container');
-    const notionIframe = document.getElementById('notion-iframe');
-    if (!notionContainer || !notionIframe) return;
-
-    // Cambiar a modo iframe
-    this._setNotionDisplayMode(notionContainer, 'iframe');
-
-    let embedUrl = '';
-    const url = page.url;
-
-    // YouTube
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      const videoId = this._extractYouTubeId(url);
-      if (videoId) {
-        embedUrl = `https://www.youtube.com/embed/${videoId}`;
-      }
-    }
-    // Vimeo
-    else if (url.includes('vimeo.com')) {
-      const vimeoId = url.match(/vimeo\.com\/(\d+)/)?.[1];
-      if (vimeoId) {
-        embedUrl = `https://player.vimeo.com/video/${vimeoId}`;
-      }
-    }
-    // Video directo
-    else if (url.includes('.mp4')) {
-      embedUrl = url;
-    }
-
-    if (embedUrl) {
-      notionIframe.src = embedUrl;
-      notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
-      notionIframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-    } else {
-      // Fallback a iframe genérico
-      this._renderExternalPage(page);
-    }
-  }
-
-  /**
-   * Extrae el ID de YouTube de una URL
-   * @private
-   */
-  _extractYouTubeId(url) {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  }
-
-  /**
-   * Renderiza una página de Google Docs/Sheets/Slides
+   * Renderiza una página de Google Docs
    * @private
    */
   _renderGoogleDocPage(page) {
-    const notionContainer = document.getElementById('notion-container');
-    const notionIframe = document.getElementById('notion-iframe');
-    if (!notionContainer || !notionIframe) return;
-
     // Cambiar a modo iframe
-    this._setNotionDisplayMode(notionContainer, 'iframe');
+    this._setNotionDisplayMode('iframe');
+    
+    const notionIframe = document.getElementById('notion-iframe');
+    if (!notionIframe) return;
 
     // Convertir URL de Google Docs a embed
     let embedUrl = page.url;
@@ -1238,140 +1165,15 @@ export class ExtensionController {
    * @private
    */
   _renderExternalPage(page) {
-    const notionContainer = document.getElementById('notion-container');
-    const notionIframe = document.getElementById('notion-iframe');
-    if (!notionContainer || !notionIframe) return;
-
     // Cambiar a modo iframe
-    this._setNotionDisplayMode(notionContainer, 'iframe');
+    this._setNotionDisplayMode('iframe');
+    
+    const notionIframe = document.getElementById('notion-iframe');
+    if (!notionIframe) return;
 
     notionIframe.src = page.url;
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
-    notionIframe.allowfullscreen = true;
-  }
-
-  /**
-   * Detecta si es un archivo HTML de demo local
-   * @private
-   */
-  _isDemoHtmlFile(url) {
-    if (!url || typeof url !== 'string') return false;
-    // Detectar archivos HTML en content-demo (cualquier dominio)
-    const isDemoHtml = url.includes('/content-demo/') && url.endsWith('.html');
-    log('🔍 _isDemoHtmlFile check:', url, '→', isDemoHtml);
-    return isDemoHtml;
-  }
-
-  /**
-   * Obtiene la URL base de la app (copiado del código original)
-   * @private
-   */
-  _getAppBaseUrl() {
-    const currentOrigin = window.location.origin;
-    // Si estamos en localhost, usar el origen actual
-    if (currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')) {
-      return currentOrigin;
-    }
-    // Si estamos en Netlify o cualquier otro dominio de la app
-    if (currentOrigin.includes('owlbear-gm-vault.netlify.app')) {
-      return currentOrigin;
-    }
-    // Si estamos en un iframe (como dentro de Owlbear), usar la URL de Netlify
-    return 'https://owlbear-gm-vault.netlify.app';
-  }
-
-  /**
-   * Resuelve una URL relativa a absoluta (copiado del código original)
-   * @private
-   */
-  _resolveAppUrl(url) {
-    if (!url || typeof url !== 'string') return url;
-    // Si ya es una URL absoluta, retornarla tal cual
-    if (url.match(/^https?:\/\//i)) return url;
-    // Si es una URL relativa, resolverla con la base de la app
-    const baseUrl = this._getAppBaseUrl();
-    return new URL(url, baseUrl).toString();
-  }
-
-  /**
-   * Renderiza una página HTML de demo (cargando contenido directamente)
-   * Copiado del código original con ajustes mínimos
-   * @private
-   */
-  async _renderDemoHtmlPage(page) {
-    const notionContainer = document.getElementById('notion-container');
-    const notionContent = document.getElementById('notion-content');
-    if (!notionContainer || !notionContent) {
-      logError('No se encontró el contenedor de contenido');
-      return;
-    }
-
-    // Mostrar content, ocultar iframe
-    this._setNotionDisplayMode(notionContainer, 'content');
-
-    // Mostrar loading
-    notionContent.innerHTML = `
-      <div class="empty-state notion-loading">
-        <div class="empty-state-icon">⏳</div>
-        <p class="empty-state-text">Loading content...</p>
-      </div>
-    `;
-
-    try {
-      // Resolver la URL - si es absoluta apuntando a producción pero estamos en deploy-preview, ajustar
-      let urlToFetch = page.url;
-      const currentOrigin = window.location.origin;
-      
-      // Si la URL es absoluta y apunta a producción, pero estamos en deploy-preview, reemplazar dominio
-      if (urlToFetch.includes('https://owlbear-gm-vault.netlify.app') && 
-          currentOrigin.includes('deploy-preview-')) {
-        urlToFetch = urlToFetch.replace('https://owlbear-gm-vault.netlify.app', currentOrigin);
-        log('📄 Ajustando URL de producción a deploy-preview:', urlToFetch);
-      }
-      
-      // Resolver la URL relativa a absoluta (igual que el código original)
-      const absoluteUrl = this._resolveAppUrl(urlToFetch);
-      log('📄 Cargando demo HTML desde:', absoluteUrl);
-      
-      // Obtener el HTML del archivo
-      const response = await fetch(absoluteUrl);
-      if (!response.ok) {
-        throw new Error(`Error loading demo HTML: ${response.status}`);
-      }
-      
-      const html = await response.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      
-      // Extraer solo el contenido del div #notion-content
-      const demoContent = doc.querySelector('#notion-content');
-      
-      if (demoContent) {
-        // Copiar el contenido HTML directamente
-        notionContent.innerHTML = demoContent.innerHTML;
-        
-        // Copiar estilos si existen
-        const styles = doc.querySelectorAll('style');
-        styles.forEach(style => {
-          const styleElement = document.createElement('style');
-          styleElement.textContent = style.textContent;
-          document.head.appendChild(styleElement);
-        });
-        
-        // Attach event handlers para imágenes
-        this._attachImageHandlers(notionContent);
-      } else {
-        throw new Error('No se encontró #notion-content en el archivo HTML de demo');
-      }
-    } catch (error) {
-      logError('Error al cargar contenido HTML de demo:', error);
-      notionContent.innerHTML = `
-        <div class="empty-state notion-loading">
-          <div class="empty-state-icon">❌</div>
-          <p class="empty-state-text">Error loading demo content: ${error.message}</p>
-        </div>
-      `;
-    }
+    notionIframe.allowFullscreen = true;
   }
 
   /**
@@ -1412,11 +1214,16 @@ export class ExtensionController {
 
   /**
    * Muestra un modal con la imagen ampliada usando OBR.modal
+   * @param {string} imageUrl - URL de la imagen
+   * @param {string} caption - Texto del caption (opcional)
+   * @param {boolean} showShareButton - Mostrar botón de compartir (default: true para GM)
    * @private
    */
-  async _showImageModal(imageUrl, caption) {
+  async _showImageModal(imageUrl, caption, showShareButton = true) {
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
+      // Fallback: abrir en nueva ventana
+      window.open(imageUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -1427,7 +1234,7 @@ export class ExtensionController {
         try {
           absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
         } catch (e) {
-          logWarn('No se pudo construir URL absoluta, usando original:', imageUrl);
+          log('No se pudo construir URL absoluta, usando original:', imageUrl);
           absoluteImageUrl = imageUrl;
         }
       }
@@ -1441,6 +1248,10 @@ export class ExtensionController {
       viewerUrl.searchParams.set('url', encodeURIComponent(absoluteImageUrl));
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
+      }
+      // Mostrar botón de compartir solo si es GM
+      if (showShareButton && this.isGM) {
+        viewerUrl.searchParams.set('showShareButton', 'true');
       }
       
       // Abrir modal usando Owlbear SDK
