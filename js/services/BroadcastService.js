@@ -8,7 +8,8 @@ import {
   BROADCAST_CHANNEL_REQUEST, 
   BROADCAST_CHANNEL_RESPONSE,
   BROADCAST_CHANNEL_VISIBLE_PAGES,
-  BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES
+  BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES,
+  BROADCAST_CHANNEL_SHOW_IMAGE
 } from '../utils/constants.js';
 import { log, logWarn, getUserRole } from '../utils/logger.js';
 
@@ -52,6 +53,66 @@ export class BroadcastService {
    */
   setVisiblePagesCallback(callback) {
     this.onVisiblePagesReceived = callback;
+  }
+
+  // ============================================
+  // MÉTODOS GENÉRICOS
+  // ============================================
+
+  /**
+   * Envía un mensaje por broadcast
+   * @param {string} type - Tipo de mensaje
+   * @param {Object} data - Datos a enviar
+   */
+  async sendMessage(type, data) {
+    if (!this.OBR) {
+      logWarn('OBR no disponible para enviar mensaje');
+      return;
+    }
+
+    const channels = {
+      'SHOW_IMAGE': BROADCAST_CHANNEL_SHOW_IMAGE,
+    };
+
+    const channel = channels[type];
+    if (!channel) {
+      logWarn('Tipo de mensaje desconocido:', type);
+      return;
+    }
+
+    try {
+      await this.OBR.broadcast.sendMessage(channel, {
+        ...data,
+        timestamp: Date.now()
+      });
+      log(`📤 Mensaje enviado [${type}]:`, data);
+    } catch (e) {
+      logWarn('Error enviando mensaje:', e);
+    }
+  }
+
+  /**
+   * Escucha mensajes de un tipo específico
+   * @param {string} type - Tipo de mensaje
+   * @param {Function} callback - Callback a ejecutar
+   * @returns {Function} - Función para desuscribirse
+   */
+  onMessage(type, callback) {
+    if (!this.OBR) return () => {};
+
+    const channels = {
+      'SHOW_IMAGE': BROADCAST_CHANNEL_SHOW_IMAGE,
+    };
+
+    const channel = channels[type];
+    if (!channel) return () => {};
+
+    const unsubscribe = this.OBR.broadcast.onMessage(channel, (event) => {
+      callback(event.data);
+    });
+
+    this.subscriptions.push(unsubscribe);
+    return unsubscribe;
   }
 
   // ============================================

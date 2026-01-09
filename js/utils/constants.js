@@ -36,6 +36,7 @@ export const BROADCAST_CHANNEL_REQUEST = 'com.dmscreen/requestContent';
 export const BROADCAST_CHANNEL_RESPONSE = 'com.dmscreen/responseContent';
 export const BROADCAST_CHANNEL_VISIBLE_PAGES = 'com.dmscreen/visiblePages';
 export const BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES = 'com.dmscreen/requestVisiblePages';
+export const BROADCAST_CHANNEL_SHOW_IMAGE = 'com.dmscreen/showImage';
 
 // ============================================
 // TIMEOUTS Y LÍMITES
@@ -114,6 +115,7 @@ export const BROADCAST = {
   RESPONSE: BROADCAST_CHANNEL_RESPONSE,
   VISIBLE_PAGES: BROADCAST_CHANNEL_VISIBLE_PAGES,
   REQUEST_VISIBLE_PAGES: BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES,
+  SHOW_IMAGE: BROADCAST_CHANNEL_SHOW_IMAGE,
 };
 
 export const LIMITS = {

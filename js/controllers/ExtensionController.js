@@ -503,6 +503,134 @@ export class ExtensionController {
     if (backButton) backButton.classList.remove('hidden');
     if (pageTitle) pageTitle.textContent = 'Settings';
     if (buttonContainer) buttonContainer.classList.add('hidden');
+
+    // Configurar event listeners de settings (solo una vez)
+    this._setupSettingsEventListeners();
+  }
+
+  /**
+   * Configura los event listeners de los botones de settings
+   * @private
+   */
+  _setupSettingsEventListeners() {
+    const tokenInput = document.getElementById('token-input');
+    const saveBtn = document.getElementById('save-token');
+    const clearBtn = document.getElementById('clear-token');
+    const loadJsonBtn = document.getElementById('load-json-btn');
+    const downloadJsonBtn = document.getElementById('download-json-btn');
+    const patreonBtn = document.getElementById('patreon-btn');
+    const feedbackBtn = document.getElementById('feedback-btn');
+
+    // Mostrar token actual enmascarado
+    const currentToken = this.storageService.getUserToken() || '';
+    const tokenMasked = document.getElementById('token-masked');
+    if (tokenMasked && currentToken) {
+      tokenMasked.textContent = `Current: ${currentToken.substring(0, 8)}...${currentToken.slice(-4)}`;
+    }
+
+    // Guardar token
+    if (saveBtn && !saveBtn.dataset.listenerAdded) {
+      saveBtn.dataset.listenerAdded = 'true';
+      saveBtn.addEventListener('click', async () => {
+        const token = tokenInput ? tokenInput.value.trim() : '';
+        if (!token) {
+          alert('Please enter a Notion token');
+          return;
+        }
+        
+        this.storageService.saveUserToken(token);
+        alert('✅ Token saved successfully!');
+        this._goBackToList();
+      });
+    }
+
+    // Eliminar token
+    if (clearBtn && !clearBtn.dataset.listenerAdded) {
+      clearBtn.dataset.listenerAdded = 'true';
+      clearBtn.addEventListener('click', () => {
+        if (confirm('Delete token? You will go back to using the server token.')) {
+          this.storageService.saveUserToken('');
+          if (tokenInput) tokenInput.value = '';
+          if (tokenMasked) tokenMasked.textContent = '';
+          alert('Token deleted.');
+          this._goBackToList();
+        }
+      });
+    }
+
+    // Cargar JSON
+    if (loadJsonBtn && !loadJsonBtn.dataset.listenerAdded) {
+      loadJsonBtn.dataset.listenerAdded = 'true';
+      loadJsonBtn.addEventListener('click', () => {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          try {
+            const text = await file.text();
+            const config = JSON.parse(text);
+            
+            if (!config.categories) {
+              throw new Error('Invalid config: missing categories');
+            }
+            
+            await this.saveConfig(config);
+            alert('✅ Vault loaded successfully!');
+            this._goBackToList();
+          } catch (err) {
+            alert('❌ Error loading file: ' + err.message);
+          }
+        });
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        document.body.removeChild(fileInput);
+      });
+    }
+
+    // Descargar JSON
+    if (downloadJsonBtn && !downloadJsonBtn.dataset.listenerAdded) {
+      downloadJsonBtn.dataset.listenerAdded = 'true';
+      downloadJsonBtn.addEventListener('click', () => {
+        try {
+          const config = this.config || { categories: [] };
+          const jsonStr = JSON.stringify(config, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `gm-vault-${this.roomId || 'backup'}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert('❌ Error downloading: ' + err.message);
+        }
+      });
+    }
+
+    // Patreon
+    if (patreonBtn && !patreonBtn.dataset.listenerAdded) {
+      patreonBtn.dataset.listenerAdded = 'true';
+      patreonBtn.addEventListener('click', () => {
+        window.open('https://www.patreon.com/lsjroberts', '_blank');
+      });
+    }
+
+    // Feedback
+    if (feedbackBtn && !feedbackBtn.dataset.listenerAdded) {
+      feedbackBtn.dataset.listenerAdded = 'true';
+      feedbackBtn.addEventListener('click', () => {
+        window.open('https://owlbear.rodeo/feedback', '_blank');
+      });
+    }
   }
 
   /**
@@ -937,23 +1065,154 @@ export class ExtensionController {
     const images = targetContainer.querySelectorAll('.notion-image-clickable');
     
     images.forEach(img => {
+      if (img.dataset.listenerAdded) return;
+      img.dataset.listenerAdded = 'true';
+      
       img.addEventListener('click', () => {
         const url = img.dataset.imageUrl;
         const caption = img.dataset.imageCaption;
-        this.eventHandlers.handleOpenImageModal(url, caption);
+        this._showImageModal(url, caption);
       });
     });
 
     const shareButtons = targetContainer.querySelectorAll('.notion-image-share-button');
     
     shareButtons.forEach(btn => {
+      if (btn.dataset.listenerAdded) return;
+      btn.dataset.listenerAdded = 'true';
+      
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const url = btn.dataset.imageUrl;
         const caption = btn.dataset.imageCaption;
-        this.eventHandlers.handleShareImage(url, caption);
+        this._shareImageToPlayers(url, caption);
       });
     });
+  }
+
+  /**
+   * Muestra un modal con la imagen ampliada
+   * @private
+   */
+  _showImageModal(url, caption) {
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.className = 'image-modal';
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      cursor: zoom-out;
+    `;
+    
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = caption || 'Image';
+    img.style.cssText = `
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+    `;
+    
+    modal.appendChild(img);
+    
+    if (caption) {
+      const captionDiv = document.createElement('div');
+      captionDiv.style.cssText = `
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: white;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.5);
+      `;
+      captionDiv.textContent = caption;
+      modal.appendChild(captionDiv);
+    }
+    
+    modal.addEventListener('click', () => modal.remove());
+    document.body.appendChild(modal);
+  }
+
+  /**
+   * Comparte una imagen con los jugadores via broadcast
+   * @private
+   */
+  async _shareImageToPlayers(url, caption) {
+    if (!this.isGM) {
+      log('Solo el GM puede compartir imágenes');
+      return;
+    }
+
+    try {
+      await this.broadcastService.sendMessage('SHOW_IMAGE', {
+        url: url,
+        caption: caption || '',
+        sharedBy: this.playerName || 'GM'
+      });
+      
+      this._showFeedback('📸 Image shared with players!');
+    } catch (e) {
+      logError('Error compartiendo imagen:', e);
+      this._showFeedback('❌ Error sharing image');
+    }
+  }
+
+  /**
+   * Muestra un mensaje de feedback temporal
+   * @private
+   */
+  _showFeedback(message) {
+    // Remover feedback anterior
+    const existing = document.querySelector('.share-feedback');
+    if (existing) existing.remove();
+    
+    const feedback = document.createElement('div');
+    feedback.className = 'share-feedback';
+    feedback.textContent = message;
+    feedback.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--color-bg-secondary, #333);
+      color: var(--color-text-primary, #fff);
+      padding: 12px 24px;
+      border-radius: 8px;
+      z-index: 10001;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      animation: fadeInOut 2s ease forwards;
+    `;
+    
+    // Agregar keyframes si no existen
+    if (!document.querySelector('#share-feedback-styles')) {
+      const style = document.createElement('style');
+      style.id = 'share-feedback-styles';
+      style.textContent = `
+        @keyframes fadeInOut {
+          0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+          15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+          85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(feedback);
+    setTimeout(() => feedback.remove(), 2000);
   }
 }
 
