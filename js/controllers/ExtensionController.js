@@ -9,6 +9,7 @@ import { filterVisiblePages } from '../utils/helpers.js';
 
 // Models
 import { Page } from '../models/Page.js';
+import { Config } from '../models/Config.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js';
@@ -219,23 +220,51 @@ export class ExtensionController {
   async saveConfig(config) {
     log('💾 Guardando configuración...');
 
-    this.config = config;
-    this.configBuilder = new ConfigBuilder(config);
+    try {
+      // Asegurar que config es una instancia de Config
+      if (!(config instanceof Config)) {
+        log('⚠️ Config no es instancia de Config, parseando...');
+        config = this.configParser.parse(config);
+      }
 
-    // Guardar en localStorage
-    this.storageService.saveLocalConfig(config.toJSON ? config.toJSON() : config);
+      this.config = config;
+      this.configBuilder = new ConfigBuilder(config);
 
-    // Si es GM, guardar en room metadata y broadcast
-    if (this.isGM) {
-      await this.storageService.saveRoomConfig(config.toJSON ? config.toJSON() : config);
-      
-      // Broadcast páginas visibles
-      const visibleConfig = filterVisiblePages(config.toJSON ? config.toJSON() : config);
-      this.broadcastService.broadcastVisiblePages(visibleConfig);
+      // Serializar a JSON
+      const configJson = config.toJSON ? config.toJSON() : config;
+      log('💾 Config serializada, guardando en localStorage...');
+
+      // Guardar en localStorage
+      const saved = this.storageService.saveLocalConfig(configJson);
+      if (!saved) {
+        logError('❌ Error al guardar en localStorage');
+        return;
+      }
+      log('✅ Config guardada en localStorage');
+
+      // Si es GM, guardar en room metadata y broadcast
+      if (this.isGM) {
+        log('💾 Guardando en room metadata...');
+        const roomSaved = await this.storageService.saveRoomConfig(configJson);
+        if (roomSaved) {
+          log('✅ Config guardada en room metadata');
+        } else {
+          logWarn('⚠️ No se pudo guardar en room metadata');
+        }
+        
+        // Broadcast páginas visibles
+        const visibleConfig = filterVisiblePages(configJson);
+        this.broadcastService.broadcastVisiblePages(visibleConfig);
+        log('✅ Config visible broadcasted');
+      }
+
+      // Re-renderizar
+      await this.render();
+      log('✅ Configuración guardada y renderizada');
+    } catch (e) {
+      logError('❌ Error crítico al guardar configuración:', e);
+      throw e;
     }
-
-    // Re-renderizar
-    await this.render();
   }
 
   /**
