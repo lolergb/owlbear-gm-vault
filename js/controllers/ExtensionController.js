@@ -189,6 +189,8 @@ export class ExtensionController {
         await this._renderNotionPage(page, pageId);
       } else if (page.isImage()) {
         this._renderImagePage(page);
+      } else if (page.isVideo()) {
+        this._renderVideoPage(page);
       } else if (page.isGoogleDoc()) {
         this._renderGoogleDocPage(page);
       } else {
@@ -1088,7 +1090,73 @@ export class ExtensionController {
   }
 
   /**
-   * Renderiza una página de Google Docs
+   * Renderiza una página de video (YouTube, Vimeo)
+   * @private
+   */
+  _renderVideoPage(page) {
+    const notionContent = document.getElementById('notion-content');
+    if (!notionContent) return;
+
+    let embedHtml = '';
+    const url = page.url;
+
+    // YouTube
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      const videoId = this._extractYouTubeId(url);
+      if (videoId) {
+        embedHtml = `
+          <div class="video-container" style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; border-radius: 8px;">
+            <iframe 
+              src="https://www.youtube.com/embed/${videoId}" 
+              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+              frameborder="0" 
+              allowfullscreen
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+            </iframe>
+          </div>
+        `;
+      }
+    }
+    // Vimeo
+    else if (url.includes('vimeo.com')) {
+      const vimeoId = url.match(/vimeo\.com\/(\d+)/)?.[1];
+      if (vimeoId) {
+        embedHtml = `
+          <div class="video-container" style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; border-radius: 8px;">
+            <iframe 
+              src="https://player.vimeo.com/video/${vimeoId}" 
+              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+              frameborder="0" 
+              allowfullscreen>
+            </iframe>
+          </div>
+        `;
+      }
+    }
+
+    if (embedHtml) {
+      notionContent.innerHTML = `
+        <h1 class="page-title">${page.name}</h1>
+        ${embedHtml}
+      `;
+    } else {
+      // Fallback a iframe genérico
+      this._renderExternalPage(page);
+    }
+  }
+
+  /**
+   * Extrae el ID de YouTube de una URL
+   * @private
+   */
+  _extractYouTubeId(url) {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  }
+
+  /**
+   * Renderiza una página de Google Docs/Sheets/Slides
    * @private
    */
   _renderGoogleDocPage(page) {
@@ -1097,14 +1165,34 @@ export class ExtensionController {
 
     // Convertir URL de Google Docs a embed
     let embedUrl = page.url;
-    if (embedUrl.includes('/edit')) {
-      embedUrl = embedUrl.replace('/edit', '/preview');
-    } else if (!embedUrl.includes('/preview')) {
-      embedUrl = embedUrl + '/preview';
+    
+    // Google Slides
+    if (embedUrl.includes('/presentation/')) {
+      embedUrl = embedUrl.replace(/\/edit.*$/, '/embed?start=false&loop=false&delayms=3000');
+    }
+    // Google Sheets
+    else if (embedUrl.includes('/spreadsheets/')) {
+      embedUrl = embedUrl.replace(/\/edit.*$/, '/pubhtml?widget=true&amp;headers=false');
+    }
+    // Google Docs
+    else if (embedUrl.includes('/document/')) {
+      if (embedUrl.includes('/edit')) {
+        embedUrl = embedUrl.replace('/edit', '/preview');
+      } else if (!embedUrl.includes('/preview')) {
+        embedUrl = embedUrl + '/preview';
+      }
     }
 
     notionContent.innerHTML = `
-      <iframe src="${embedUrl}" frameborder="0" style="width: 100%; height: 100%; min-height: 500px;"></iframe>
+      <h1 class="page-title">${page.name}</h1>
+      <div style="width: 100%; height: calc(100vh - 150px); min-height: 500px; border-radius: 8px; overflow: hidden;">
+        <iframe 
+          src="${embedUrl}" 
+          frameborder="0" 
+          style="width: 100%; height: 100%;"
+          allowfullscreen>
+        </iframe>
+      </div>
     `;
   }
 
@@ -1113,16 +1201,20 @@ export class ExtensionController {
    * @private
    */
   _renderExternalPage(page) {
-    const notionContainer = document.getElementById('notion-container');
-    const notionIframe = document.getElementById('notion-iframe');
     const notionContent = document.getElementById('notion-content');
+    if (!notionContent) return;
     
-    if (notionIframe && notionContent) {
-      // Usar iframe para páginas externas
-      notionIframe.src = page.url;
-      notionIframe.style.display = 'block';
-      notionContent.style.display = 'none';
-    }
+    notionContent.innerHTML = `
+      <h1 class="page-title">${page.name}</h1>
+      <div style="width: 100%; height: calc(100vh - 150px); min-height: 500px; border-radius: 8px; overflow: hidden;">
+        <iframe 
+          src="${page.url}" 
+          frameborder="0" 
+          style="width: 100%; height: 100%;"
+          allowfullscreen>
+        </iframe>
+      </div>
+    `;
   }
 
   /**
