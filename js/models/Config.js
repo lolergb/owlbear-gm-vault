@@ -147,7 +147,14 @@ export class Config {
    */
   clone() {
     return new Config({
-      categories: this.categories.map(c => c.clone())
+      categories: this.categories.map(c => {
+        // Si c tiene método clone, usarlo; si no, convertir desde JSON
+        if (c && typeof c.clone === 'function') {
+          return c.clone();
+        }
+        // Es un objeto plano, convertir a Category
+        return Category.fromJSON(c);
+      })
     });
   }
 

@@ -760,9 +760,13 @@ export class ExtensionController {
     const existingMenu = document.querySelector('.context-menu');
     if (existingMenu) existingMenu.remove();
 
+    // Marcar botón como activo
+    button.classList.add('context-menu-active');
+
     const menu = document.createElement('div');
     menu.className = 'context-menu';
-    menu.style.cssText = `position: fixed; left: ${rect.right + 8}px; top: ${rect.bottom + 8}px; z-index: 1000;`;
+    menu.style.left = `${rect.right + 8}px`;
+    menu.style.top = `${rect.bottom + 8}px`;
 
     const items = [
       { icon: 'img/folder-close.svg', text: 'Add folder', action: () => this._addCategory() },
@@ -770,12 +774,13 @@ export class ExtensionController {
     ];
 
     items.forEach(item => {
-      const menuItem = document.createElement('button');
+      const menuItem = document.createElement('div');
       menuItem.className = 'context-menu-item';
-      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu-icon"><span>${item.text}</span>`;
+      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu__icon"><span>${item.text}</span>`;
       menuItem.addEventListener('click', () => {
         item.action();
         menu.remove();
+        button.classList.remove('context-menu-active');
       });
       menu.appendChild(menuItem);
     });
@@ -786,6 +791,7 @@ export class ExtensionController {
     const closeHandler = (e) => {
       if (!menu.contains(e.target) && e.target !== button) {
         menu.remove();
+        button.classList.remove('context-menu-active');
         document.removeEventListener('click', closeHandler);
       }
     };
@@ -810,30 +816,25 @@ export class ExtensionController {
    * @private
    */
   async _addPage() {
-    // Mostrar modal para añadir página
-    this.modalManager.showPrompt({
-      title: 'Add Page',
-      fields: [
-        { name: 'name', label: 'Page name', type: 'text', required: true },
-        { name: 'url', label: 'URL', type: 'text', required: true }
-      ],
-      onConfirm: async (values) => {
-        if (!values.name || !values.url) return;
-        
-        // Añadir a la primera categoría o crear una
-        if (!this.config.categories || this.config.categories.length === 0) {
-          this.config.categories = [{ name: 'Pages', pages: [], categories: [] }];
-        }
-        
-        this.config.categories[0].pages.push({
-          name: values.name,
-          url: values.url,
-          visibleToPlayers: false
-        });
-        
-        await this.saveConfig(this.config);
-      }
+    // Usar prompts simples
+    const name = prompt('Page name:');
+    if (!name) return;
+    
+    const url = prompt('URL:');
+    if (!url) return;
+    
+    // Añadir a la primera categoría o crear una
+    if (!this.config.categories || this.config.categories.length === 0) {
+      this.config.categories = [{ name: 'Pages', pages: [], categories: [] }];
+    }
+    
+    this.config.categories[0].pages.push({
+      name: name,
+      url: url,
+      visibleToPlayers: false
     });
+    
+    await this.saveConfig(this.config);
   }
 
   /**
