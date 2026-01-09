@@ -1290,20 +1290,23 @@ export class ExtensionController {
     try {
       // Resolver URL - si es absoluta pero apunta a producción, ajustar al entorno actual
       let fetchUrl = page.url;
-      
-      // Si la URL apunta a owlbear-gm-vault.netlify.app pero estamos en deploy-preview, ajustar
       const currentOrigin = window.location.origin;
-      if (fetchUrl.includes('owlbear-gm-vault.netlify.app') && 
-          currentOrigin.includes('netlify.app') && 
-          !currentOrigin.includes('owlbear-gm-vault.netlify.app')) {
-        // Estamos en deploy-preview, reemplazar dominio
+      
+      log('📄 URL original:', fetchUrl);
+      log('📄 Current origin:', currentOrigin);
+      
+      // Detectar si estamos en deploy-preview (tiene formato: deploy-preview-X--nombre.netlify.app)
+      const isDeployPreview = currentOrigin.includes('deploy-preview-');
+      
+      // Si la URL apunta a producción pero estamos en deploy-preview, ajustar
+      if (isDeployPreview && fetchUrl.includes('owlbear-gm-vault.netlify.app')) {
         fetchUrl = fetchUrl.replace('https://owlbear-gm-vault.netlify.app', currentOrigin);
         log('📄 Ajustando URL para deploy-preview:', fetchUrl);
       }
       
       // Si es relativa, resolver
       fetchUrl = this._resolveAppUrl(fetchUrl);
-      log('📄 Fetching URL:', fetchUrl);
+      log('📄 Fetching URL final:', fetchUrl);
 
       // Fetch del HTML
       const response = await fetch(fetchUrl);
