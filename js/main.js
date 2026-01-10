@@ -12,7 +12,8 @@ import { ExtensionController } from './controllers/ExtensionController.js';
 // Instancia global del controlador
 let extensionController = null;
 
-console.log('🚀 GM Vault: Cargando módulos...');
+const BUILD_VERSION = '2.0.1-' + Date.now();
+console.log('🚀 GM Vault: Cargando módulos... v' + BUILD_VERSION);
 
 // Esperar a que OBR SDK esté listo
 try {

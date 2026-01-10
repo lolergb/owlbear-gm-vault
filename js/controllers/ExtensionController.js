@@ -138,6 +138,9 @@ export class ExtensionController {
 
     log('🎨 Renderizando interfaz...');
     
+    // Pasar la config al UIRenderer para calcular posiciones
+    this.uiRenderer.setConfig(this.config);
+    
     this.uiRenderer.renderAllCategories(
       this.config,
       this.pagesContainer,
@@ -183,9 +186,9 @@ export class ExtensionController {
     const notionContent = document.getElementById('notion-content');
     if (notionContent) {
       notionContent.innerHTML = `
-        <div class="loading-container">
-          <div class="loading-spinner"></div>
-          <p>Loading ${page.name}...</p>
+        <div class="empty-state notion-loading">
+          <div class="empty-state-icon">⏳</div>
+          <p class="empty-state-text">Loading content...</p>
         </div>
       `;
     }
@@ -416,6 +419,197 @@ export class ExtensionController {
     [pages[currentIndex], pages[newIndex]] = [pages[newIndex], pages[currentIndex]];
     
     await this.saveConfig(this.config);
+  }
+
+  /**
+   * Maneja duplicar una página
+   * @private
+   */
+  async _handlePageDuplicate(page, categoryPath, pageIndex) {
+    if (!this.config || !this.isGM) return;
+
+    log('📋 Duplicando página:', page.name);
+
+    let currentLevel = this.config;
+    for (const catName of categoryPath) {
+      const cat = (currentLevel.categories || []).find(c => c.name === catName);
+      if (cat) currentLevel = cat;
+      else return;
+    }
+
+    const pages = currentLevel.pages || [];
+    const duplicatedPage = JSON.parse(JSON.stringify(page));
+    duplicatedPage.name = `${page.name} (copy)`;
+    
+    // Insertar después de la página original
+    pages.splice(pageIndex + 1, 0, duplicatedPage);
+    await this.saveConfig(this.config);
+  }
+
+  /**
+   * Maneja editar una categoría
+   * @private
+   */
+  _handleCategoryEdit(category, categoryPath) {
+    this._showModalForm('Edit Folder', [
+      { name: 'name', label: 'Name', type: 'text', value: category.name, required: true }
+    ], async (data) => {
+      if (!data.name || data.name === category.name) return;
+      
+      let currentLevel = this.config;
+      for (let i = 0; i < categoryPath.length - 1; i++) {
+        const catName = categoryPath[i];
+        const cat = (currentLevel.categories || []).find(c => c.name === catName);
+        if (cat) currentLevel = cat;
+        else return;
+      }
+
+      const catIndex = (currentLevel.categories || []).findIndex(c => c.name === category.name);
+      if (catIndex !== -1) {
+        currentLevel.categories[catIndex].name = data.name;
+        await this.saveConfig(this.config);
+      }
+    });
+  }
+
+  /**
+   * Maneja eliminar una categoría
+   * @private
+   */
+  async _handleCategoryDelete(category, categoryPath) {
+    if (!this.config || !this.isGM) return;
+
+    log('🗑️ Eliminando carpeta:', category.name);
+
+    let currentLevel = this.config;
+    for (let i = 0; i < categoryPath.length - 1; i++) {
+      const catName = categoryPath[i];
+      const cat = (currentLevel.categories || []).find(c => c.name === catName);
+      if (cat) currentLevel = cat;
+      else return;
+    }
+
+    const categories = currentLevel.categories || [];
+    const catIndex = categories.findIndex(c => c.name === category.name);
+    if (catIndex !== -1) {
+      categories.splice(catIndex, 1);
+      await this.saveConfig(this.config);
+    }
+  }
+
+  /**
+   * Maneja mover una categoría
+   * @private
+   */
+  async _handleCategoryMove(category, categoryPath, direction) {
+    if (!this.config || !this.isGM) return;
+
+    log(`↕️ Moviendo carpeta ${direction}:`, category.name);
+
+    let currentLevel = this.config;
+    for (let i = 0; i < categoryPath.length - 1; i++) {
+      const catName = categoryPath[i];
+      const cat = (currentLevel.categories || []).find(c => c.name === catName);
+      if (cat) currentLevel = cat;
+      else return;
+    }
+
+    const categories = currentLevel.categories || [];
+    const currentIndex = categories.findIndex(c => c.name === category.name);
+    
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= categories.length) return;
+
+    [categories[currentIndex], categories[newIndex]] = [categories[newIndex], categories[currentIndex]];
+    await this.saveConfig(this.config);
+  }
+
+  /**
+   * Maneja duplicar una categoría
+   * @private
+   */
+  async _handleCategoryDuplicate(category, categoryPath) {
+    if (!this.config || !this.isGM) return;
+
+    log('📋 Duplicando carpeta:', category.name);
+
+    let currentLevel = this.config;
+    for (let i = 0; i < categoryPath.length - 1; i++) {
+      const catName = categoryPath[i];
+      const cat = (currentLevel.categories || []).find(c => c.name === catName);
+      if (cat) currentLevel = cat;
+      else return;
+    }
+
+    const categories = currentLevel.categories || [];
+    const catIndex = categories.findIndex(c => c.name === category.name);
+    
+    if (catIndex !== -1) {
+      const duplicated = JSON.parse(JSON.stringify(category));
+      duplicated.name = `${category.name} (copy)`;
+      categories.splice(catIndex + 1, 0, duplicated);
+      await this.saveConfig(this.config);
+    }
+  }
+
+  /**
+   * Maneja agregar una página
+   * @private
+   */
+  _handleAddPage(categoryPath, roomId) {
+    this._showModalForm('Add Page', [
+      { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Page name' },
+      { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' },
+      { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
+    ], async (data) => {
+      if (!data.name || !data.url) return;
+
+      let currentLevel = this.config;
+      for (const catName of categoryPath) {
+        const cat = (currentLevel.categories || []).find(c => c.name === catName);
+        if (cat) currentLevel = cat;
+        else return;
+      }
+
+      if (!currentLevel.pages) currentLevel.pages = [];
+      currentLevel.pages.push({
+        name: data.name,
+        url: data.url,
+        visibleToPlayers: data.visibleToPlayers || false
+      });
+      
+      await this.saveConfig(this.config);
+    });
+  }
+
+  /**
+   * Maneja agregar una categoría
+   * @private
+   */
+  _handleAddCategory(categoryPath, roomId) {
+    this._showModalForm('Add Folder', [
+      { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Folder name' }
+    ], async (data) => {
+      if (!data.name) return;
+
+      let currentLevel = this.config;
+      for (const catName of categoryPath) {
+        const cat = (currentLevel.categories || []).find(c => c.name === catName);
+        if (cat) currentLevel = cat;
+        else return;
+      }
+
+      if (!currentLevel.categories) currentLevel.categories = [];
+      currentLevel.categories.push({
+        name: data.name,
+        pages: [],
+        categories: []
+      });
+      
+      await this.saveConfig(this.config);
+    });
   }
 
   /**
@@ -1190,15 +1384,15 @@ export class ExtensionController {
     if (patreonBtn && !patreonBtn.dataset.listenerAdded) {
       patreonBtn.dataset.listenerAdded = 'true';
       patreonBtn.addEventListener('click', () => {
-        window.open('https://www.patreon.com/lsjroberts', '_blank');
+        window.open('https://patreon.com/usegmvault', '_blank', 'noopener,noreferrer');
       });
     }
 
-    // Feedback
+    // Feedback - Roadmap de Notion
     if (feedbackBtn && !feedbackBtn.dataset.listenerAdded) {
       feedbackBtn.dataset.listenerAdded = 'true';
       feedbackBtn.addEventListener('click', () => {
-        window.open('https://owlbear.rodeo/feedback', '_blank');
+        window.open('https://www.notion.so/DM-Panel-Roadmap-2d8d4856c90e8088825df40c3be24393?source=copy_link', '_blank', 'noopener,noreferrer');
       });
     }
   }
@@ -1366,6 +1560,7 @@ export class ExtensionController {
 
     // Conectar UI Renderer con Event Handlers
     this.uiRenderer.setCallbacks({
+      // Páginas
       onPageClick: (page, categoryPath, pageIndex) => {
         this.openPage(page, categoryPath, pageIndex);
       },
@@ -1380,6 +1575,28 @@ export class ExtensionController {
       },
       onPageMove: (page, categoryPath, pageIndex, direction) => {
         this._handlePageMove(page, categoryPath, pageIndex, direction);
+      },
+      onPageDuplicate: (page, categoryPath, pageIndex) => {
+        this._handlePageDuplicate(page, categoryPath, pageIndex);
+      },
+      // Categorías
+      onCategoryEdit: (category, categoryPath) => {
+        this._handleCategoryEdit(category, categoryPath);
+      },
+      onCategoryDelete: (category, categoryPath) => {
+        this._handleCategoryDelete(category, categoryPath);
+      },
+      onCategoryMove: (category, categoryPath, direction) => {
+        this._handleCategoryMove(category, categoryPath, direction);
+      },
+      onCategoryDuplicate: (category, categoryPath) => {
+        this._handleCategoryDuplicate(category, categoryPath);
+      },
+      onAddPage: (categoryPath, roomId) => {
+        this._handleAddPage(categoryPath, roomId);
+      },
+      onAddCategory: (categoryPath, roomId) => {
+        this._handleAddCategory(categoryPath, roomId);
       },
       onShowModal: (type, options) => {
         this._showModalForm(options.title, options.fields, options.onSubmit);
@@ -1589,7 +1806,7 @@ export class ExtensionController {
    * Renderiza una página de Notion
    * @private
    */
-  async _renderNotionPage(page, pageId) {
+  async _renderNotionPage(page, pageId, forceRefresh = false) {
     const notionContent = document.getElementById('notion-content');
     if (!notionContent) return;
 
@@ -1599,16 +1816,60 @@ export class ExtensionController {
     // Restaurar clases originales
     notionContent.className = 'notion-container__content notion-content';
 
-    const blocks = await this.notionService.fetchBlocks(pageId);
-    const html = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
+    // Obtener info de la página (cover, título, icono)
+    const pageInfo = await this.notionService.fetchPageInfo(pageId);
     
-    notionContent.innerHTML = `
-      <h1 class="page-title">${page.name}</h1>
-      ${html}
-    `;
+    // Obtener bloques
+    const blocks = await this.notionService.fetchBlocks(pageId, !forceRefresh);
+    const blocksHtml = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
+    
+    // Construir HTML con header (cover + título)
+    let headerHtml = '';
+    
+    // Cover image
+    if (pageInfo?.cover) {
+      const coverUrl = pageInfo.cover.external?.url || pageInfo.cover.file?.url;
+      if (coverUrl) {
+        headerHtml += `
+          <div class="notion-cover">
+            <div class="notion-image-container">
+              <div class="image-loading">
+                <div class="loading-spinner"></div>
+              </div>
+              <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" 
+                   data-image-url="${coverUrl}"
+                   onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();" />
+              <button class="notion-image-share-button share-button" 
+                      data-image-url="${coverUrl}" 
+                      data-image-caption=""
+                      title="Show to players">
+                <img src="img/icon-players.svg" alt="Share" />
+              </button>
+            </div>
+          </div>
+        `;
+      }
+    }
+    
+    // Título con icono
+    const pageTitle = pageInfo?.properties?.title?.title?.[0]?.plain_text || page.name;
+    let iconHtml = '';
+    if (pageInfo?.icon) {
+      if (pageInfo.icon.type === 'emoji') {
+        iconHtml = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+      } else if (pageInfo.icon.external?.url) {
+        iconHtml = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+      } else if (pageInfo.icon.file?.url) {
+        iconHtml = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+      }
+    }
+    
+    headerHtml += `<h1 class="notion-page-title">${iconHtml}${pageTitle}</h1>`;
+    
+    notionContent.innerHTML = headerHtml + blocksHtml;
 
     // Guardar HTML en caché
-    this.cacheService.saveHtmlToLocalCache(pageId, html);
+    this.cacheService.saveHtmlToLocalCache(pageId, headerHtml + blocksHtml);
 
     // Attach event handlers para imágenes
     this._attachImageHandlers(notionContent);

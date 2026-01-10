@@ -17,15 +17,25 @@ export class UIRenderer {
     this.storageService = null;
     // Referencia al NotionService
     this.notionService = null;
-    // Callbacks
+    // Callbacks para páginas
     this.onPageClick = null;
     this.onVisibilityChange = null;
     this.onPageEdit = null;
     this.onPageDelete = null;
     this.onPageMove = null;
+    this.onPageDuplicate = null;
+    // Callbacks para categorías
+    this.onCategoryEdit = null;
+    this.onCategoryDelete = null;
+    this.onCategoryMove = null;
+    this.onCategoryDuplicate = null;
+    this.onAddPage = null;
+    this.onAddCategory = null;
     this.onShowModal = null;
     // Es GM?
     this.isGM = true;
+    // Config para calcular posiciones
+    this.config = null;
   }
 
   /**
@@ -37,15 +47,24 @@ export class UIRenderer {
   }
 
   /**
+   * Establece la configuración actual
+   */
+  setConfig(config) {
+    this.config = config;
+  }
+
+  /**
    * Establece callbacks de eventos
    */
-  setCallbacks({ onPageClick, onVisibilityChange, onPageEdit, onPageDelete, onPageMove, onShowModal }) {
-    if (onPageClick) this.onPageClick = onPageClick;
-    if (onVisibilityChange) this.onVisibilityChange = onVisibilityChange;
-    if (onPageEdit) this.onPageEdit = onPageEdit;
-    if (onPageDelete) this.onPageDelete = onPageDelete;
-    if (onPageMove) this.onPageMove = onPageMove;
-    if (onShowModal) this.onShowModal = onShowModal;
+  setCallbacks(callbacks) {
+    const keys = [
+      'onPageClick', 'onVisibilityChange', 'onPageEdit', 'onPageDelete', 
+      'onPageMove', 'onPageDuplicate', 'onCategoryEdit', 'onCategoryDelete',
+      'onCategoryMove', 'onCategoryDuplicate', 'onAddPage', 'onAddCategory', 'onShowModal'
+    ];
+    keys.forEach(key => {
+      if (callbacks[key]) this[key] = callbacks[key];
+    });
   }
 
   /**
@@ -141,6 +160,34 @@ export class UIRenderer {
     categoryTitle.className = 'category-title';
     categoryTitle.textContent = category.name;
     titleContainer.appendChild(categoryTitle);
+
+    // Botón de menú contextual para carpetas (solo GM)
+    if (isGM) {
+      const contextMenuButton = document.createElement('button');
+      contextMenuButton.className = 'category-context-menu-button icon-button';
+      contextMenuButton.innerHTML = '<img src="img/icon-contextualmenu.svg" class="icon-button-icon" alt="Menu" />';
+      contextMenuButton.title = 'Folder options';
+      contextMenuButton.style.opacity = '0';
+      
+      // Mostrar/ocultar en hover
+      titleContainer.addEventListener('mouseenter', () => {
+        if (!contextMenuButton.classList.contains('context-menu-active')) {
+          contextMenuButton.style.opacity = '1';
+        }
+      });
+      titleContainer.addEventListener('mouseleave', (e) => {
+        if (!contextMenuButton.classList.contains('context-menu-active')) {
+          contextMenuButton.style.opacity = '0';
+        }
+      });
+
+      contextMenuButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showCategoryContextMenu(contextMenuButton, category, [...categoryPath, category.name], titleContainer, roomId);
+      });
+
+      titleContainer.appendChild(contextMenuButton);
+    }
 
     categoryDiv.appendChild(titleContainer);
 
@@ -316,24 +363,98 @@ export class UIRenderer {
   }
 
   /**
+   * Obtiene el total de páginas en una categoría (para validar move)
+   * @private
+   */
+  _getTotalPagesInCategory(categoryPath) {
+    if (!this.config) return 0;
+    let current = this.config;
+    for (const catName of categoryPath) {
+      const cat = (current.categories || []).find(c => c.name === catName);
+      if (cat) current = cat;
+      else return 0;
+    }
+    return (current.pages || []).length;
+  }
+
+  /**
+   * Obtiene el total de categorías en el padre
+   * @private
+   */
+  _getTotalCategoriesInParent(categoryPath) {
+    if (!this.config) return 0;
+    if (categoryPath.length === 0) return (this.config.categories || []).length;
+    
+    let current = this.config;
+    // Navegar hasta el padre (todos menos el último)
+    for (let i = 0; i < categoryPath.length - 1; i++) {
+      const catName = categoryPath[i];
+      const cat = (current.categories || []).find(c => c.name === catName);
+      if (cat) current = cat;
+      else return 0;
+    }
+    return (current.categories || []).length;
+  }
+
+  /**
+   * Obtiene el índice de una categoría en su padre
+   * @private  
+   */
+  _getCategoryIndex(categoryPath) {
+    if (!this.config || categoryPath.length === 0) return -1;
+    const catName = categoryPath[categoryPath.length - 1];
+    
+    let current = this.config;
+    // Navegar hasta el padre
+    for (let i = 0; i < categoryPath.length - 1; i++) {
+      const name = categoryPath[i];
+      const cat = (current.categories || []).find(c => c.name === name);
+      if (cat) current = cat;
+      else return -1;
+    }
+    return (current.categories || []).findIndex(c => c.name === catName);
+  }
+
+  /**
    * Muestra el menú contextual de una página
    * @private
    */
   _showPageContextMenu(button, page, categoryPath, pageIndex) {
-    // Cerrar menú anterior
     const existingMenu = document.getElementById('context-menu');
     if (existingMenu) existingMenu.remove();
 
-    // Marcar botón como activo
     const pageButton = button.closest('.page-button');
     if (pageButton) pageButton.classList.add('context-menu-open');
     button.classList.add('context-menu-active');
 
     const rect = button.getBoundingClientRect();
     
-    // Crear menú usando createContextMenu
+    // Calcular si se puede mover
+    const totalPages = this._getTotalPagesInCategory(categoryPath);
+    const canMoveUp = pageIndex > 0;
+    const canMoveDown = pageIndex < totalPages - 1;
+    
     const menuItems = [
       { 
+        icon: 'img/icon-edit.svg', 
+        text: 'Edit', 
+        action: () => this._showEditPageModal(page, categoryPath, pageIndex)
+      },
+      { 
+        icon: 'img/icon-clone.svg', 
+        text: 'Duplicate', 
+        action: () => {
+          if (this.onPageDuplicate) {
+            this.onPageDuplicate(page, categoryPath, pageIndex);
+          }
+        }
+      },
+      { separator: true }
+    ];
+
+    // Agregar opciones de mover solo si es posible
+    if (canMoveUp) {
+      menuItems.push({ 
         icon: 'img/icon-arrow.svg', 
         text: 'Move up',
         rotation: 'rotate(90deg)',
@@ -342,8 +463,10 @@ export class UIRenderer {
             this.onPageMove(page, categoryPath, pageIndex, 'up');
           }
         }
-      },
-      { 
+      });
+    }
+    if (canMoveDown) {
+      menuItems.push({ 
         icon: 'img/icon-arrow.svg', 
         text: 'Move down',
         rotation: 'rotate(-90deg)',
@@ -352,25 +475,129 @@ export class UIRenderer {
             this.onPageMove(page, categoryPath, pageIndex, 'down');
           }
         }
+      });
+    }
+    if (canMoveUp || canMoveDown) {
+      menuItems.push({ separator: true });
+    }
+
+    menuItems.push({ 
+      icon: 'img/icon-trash.svg', 
+      text: 'Delete', 
+      action: () => this._confirmDeletePage(page, categoryPath, pageIndex)
+    });
+
+    const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
+      button.classList.remove('context-menu-active');
+      if (pageButton) pageButton.classList.remove('context-menu-open');
+    });
+  }
+
+  /**
+   * Muestra el menú contextual de una categoría
+   * @private
+   */
+  _showCategoryContextMenu(button, category, categoryPath, titleContainer, roomId) {
+    const existingMenu = document.getElementById('context-menu');
+    if (existingMenu) existingMenu.remove();
+
+    button.classList.add('context-menu-active');
+    titleContainer.classList.add('context-menu-open');
+
+    const rect = button.getBoundingClientRect();
+    
+    // Calcular si se puede mover
+    const catIndex = this._getCategoryIndex(categoryPath);
+    const totalCats = this._getTotalCategoriesInParent(categoryPath);
+    const canMoveUp = catIndex > 0;
+    const canMoveDown = catIndex >= 0 && catIndex < totalCats - 1;
+    
+    const menuItems = [
+      { 
+        icon: 'img/folder-close.svg', 
+        text: 'Add folder', 
+        action: () => {
+          if (this.onAddCategory) {
+            this.onAddCategory(categoryPath, roomId);
+          }
+        }
+      },
+      { 
+        icon: 'img/icon-page.svg', 
+        text: 'Add page', 
+        action: () => {
+          if (this.onAddPage) {
+            this.onAddPage(categoryPath, roomId);
+          }
+        }
       },
       { separator: true },
       { 
         icon: 'img/icon-edit.svg', 
         text: 'Edit', 
-        action: () => this._showEditPageModal(page, categoryPath, pageIndex)
+        action: () => {
+          if (this.onCategoryEdit) {
+            this.onCategoryEdit(category, categoryPath);
+          }
+        }
       },
-      { separator: true },
       { 
-        icon: 'img/icon-delete.svg', 
-        text: 'Delete', 
-        action: () => this._confirmDeletePage(page, categoryPath, pageIndex)
-      }
+        icon: 'img/icon-clone.svg', 
+        text: 'Duplicate', 
+        action: () => {
+          if (this.onCategoryDuplicate) {
+            this.onCategoryDuplicate(category, categoryPath);
+          }
+        }
+      },
+      { separator: true }
     ];
 
+    // Agregar opciones de mover solo si es posible
+    if (canMoveUp) {
+      menuItems.push({ 
+        icon: 'img/icon-arrow.svg', 
+        text: 'Move up',
+        rotation: 'rotate(90deg)',
+        action: () => {
+          if (this.onCategoryMove) {
+            this.onCategoryMove(category, categoryPath, 'up');
+          }
+        }
+      });
+    }
+    if (canMoveDown) {
+      menuItems.push({ 
+        icon: 'img/icon-arrow.svg', 
+        text: 'Move down',
+        rotation: 'rotate(-90deg)',
+        action: () => {
+          if (this.onCategoryMove) {
+            this.onCategoryMove(category, categoryPath, 'down');
+          }
+        }
+      });
+    }
+    if (canMoveUp || canMoveDown) {
+      menuItems.push({ separator: true });
+    }
+
+    menuItems.push({ 
+      icon: 'img/icon-trash.svg', 
+      text: 'Delete', 
+      action: () => {
+        if (confirm(`Delete folder "${category.name}" and all its contents?`)) {
+          if (this.onCategoryDelete) {
+            this.onCategoryDelete(category, categoryPath);
+          }
+        }
+      }
+    });
+
     const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
-      // Callback al cerrar
       button.classList.remove('context-menu-active');
-      if (pageButton) pageButton.classList.remove('context-menu-open');
+      titleContainer.classList.remove('context-menu-open');
+      button.style.opacity = '0';
     });
   }
 
