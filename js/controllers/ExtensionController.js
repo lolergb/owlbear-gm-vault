@@ -3414,10 +3414,9 @@ export class ExtensionController {
    * @private
    */
   async _renderNotionPageWithToken(page, pageId, notionContent, forceRefresh = false) {
-    // Obtener info de la página (cover, título, icono)
-    const pageInfo = await this.notionService.fetchPageInfo(pageId);
-    
-    // Obtener bloques
+    // Obtener info de la página (cover, título, icono) y bloques
+    // Si forceRefresh, no usar caché para ninguno
+    const pageInfo = await this.notionService.fetchPageInfo(pageId, !forceRefresh);
     const blocks = await this.notionService.fetchBlocks(pageId, !forceRefresh);
     const blocksHtml = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
     
@@ -3469,17 +3468,11 @@ export class ExtensionController {
     // Indicador de visibilidad para players - fácil de personalizar
     const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
     
-    // Usar título de Notion, o "Untitled" si no existe
-    const pageTitle = notionTitle || 'Untitled';
-    headerHtml += `<h1 class="notion-page-title">${iconHtml}${pageTitle}${visibilityIndicator}</h1>`;
+    // Usar título de Notion para el contenido interno, o "Untitled" si no existe
+    const notionPageTitle = notionTitle || 'Untitled';
+    headerHtml += `<h1 class="notion-page-title">${iconHtml}${notionPageTitle}${visibilityIndicator}</h1>`;
     
     notionContent.innerHTML = headerHtml + blocksHtml;
-
-    // Actualizar también el título del header de la UI (donde dice "Back | título")
-    const headerTitleElement = document.getElementById('page-title');
-    if (headerTitleElement) {
-      headerTitleElement.innerHTML = pageTitle + visibilityIndicator;
-    }
 
     // Guardar HTML en caché
     this.cacheService.saveHtmlToLocalCache(pageId, headerHtml + blocksHtml);

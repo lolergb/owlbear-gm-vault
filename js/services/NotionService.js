@@ -105,16 +105,17 @@ export class NotionService {
   /**
    * Obtiene información de una página (icono, última edición)
    * @param {string} pageId - ID de la página
+   * @param {boolean} useCache - Si usar caché (default: true)
    * @returns {Promise<Object>}
    */
-  async fetchPageInfo(pageId) {
+  async fetchPageInfo(pageId, useCache = true) {
     if (!pageId || pageId === 'null' || pageId === 'undefined') {
       log('⚠️ fetchPageInfo: pageId inválido');
       return { lastEditedTime: null, icon: null };
     }
 
     // Intentar obtener del caché
-    if (this.cacheService) {
+    if (useCache && this.cacheService) {
       const cached = this.cacheService.getCachedPageInfo(pageId);
       if (cached) {
         log('📄 PageInfo del caché:', { 
@@ -124,6 +125,8 @@ export class NotionService {
         });
         return cached;
       }
+    } else if (!useCache) {
+      log('🔄 Recarga forzada - ignorando caché de PageInfo para:', pageId);
     }
 
     try {
