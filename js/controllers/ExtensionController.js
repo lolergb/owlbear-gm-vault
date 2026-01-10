@@ -182,9 +182,12 @@ export class ExtensionController {
     // Crear botones del header para la página de detalle
     this._createPageDetailButtons(page);
 
-    // Mostrar loading
+    // Mostrar loading - asegurar que notion-content sea visible
+    this._setNotionDisplayMode('content');
+    
     const notionContent = document.getElementById('notion-content');
     if (notionContent) {
+      notionContent.className = 'notion-container__content notion-content';
       notionContent.innerHTML = `
         <div class="empty-state notion-loading">
           <div class="empty-state-icon">⏳</div>
@@ -1059,7 +1062,24 @@ export class ExtensionController {
         icon: 'img/icon-edit.svg', 
         text: 'Edit page',
         action: () => this._showEditPageModal(page)
-      },
+      }
+    ];
+
+    // Agregar Refresh solo para páginas de Notion
+    if (page.isNotionPage()) {
+      menuItems.push({
+        icon: 'img/icon-reload.svg',
+        text: 'Refresh content',
+        action: async () => {
+          const pageId = page.getNotionPageId();
+          if (pageId) {
+            await this._renderNotionPage(page, pageId, true);
+          }
+        }
+      });
+    }
+
+    menuItems.push(
       { separator: true },
       { 
         icon: 'img/icon-delete.svg', 
@@ -1071,7 +1091,7 @@ export class ExtensionController {
           }
         }
       }
-    ];
+    );
 
     const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
       button.classList.remove('context-menu-active');
@@ -1444,13 +1464,15 @@ export class ExtensionController {
   _showAddMenu(button) {
     const rect = button.getBoundingClientRect();
     
-    // Crear menú contextual simple
+    // Remover menú existente
     const existingMenu = document.querySelector('.context-menu');
     if (existingMenu) existingMenu.remove();
 
+    // Marcar botón como activo
+    button.classList.add('context-menu-active');
+
     const menu = document.createElement('div');
     menu.className = 'context-menu';
-    menu.style.cssText = `position: fixed; left: ${rect.right + 8}px; top: ${rect.bottom + 8}px; z-index: 1000;`;
 
     const items = [
       { icon: 'img/folder-close.svg', text: 'Add folder', action: () => this._addCategory() },
@@ -1459,22 +1481,40 @@ export class ExtensionController {
 
     items.forEach(item => {
       const menuItem = document.createElement('button');
-      menuItem.className = 'context-menu-item';
-      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu-icon"><span>${item.text}</span>`;
+      menuItem.className = 'context-menu__item';
+      menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu__icon"><span class="context-menu__text">${item.text}</span>`;
       menuItem.addEventListener('click', () => {
         item.action();
-        menu.remove();
+        closeMenu();
       });
       menu.appendChild(menuItem);
     });
 
     document.body.appendChild(menu);
 
-    // Cerrar al hacer click fuera
+    // Posicionar menú debajo del botón, hacia la izquierda
+    const menuRect = menu.getBoundingClientRect();
+    let left = rect.right - menuRect.width; // Alinear a la derecha del botón
+    let top = rect.bottom + 8;
+
+    // Ajustar si se sale de la pantalla
+    if (left < 8) left = 8;
+    if (top + menuRect.height > window.innerHeight) {
+      top = rect.top - menuRect.height - 8;
+    }
+
+    menu.style.cssText = `position: fixed; left: ${left}px; top: ${top}px; z-index: 1000;`;
+
+    // Cerrar menú
+    const closeMenu = () => {
+      menu.remove();
+      button.classList.remove('context-menu-active');
+      document.removeEventListener('click', closeHandler);
+    };
+
     const closeHandler = (e) => {
       if (!menu.contains(e.target) && e.target !== button) {
-        menu.remove();
-        document.removeEventListener('click', closeHandler);
+        closeMenu();
       }
     };
     setTimeout(() => document.addEventListener('click', closeHandler), 0);
@@ -1726,6 +1766,34 @@ export class ExtensionController {
       this.config = this.configParser.parse(config);
       await this.render();
     });
+
+    // Listener para recibir imágenes compartidas por el GM
+    this.OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
+      const { url, caption } = event.data;
+      if (url) {
+        log('🖼️ Imagen recibida del GM:', url.substring(0, 50));
+        // Abrir la imagen en modal para este jugador (sin botón de share)
+        await this._showImageModal(url, caption, false);
+      }
+    });
+
+    // Listener para recibir videos compartidos por el GM
+    this.OBR.broadcast.onMessage('com.dmscreen/showVideo', async (event) => {
+      const { url, caption, type } = event.data;
+      if (url) {
+        log('🎬 Video recibido del GM:', url.substring(0, 50));
+        await this._showVideoModal(url, caption, type || 'youtube');
+      }
+    });
+
+    // Listener para recibir Google Docs compartidos por el GM
+    this.OBR.broadcast.onMessage('com.dmscreen/showGoogleDoc', async (event) => {
+      const { url, name } = event.data;
+      if (url) {
+        log('📄 Google Doc recibido del GM:', url.substring(0, 50));
+        await this._showGoogleDocModal(url, name);
+      }
+    });
   }
 
   /**
@@ -1881,7 +1949,7 @@ export class ExtensionController {
    */
   async _renderImagePage(page) {
     // Mostrar imagen en content con opción de ampliar y compartir
-    this._setNotionDisplayMode('notion');
+    this._setNotionDisplayMode('content');
     
     const notionContent = document.getElementById('notion-content');
     if (!notionContent) return;
@@ -1981,7 +2049,7 @@ export class ExtensionController {
    */
   async _renderVideoPage(page) {
     // Mostrar contenido en notion-content (no iframe)
-    this._setNotionDisplayMode('notion');
+    this._setNotionDisplayMode('content');
     
     const notionContent = document.getElementById('notion-content');
     if (!notionContent) return;
@@ -2171,30 +2239,104 @@ export class ExtensionController {
     this._setNotionDisplayMode('iframe');
     
     const notionIframe = document.getElementById('notion-iframe');
-    if (!notionIframe) return;
+    const notionContainer = document.getElementById('notion-container');
+    if (!notionIframe || !notionContainer) return;
 
-    // Convertir URL de Google Docs a embed
+    // Convertir URL de Google Docs a embed - extraer ID y construir URL limpia
     let embedUrl = page.url;
     
-    // Google Slides
-    if (embedUrl.includes('/presentation/')) {
-      embedUrl = embedUrl.replace(/\/edit.*$/, '/embed?start=false&loop=false&delayms=3000');
-    }
-    // Google Sheets
-    else if (embedUrl.includes('/spreadsheets/')) {
-      embedUrl = embedUrl.replace(/\/edit.*$/, '/pubhtml?widget=true&amp;headers=false');
-    }
-    // Google Docs
-    else if (embedUrl.includes('/document/')) {
-      if (embedUrl.includes('/edit')) {
-        embedUrl = embedUrl.replace('/edit', '/preview');
-      } else if (!embedUrl.includes('/preview')) {
-        embedUrl = embedUrl + '/preview';
+    try {
+      const urlObj = new URL(page.url);
+      const pathname = urlObj.pathname;
+      
+      // Google Slides - extraer ID y usar /embed
+      if (pathname.includes('/presentation/d/')) {
+        const match = pathname.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          embedUrl = `https://docs.google.com/presentation/d/${match[1]}/embed?start=false&loop=false&delayms=3000`;
+        }
       }
+      // Google Sheets - extraer ID y usar /preview
+      else if (pathname.includes('/spreadsheets/d/')) {
+        const match = pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          embedUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/preview`;
+        }
+      }
+      // Google Docs - extraer ID y usar /preview
+      else if (pathname.includes('/document/d/')) {
+        const match = pathname.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          embedUrl = `https://docs.google.com/document/d/${match[1]}/preview`;
+        }
+      }
+      // Google Drive PDF - extraer ID y usar /preview
+      else if (urlObj.hostname.includes('drive.google.com') && pathname.includes('/file/d/')) {
+        const match = pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+          embedUrl = `https://drive.google.com/file/d/${match[1]}/preview`;
+        }
+      }
+    } catch (e) {
+      log('Error parsing Google URL, using original:', e);
     }
 
+    log('📄 Loading Google Doc:', embedUrl);
     notionIframe.src = embedUrl;
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
+
+    // Agregar botón de compartir si es GM
+    if (this.isGM) {
+      // Eliminar botón anterior si existe
+      const existingBtn = notionContainer.querySelector('.google-docs-share-button');
+      if (existingBtn) existingBtn.remove();
+
+      const shareBtn = document.createElement('button');
+      shareBtn.className = 'google-docs-share-button share-button';
+      shareBtn.innerHTML = '<img src="img/icon-players.svg" alt="Share" />';
+      shareBtn.title = 'Share with players';
+      shareBtn.style.cssText = `
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(0,0,0,0.7);
+        border: none;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+      `;
+      shareBtn.querySelector('img').style.cssText = 'width: 24px; height: 24px;';
+      
+      shareBtn.addEventListener('click', () => {
+        this._shareGoogleDocToPlayers(embedUrl, page.name);
+      });
+
+      notionContainer.appendChild(shareBtn);
+    }
+  }
+
+  /**
+   * Comparte un Google Doc con los jugadores
+   * @private
+   */
+  async _shareGoogleDocToPlayers(url, name) {
+    if (!this.OBR || !this.OBR.broadcast) return;
+
+    try {
+      await this.OBR.broadcast.sendMessage('com.dmscreen/showGoogleDoc', {
+        url: url,
+        name: name || ''
+      });
+      log('📤 Google Doc compartido con jugadores');
+      this._showFeedback('📄 Document shared with players!');
+    } catch (e) {
+      logError('Error compartiendo documento:', e);
+    }
   }
 
   /**
@@ -2337,6 +2479,80 @@ export class ExtensionController {
     } catch (e) {
       logError('Error compartiendo imagen:', e);
       this._showFeedback('❌ Error sharing image');
+    }
+  }
+
+  /**
+   * Muestra un modal con video usando OBR.modal
+   * @param {string} videoUrl - URL del video
+   * @param {string} caption - Caption opcional
+   * @param {string} videoType - 'youtube' o 'vimeo'
+   * @private
+   */
+  async _showVideoModal(videoUrl, caption, videoType = 'youtube') {
+    if (!this.OBR || !this.OBR.modal) {
+      logError('OBR.modal no disponible');
+      window.open(videoUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      const currentPath = window.location.pathname;
+      const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+      const baseUrl = window.location.origin + baseDir;
+      
+      const viewerUrl = new URL('html/video-viewer.html', baseUrl);
+      viewerUrl.searchParams.set('url', encodeURIComponent(videoUrl));
+      viewerUrl.searchParams.set('type', videoType);
+      if (caption) {
+        viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
+      }
+      
+      await this.OBR.modal.open({
+        id: 'notion-video-viewer',
+        url: viewerUrl.toString(),
+        height: 800,
+        width: 1200
+      });
+    } catch (error) {
+      logError('Error al abrir modal de video:', error);
+      window.open(videoUrl, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  /**
+   * Muestra un modal con Google Doc usando OBR.modal
+   * @param {string} docUrl - URL del documento
+   * @param {string} name - Nombre del documento
+   * @private
+   */
+  async _showGoogleDocModal(docUrl, name) {
+    if (!this.OBR || !this.OBR.modal) {
+      logError('OBR.modal no disponible');
+      window.open(docUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      const currentPath = window.location.pathname;
+      const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+      const baseUrl = window.location.origin + baseDir;
+      
+      const viewerUrl = new URL('html/google-doc-viewer.html', baseUrl);
+      viewerUrl.searchParams.set('url', encodeURIComponent(docUrl));
+      if (name) {
+        viewerUrl.searchParams.set('name', encodeURIComponent(name));
+      }
+      
+      await this.OBR.modal.open({
+        id: 'notion-google-doc-viewer',
+        url: viewerUrl.toString(),
+        height: 800,
+        width: 1200
+      });
+    } catch (error) {
+      logError('Error al abrir modal de Google Doc:', error);
+      window.open(docUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
