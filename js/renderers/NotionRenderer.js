@@ -465,8 +465,9 @@ export class NotionRenderer {
   _matchesFilter(block, typesArray) {
     if (!typesArray) return true;
     
-    // Los toggles y column_list siempre se procesan para buscar contenido filtrado
-    if (block.type === 'toggle' || block.type === 'column_list') {
+    // Los toggles, column_list, y bloques con hijos siempre se procesan 
+    // para buscar contenido filtrado dentro de ellos
+    if (block.type === 'toggle' || block.type === 'column_list' || block.has_children) {
       return true;
     }
     

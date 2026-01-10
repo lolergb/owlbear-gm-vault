@@ -15,9 +15,13 @@ export class Config {
   /**
    * @param {Object} options - Opciones de configuración
    * @param {Category[]} [options.categories=[]] - Categorías raíz
+   * @param {Page[]} [options.pages=[]] - Páginas a nivel raíz
+   * @param {Array} [options.order=null] - Orden combinado de categorías y páginas
    */
   constructor(options = {}) {
     this.categories = options.categories || [];
+    this.pages = options.pages || [];
+    this.order = options.order || null;
   }
 
   /**
@@ -154,7 +158,14 @@ export class Config {
         }
         // Convertir objeto plano a Category y luego clonar
         return Category.fromJSON(c).clone();
-      })
+      }),
+      pages: this.pages.map(p => {
+        if (p && typeof p.clone === 'function') {
+          return p.clone();
+        }
+        return Page.fromJSON(p).clone();
+      }),
+      order: this.order ? JSON.parse(JSON.stringify(this.order)) : null
     });
   }
 
@@ -188,9 +199,19 @@ export class Config {
    * @returns {Object}
    */
   toJSON() {
-    return {
+    const json = {
       categories: this.categories.map(c => c.toJSON ? c.toJSON() : c)
     };
+    
+    if (this.pages && this.pages.length > 0) {
+      json.pages = this.pages.map(p => p.toJSON ? p.toJSON() : p);
+    }
+    
+    if (this.order) {
+      json.order = this.order;
+    }
+    
+    return json;
   }
 
   /**
@@ -204,8 +225,16 @@ export class Config {
     const categories = (json.categories || []).map(c => 
       c instanceof Category ? c : Category.fromJSON(c)
     );
+    
+    const pages = (json.pages || []).map(p => 
+      p instanceof Page ? p : Page.fromJSON(p)
+    );
 
-    return new Config({ categories });
+    return new Config({ 
+      categories,
+      pages,
+      order: json.order || null
+    });
   }
 
   /**

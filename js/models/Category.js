@@ -17,12 +17,14 @@ export class Category {
    * @param {Page[]} [options.pages=[]] - Páginas en esta categoría
    * @param {Category[]} [options.categories=[]] - Subcategorías
    * @param {boolean} [options.collapsed=false] - Si está colapsada en la UI
+   * @param {Array} [options.order=null] - Orden combinado de categorías y páginas
    */
   constructor(name, options = {}) {
     this.name = name;
     this.pages = options.pages || [];
     this.categories = options.categories || [];
     this.collapsed = options.collapsed || false;
+    this.order = options.order || null;
   }
 
   /**
@@ -116,9 +118,22 @@ export class Category {
    */
   clone() {
     return new Category(this.name, {
-      pages: this.pages.map(p => p.clone()),
-      categories: this.categories.map(c => c.clone()),
-      collapsed: this.collapsed
+      pages: this.pages.map(p => {
+        // Si p tiene método clone, usarlo; sino, convertir a Page y clonar
+        if (p && typeof p.clone === 'function') {
+          return p.clone();
+        }
+        return Page.fromJSON(p).clone();
+      }),
+      categories: this.categories.map(c => {
+        // Si c tiene método clone, usarlo; sino, convertir a Category y clonar
+        if (c && typeof c.clone === 'function') {
+          return c.clone();
+        }
+        return Category.fromJSON(c).clone();
+      }),
+      collapsed: this.collapsed,
+      order: this.order ? JSON.parse(JSON.stringify(this.order)) : null
     });
   }
 
@@ -143,6 +158,10 @@ export class Category {
       json.collapsed = true;
     }
 
+    if (this.order) {
+      json.order = this.order;
+    }
+
     return json;
   }
 
@@ -163,7 +182,8 @@ export class Category {
     return new Category(json.name, {
       pages,
       categories,
-      collapsed: json.collapsed
+      collapsed: json.collapsed,
+      order: json.order || null
     });
   }
 }

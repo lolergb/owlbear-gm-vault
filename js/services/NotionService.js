@@ -166,9 +166,19 @@ export class NotionService {
   /**
    * Obtiene los bloques hijos de un bloque
    * @param {string} blockId - ID del bloque padre
+   * @param {boolean} useCache - Si usar caché
    * @returns {Promise<Array>}
    */
-  async fetchChildBlocks(blockId) {
+  async fetchChildBlocks(blockId, useCache = true) {
+    // Intentar obtener del caché primero
+    if (useCache && this.cacheService) {
+      const cachedBlocks = this.cacheService.getCachedBlocks(blockId);
+      if (cachedBlocks && cachedBlocks.length > 0) {
+        log('✅ Usando caché para hijos del bloque:', blockId);
+        return cachedBlocks;
+      }
+    }
+
     try {
       const userToken = this.storageService?.getUserToken();
       
@@ -176,7 +186,9 @@ export class NotionService {
         return [];
       }
 
-      const apiUrl = `/.netlify/functions/notion-api?blockId=${encodeURIComponent(blockId)}&token=${encodeURIComponent(userToken)}&children=true`;
+      // Usar el mismo endpoint que para páginas - la API de Notion usa el mismo endpoint
+      // para obtener hijos de bloques, pasando el blockId como pageId
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}&token=${encodeURIComponent(userToken)}`;
       
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -184,11 +196,19 @@ export class NotionService {
       });
 
       if (!response.ok) {
+        logWarn('Error al obtener hijos del bloque:', blockId, response.status);
         return [];
       }
 
       const data = await response.json();
-      return data.results || [];
+      const blocks = data.results || [];
+      
+      // Guardar en caché
+      if (this.cacheService && blocks.length > 0) {
+        await this.cacheService.setCachedBlocks(blockId, blocks);
+      }
+      
+      return blocks;
     } catch (e) {
       logError('Error al obtener bloques hijos:', e);
       return [];

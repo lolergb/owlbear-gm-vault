@@ -128,12 +128,32 @@ export class ExtensionController {
     const isModalMode = urlParams.get('modal') === 'true';
     const modalUrl = urlParams.get('url');
     const modalName = urlParams.get('name');
+    const isHtmlContent = urlParams.get('htmlContent') === 'true';
+    const contentKey = urlParams.get('contentKey');
+    const blockTypesParam = urlParams.get('blockTypes');
     
-    if (isModalMode && modalUrl) {
+    // Parsear blockTypes si viene en la URL
+    let blockTypes = null;
+    if (blockTypesParam) {
+      try {
+        blockTypes = JSON.parse(decodeURIComponent(blockTypesParam));
+      } catch (e) {
+        log('Error parseando blockTypes:', e);
+      }
+    }
+    
+    if (isModalMode && isHtmlContent && contentKey) {
+      // Modo modal con HTML pre-renderizado (compartido por GM)
+      await this._loadHtmlContent(
+        contentKey,
+        modalName ? decodeURIComponent(modalName) : 'Page'
+      );
+    } else if (isModalMode && modalUrl) {
       // Modo modal: cargar contenido directamente
       await this._loadModalContent(
         decodeURIComponent(modalUrl),
-        modalName ? decodeURIComponent(modalName) : 'Page'
+        modalName ? decodeURIComponent(modalName) : 'Page',
+        blockTypes
       );
     } else {
       // Modo normal: renderizar lista de páginas
@@ -145,11 +165,11 @@ export class ExtensionController {
   }
 
   /**
-   * Carga contenido en modo modal
+   * Carga HTML pre-renderizado en modo modal (no requiere token)
    * @private
    */
-  async _loadModalContent(url, name) {
-    log('🪟 Modo modal detectado, cargando:', url);
+  async _loadHtmlContent(contentKey, name) {
+    log('🪟 Modo HTML modal detectado, cargando desde sessionStorage:', contentKey);
     
     // Ocultar lista y mostrar contenedor de contenido
     const pageList = document.getElementById('page-list');
@@ -164,8 +184,50 @@ export class ExtensionController {
     if (header) header.classList.add('hidden');
     if (pageTitle) pageTitle.textContent = name;
     
-    // Crear un objeto Page temporal
-    const page = new Page(name, url);
+    this._setNotionDisplayMode('content');
+    const notionContent = document.getElementById('notion-content');
+    
+    // Recuperar el HTML de sessionStorage
+    const html = sessionStorage.getItem(contentKey);
+    
+    if (html && notionContent) {
+      notionContent.innerHTML = html;
+      // Limpiar el sessionStorage después de usar
+      sessionStorage.removeItem(contentKey);
+      log('✅ Contenido HTML cargado correctamente');
+    } else if (notionContent) {
+      notionContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p class="empty-state-text">Content not found</p>
+          <p class="empty-state-hint">The shared content may have expired</p>
+        </div>
+      `;
+    }
+  }
+
+  /**
+   * Carga contenido en modo modal
+   * @private
+   */
+  async _loadModalContent(url, name, blockTypes = null) {
+    log('🪟 Modo modal detectado, cargando:', url, blockTypes ? `con filtro: ${blockTypes}` : '');
+    
+    // Ocultar lista y mostrar contenedor de contenido
+    const pageList = document.getElementById('page-list');
+    const notionContainer = document.getElementById('notion-container');
+    const header = document.getElementById('header');
+    const backButton = document.getElementById('back-button');
+    const pageTitle = document.getElementById('page-title');
+    
+    if (pageList) pageList.classList.add('hidden');
+    if (notionContainer) notionContainer.classList.remove('hidden');
+    if (backButton) backButton.classList.add('hidden');
+    if (header) header.classList.add('hidden');
+    if (pageTitle) pageTitle.textContent = name;
+    
+    // Crear un objeto Page temporal con blockTypes
+    const page = new Page(name, url, { blockTypes });
     
     // Mostrar loading
     this._setNotionDisplayMode('content');
@@ -173,7 +235,7 @@ export class ExtensionController {
     if (notionContent) {
       notionContent.innerHTML = `
         <div class="empty-state notion-loading">
-          <div class="empty-state-icon">⏳</div>
+          <div class="loading-spinner"></div>
           <p class="empty-state-text">Loading content...</p>
         </div>
       `;
@@ -267,7 +329,7 @@ export class ExtensionController {
       notionContent.className = 'notion-container__content notion-content';
       notionContent.innerHTML = `
         <div class="empty-state notion-loading">
-          <div class="empty-state-icon">⏳</div>
+          <div class="loading-spinner"></div>
           <p class="empty-state-text">Loading content...</p>
         </div>
       `;
@@ -1237,16 +1299,33 @@ export class ExtensionController {
       const embedUrl = this._getGoogleDocEmbedUrl(page.url);
       await this._shareGoogleDocToPlayers(embedUrl, page.name);
     } else if (page.isNotionPage()) {
-      // Para Notion, abrir en modal para los players
+      // Para Notion, obtener el HTML renderizado y enviarlo directamente
+      // Esto evita que el player necesite un token de Notion
       const pageId = page.getNotionPageId();
       if (pageId) {
-        // Usar broadcast para que los players abran el contenido
-        await this.OBR.broadcast.sendMessage('com.dmscreen/showNotionPage', {
-          url: page.url,
-          name: page.name,
-          pageId: pageId
-        });
-        this._showFeedback('📄 Page shared with players!');
+        try {
+          // Obtener el HTML del contenido actual
+          const notionContent = document.getElementById('notion-content');
+          let htmlContent = '';
+          
+          if (notionContent) {
+            // Clonar el contenido y remover botones de compartir
+            const clone = notionContent.cloneNode(true);
+            clone.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
+            htmlContent = clone.innerHTML;
+          }
+          
+          // Enviar el HTML renderizado directamente
+          await this.OBR.broadcast.sendMessage('com.dmscreen/showNotionContent', {
+            name: page.name,
+            html: htmlContent,
+            pageId: pageId
+          });
+          this._showFeedback('📄 Page shared with players!');
+        } catch (e) {
+          logError('Error compartiendo página Notion:', e);
+          this._showFeedback('❌ Error sharing page');
+        }
       }
     } else {
       // Para otros tipos, intentar compartir URL genérica
@@ -2238,21 +2317,53 @@ export class ExtensionController {
    */
   async _loadConfig() {
     log('📥 Cargando configuración...');
+    log('🔑 Room ID:', this.roomId);
+    log('🔑 Storage Key:', this.storageService.getStorageKey());
 
-    // Intentar cargar de localStorage primero
-    let config = this.storageService.getLocalConfig();
+    let config = null;
+    let configSource = 'none';
 
-    // Si es GM, intentar cargar de room metadata
+    // Para el GM: prioridad localStorage > room metadata > default
     if (this.isGM) {
-      const roomConfig = await this.storageService.getRoomConfig();
-      if (roomConfig) {
-        config = roomConfig;
+      // 1. Intentar cargar de localStorage (configuración del usuario)
+      const localConfig = this.storageService.getLocalConfig();
+      if (localConfig && localConfig.categories && localConfig.categories.length > 0) {
+        config = localConfig;
+        configSource = 'localStorage';
+        log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
+      }
+      
+      // 2. Si no hay en localStorage, intentar room metadata
+      if (!config) {
+        const roomConfig = await this.storageService.getRoomConfig();
+        if (roomConfig && roomConfig.categories && roomConfig.categories.length > 0) {
+          config = roomConfig;
+          configSource = 'roomMetadata';
+          log('📦 Config de room metadata encontrada');
+        }
+      }
+      
+      // 3. Si no hay ninguna, cargar default desde URL
+      if (!config) {
+        try {
+          const defaultConfig = await this._fetchDefaultConfig();
+          if (defaultConfig && defaultConfig.categories && defaultConfig.categories.length > 0) {
+            config = defaultConfig;
+            configSource = 'defaultURL';
+            // Guardar en localStorage para próximas veces
+            this.storageService.saveLocalConfig(config);
+            log('📦 Config default cargada desde URL');
+          }
+        } catch (e) {
+          log('⚠️ No se pudo cargar config default:', e.message);
+        }
       }
     } else {
-      // Si es jugador, solicitar al GM
+      // Para jugadores: solicitar al GM
       const visibleConfig = await this.broadcastService.requestVisiblePages();
-      if (visibleConfig) {
+      if (visibleConfig && visibleConfig.categories) {
         config = visibleConfig;
+        configSource = 'broadcast';
       }
     }
 
@@ -2266,12 +2377,44 @@ export class ExtensionController {
       this.config = this.configParser.parse(config);
     } else {
       // Crear configuración vacía
+      log('⚠️ No se encontró configuración, creando vacía');
       this.config = ConfigBuilder.createDefault().build();
+      configSource = 'empty';
     }
 
     this.configBuilder = new ConfigBuilder(this.config);
     
-    log('✅ Configuración cargada:', this.config.getTotalPageCount(), 'páginas');
+    log(`✅ Configuración cargada desde [${configSource}]:`, this.config.getTotalPageCount(), 'páginas');
+  }
+
+  /**
+   * Carga la configuración por defecto desde URL
+   * @private
+   */
+  async _fetchDefaultConfig() {
+    try {
+      // Intentar cargar desde URL pública de Netlify
+      const response = await fetch('https://owlbear-gm-vault.netlify.app/public/default-config.json');
+      if (response.ok) {
+        const config = await response.json();
+        log('✅ Configuración por defecto cargada desde default-config.json');
+        return config;
+      }
+    } catch (e) {
+      log('⚠️ No se pudo cargar default-config.json desde URL pública:', e);
+    }
+    
+    // Fallback a ruta local
+    try {
+      const localResponse = await fetch('/public/default-config.json');
+      if (localResponse.ok) {
+        return await localResponse.json();
+      }
+    } catch (e) {
+      log('⚠️ No se pudo cargar desde ruta local');
+    }
+    
+    return null;
   }
 
   // ============================================
@@ -2334,7 +2477,16 @@ export class ExtensionController {
       }
     });
 
-    // Listener para recibir páginas de Notion compartidas por el GM
+    // Listener para recibir contenido Notion renderizado del GM (nuevo - sin necesidad de token)
+    this.OBR.broadcast.onMessage('com.dmscreen/showNotionContent', async (event) => {
+      const { name, html, pageId } = event.data;
+      if (html) {
+        log('📝 Contenido Notion HTML recibido del GM');
+        await this._showNotionHtmlModal(name, html);
+      }
+    });
+
+    // Listener legacy para recibir páginas de Notion compartidas por el GM (requiere token)
     this.OBR.broadcast.onMessage('com.dmscreen/showNotionPage', async (event) => {
       const { url, name, pageId } = event.data;
       if (url) {
@@ -3086,6 +3238,48 @@ export class ExtensionController {
     } catch (error) {
       logError('Error al abrir modal de Notion:', error);
       window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  /**
+   * Muestra un modal con HTML de Notion pre-renderizado (no requiere token)
+   * @param {string} name - Nombre del contenido
+   * @param {string} html - HTML renderizado
+   * @private
+   */
+  async _showNotionHtmlModal(name, html) {
+    if (!this.OBR || !this.OBR.modal) {
+      logError('OBR.modal no disponible');
+      return;
+    }
+
+    try {
+      const currentPath = window.location.pathname;
+      const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+      const baseUrl = window.location.origin + baseDir;
+      
+      // Crear URL con el HTML codificado
+      const viewerUrl = new URL('index.html', baseUrl);
+      viewerUrl.searchParams.set('modal', 'true');
+      viewerUrl.searchParams.set('htmlContent', 'true');
+      if (name) {
+        viewerUrl.searchParams.set('name', encodeURIComponent(name));
+      }
+      
+      // Guardar el HTML en sessionStorage para recuperarlo en la modal
+      // Esto evita problemas con URLs muy largas
+      const contentKey = 'gm-vault-shared-content-' + Date.now();
+      sessionStorage.setItem(contentKey, html);
+      viewerUrl.searchParams.set('contentKey', contentKey);
+      
+      await this.OBR.modal.open({
+        id: 'gm-vault-html-viewer',
+        url: viewerUrl.toString(),
+        height: 800,
+        width: 1200
+      });
+    } catch (error) {
+      logError('Error al abrir modal de HTML:', error);
     }
   }
 

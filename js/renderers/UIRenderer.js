@@ -196,18 +196,29 @@ export class UIRenderer {
     contentContainer.className = 'category-content';
     contentContainer.style.display = isCollapsed ? 'none' : 'block';
 
-    // Renderizar páginas
-    categoryPages.forEach((page, pageIndex) => {
-      const pageButton = this._createPageButton(page, roomId, [...categoryPath, category.name], pageIndex, isGM);
-      contentContainer.appendChild(pageButton);
+    // Obtener orden combinado (páginas + subcategorías mezcladas)
+    const combinedOrder = this._getCombinedOrder(category, categoryPages);
+    
+    // Renderizar según el orden combinado
+    combinedOrder.forEach(item => {
+      if (item.type === 'page') {
+        const page = categoryPages[item.index];
+        if (page) {
+          // Usar el índice original en category.pages, no en categoryPages filtradas
+          const originalIndex = (category.pages || []).findIndex(p => p.name === page.name && p.url === page.url);
+          const pageButton = this._createPageButton(page, roomId, [...categoryPath, category.name], originalIndex !== -1 ? originalIndex : item.index, isGM);
+          contentContainer.appendChild(pageButton);
+        }
+      } else if (item.type === 'category') {
+        const subcat = (category.categories || [])[item.index];
+        if (subcat) {
+          // Si es jugador, verificar que la subcategoría tiene contenido visible
+          if (isGM || this.hasVisibleContentForPlayers(subcat)) {
+            this.renderCategory(subcat, contentContainer, level + 1, roomId, [...categoryPath, category.name], isGM);
+          }
+        }
+      }
     });
-
-    // Renderizar subcategorías
-    if (hasSubcategories) {
-      category.categories.forEach(subcat => {
-        this.renderCategory(subcat, contentContainer, level + 1, roomId, [...categoryPath, category.name], isGM);
-      });
-    }
 
     categoryDiv.appendChild(contentContainer);
 
@@ -330,6 +341,54 @@ export class UIRenderer {
     }
 
     return button;
+  }
+
+  /**
+   * Obtiene el orden combinado de páginas y categorías
+   * @private
+   */
+  _getCombinedOrder(category, filteredPages = null) {
+    const pages = filteredPages || category.pages || [];
+    const categories = category.categories || [];
+    
+    // Si existe un orden guardado, usarlo
+    if (category.order && Array.isArray(category.order)) {
+      // Validar y filtrar orden existente
+      const validOrder = category.order.filter(item => {
+        if (item.type === 'category') {
+          return categories[item.index];
+        } else if (item.type === 'page') {
+          return pages[item.index];
+        }
+        return false;
+      });
+      
+      // Agregar elementos nuevos que no estén en el orden
+      categories.forEach((cat, index) => {
+        if (!validOrder.some(o => o.type === 'category' && o.index === index)) {
+          validOrder.push({ type: 'category', index });
+        }
+      });
+      
+      pages.forEach((page, index) => {
+        if (!validOrder.some(o => o.type === 'page' && o.index === index)) {
+          validOrder.push({ type: 'page', index });
+        }
+      });
+      
+      return validOrder;
+    }
+    
+    // Si no hay orden guardado, crear uno por defecto (categorías primero, luego páginas)
+    const order = [];
+    categories.forEach((cat, index) => {
+      order.push({ type: 'category', index });
+    });
+    pages.forEach((page, index) => {
+      order.push({ type: 'page', index });
+    });
+    
+    return order;
   }
 
   /**

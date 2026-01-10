@@ -117,10 +117,29 @@ export class StorageService {
   getLocalConfig() {
     try {
       const storageKey = this.getStorageKey();
+      log('🔍 Buscando en localStorage con clave:', storageKey);
+      
       const stored = localStorage.getItem(storageKey);
       
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        const catCount = parsed?.categories?.length || 0;
+        log('✅ Encontrado en localStorage:', catCount, 'categorías');
+        return parsed;
+      } else {
+        log('⚠️ No hay datos en localStorage para:', storageKey);
+        
+        // Listar todas las claves de localStorage para debug
+        const allKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes('notion')) {
+            allKeys.push(key);
+          }
+        }
+        if (allKeys.length > 0) {
+          log('📋 Claves de localStorage relacionadas:', allKeys.join(', '));
+        }
       }
     } catch (e) {
       logError('Error al leer configuración local:', e);
