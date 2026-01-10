@@ -178,8 +178,38 @@ export class ExtensionController {
       await this._setupTokenContextMenus();
     }
     
+    // Exponer función global para refrescar imágenes
+    this._setupGlobalRefreshImage();
+    
     this.isInitialized = true;
     log('✅ ExtensionController inicializado correctamente');
+  }
+
+  /**
+   * Configura la función global para refrescar imágenes/página
+   * @private
+   */
+  _setupGlobalRefreshImage() {
+    const controller = this;
+    
+    window.refreshImage = async function(button) {
+      log('🔄 Refrescando página por error de imagen...');
+      
+      // Intentar obtener la página actual del controller
+      if (controller.currentPage && controller.currentPage.isNotionPage()) {
+        const pageId = controller.currentPage.getNotionPageId();
+        if (pageId) {
+          // Limpiar caché de esta página
+          controller.cacheService.clearPageCache(pageId);
+          // Recargar
+          await controller._renderNotionPage(controller.currentPage, pageId, true);
+          return;
+        }
+      }
+      
+      // Fallback: recargar la página completa
+      window.location.reload();
+    };
   }
 
   /**
@@ -3315,16 +3345,18 @@ export class ExtensionController {
     // Restaurar clases originales
     notionContent.className = 'notion-container__content notion-content';
 
-    // Si es player/Co-GM sin token, solicitar contenido al GM
+    // Si es player o Co-GM sin token propio, solicitar contenido al GM (Master)
+    // Co-GM tiene isGM=true pero isCoGM=true, y no debería necesitar su propio token
     const hasToken = this.storageService.hasUserToken();
+    const needsContentFromGM = (!this.isGM || this.isCoGM) && !hasToken;
     
-    if (!this.isGM && !hasToken) {
-      log('👤 Player sin token, solicitando contenido al GM...');
+    if (needsContentFromGM) {
+      log(`👤 ${this.isCoGM ? 'Co-GM' : 'Player'} sin token, solicitando contenido al Master GM...`);
       await this._requestNotionContentFromGM(page, pageId, notionContent);
       return;
     }
 
-    // GM o usuario con token: renderizar normalmente
+    // Master GM o usuario con token propio: renderizar normalmente
     await this._renderNotionPageWithToken(page, pageId, notionContent, forceRefresh);
   }
 
@@ -3356,14 +3388,12 @@ export class ExtensionController {
               <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" 
                    data-image-url="${coverUrl}"
                    onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();" />
-              ${this.isGM ? `
-                <button class="notion-image-share-button share-button" 
-                        data-image-url="${coverUrl}" 
-                        data-image-caption=""
-                        title="Show to players">
-                  <img src="img/icon-players.svg" alt="Share" />
-                </button>
-              ` : ''}
+              <button class="notion-image-share-button share-button" 
+                      data-image-url="${coverUrl}" 
+                      data-image-caption=""
+                      title="Share with room">
+                <img src="img/icon-players.svg" alt="Share" />
+              </button>
             </div>
           </div>
         `;
@@ -3526,14 +3556,12 @@ export class ExtensionController {
               transition: transform var(--transition-normal);
             "
           />
-          ${this.isGM ? `
-            <button class="notion-image-share-button share-button" 
-                    data-image-url="${absoluteImageUrl}" 
-                    data-image-caption="${escapedCaption}"
-                    title="Show to players">
-              <img src="img/icon-players.svg" alt="Share" />
-            </button>
-          ` : ''}
+          <button class="notion-image-share-button share-button" 
+                  data-image-url="${absoluteImageUrl}" 
+                  data-image-caption="${escapedCaption}"
+                  title="Share with room">
+            <img src="img/icon-players.svg" alt="Share" />
+          </button>
         </div>
         <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">Click on the image to view it full size</p>
       </div>

@@ -661,8 +661,8 @@
   .page-share-button,
   .page-visibility-button,
   .page-context-menu-button {
-    width: 40px; /* 24px icono + 8px padding * 2 */
-    height: 40px;
+    width: 32px; /* 24px icono + 8px padding * 2 */
+    height: 32px;
     background: transparent;
     border: none;
     border-radius: var(--radius-full);

@@ -114,6 +114,26 @@ export class CacheService {
     }
   }
 
+  /**
+   * Limpia todos los cachés relacionados con una página
+   * @param {string} pageId - ID de la página
+   */
+  clearPageCache(pageId) {
+    try {
+      // Limpiar caché de bloques
+      localStorage.removeItem(CACHE_PREFIX + pageId);
+      // Limpiar caché de info de página
+      localStorage.removeItem(PAGE_INFO_CACHE_PREFIX + pageId);
+      // Limpiar caché de HTML en memoria
+      if (this.localHtmlCache[pageId]) {
+        delete this.localHtmlCache[pageId];
+      }
+      log('🗑️ Caché limpiado para página:', pageId);
+    } catch (e) {
+      logError('Error al limpiar caché de página:', e);
+    }
+  }
+
   // ============================================
   // CACHÉ DE INFO DE PÁGINA
   // ============================================

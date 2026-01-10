@@ -130,21 +130,25 @@ export class AnalyticsService {
    */
   async init() {
     // Detectar si es beta
-    if (this._detectBeta()) {
-      log('📊 Mixpanel deshabilitado (entorno beta)');
+    const isBeta = this._detectBeta();
+    
+    // Verificar consent (mostrar banner si no hay consent, incluso en beta)
+    const consent = this.getConsent();
+    if (consent === null) {
+      // Mostrar banner de cookies (también en beta para que el consent esté listo)
+      this.showConsentBanner();
       return;
     }
 
-    // Verificar consent
-    const consent = this.getConsent();
+    // Si el usuario rechazó, no hacer nada
     if (consent === false) {
       log('📊 Mixpanel deshabilitado (usuario rechazó)');
       return;
     }
 
-    // Si consent es null, mostrar banner y esperar
-    if (consent === null) {
-      this.showConsentBanner();
+    // Si es beta, no inicializar Mixpanel pero el consent ya está guardado
+    if (isBeta) {
+      log('📊 Mixpanel deshabilitado (entorno beta)');
       return;
     }
 

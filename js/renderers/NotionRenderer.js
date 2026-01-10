@@ -182,12 +182,12 @@ export class NotionRenderer {
               data-block-id="${block.id}"
               loading="eager"
               onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-              onerror="this.style.opacity='0.5';"
+              onerror="this.style.display='none'; const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Could not load image</p><p class=\\'empty-state-hint\\'>The URL may have expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv);"
             />
             <button class="notion-image-share-button share-button" 
                     data-image-url="${imageUrl}" 
                     data-image-caption="${caption.replace(/"/g, '&quot;')}"
-                    title="Show to players">
+                    title="Share with room">
               <img src="img/icon-players.svg" alt="Share" />
             </button>
           </div>
