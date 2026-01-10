@@ -3424,7 +3424,7 @@ export class ExtensionController {
     // Construir HTML con header (cover + título)
     let headerHtml = '';
     
-    // Cover image
+    // Cover image - clickeable para abrir en modal
     if (pageInfo?.cover) {
       const coverUrl = pageInfo.cover.external?.url || pageInfo.cover.file?.url;
       if (coverUrl) {
@@ -3434,8 +3434,10 @@ export class ExtensionController {
               <div class="image-loading">
                 <div class="loading-spinner"></div>
               </div>
-              <img src="${coverUrl}" alt="Page cover" class="notion-cover-image" 
+              <img src="${coverUrl}" alt="Page cover" 
+                   class="notion-cover-image notion-image-clickable" 
                    data-image-url="${coverUrl}"
+                   data-image-caption=""
                    onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();" />
               <button class="notion-image-share-button share-button" 
                       data-image-url="${coverUrl}" 
@@ -3449,8 +3451,10 @@ export class ExtensionController {
       }
     }
     
-    // Título con icono - Usar nombre de la página del vault, no el de Notion
-    const pageTitle = page.name;
+    // Extraer título de Notion (solo usar datos de Notion, no del vault)
+    const notionTitle = this._extractNotionPageTitle(pageInfo);
+    
+    // Icono de Notion
     let iconHtml = '';
     if (pageInfo?.icon) {
       if (pageInfo.icon.type === 'emoji') {
@@ -3465,15 +3469,46 @@ export class ExtensionController {
     // Indicador de visibilidad para players - fácil de personalizar
     const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
     
+    // Usar título de Notion, o "Untitled" si no existe
+    const pageTitle = notionTitle || 'Untitled';
     headerHtml += `<h1 class="notion-page-title">${iconHtml}${pageTitle}${visibilityIndicator}</h1>`;
     
     notionContent.innerHTML = headerHtml + blocksHtml;
 
+    // Actualizar también el título del header de la UI (donde dice "Back | título")
+    const headerTitleElement = document.getElementById('page-title');
+    if (headerTitleElement) {
+      headerTitleElement.innerHTML = pageTitle + visibilityIndicator;
+    }
+
     // Guardar HTML en caché
     this.cacheService.saveHtmlToLocalCache(pageId, headerHtml + blocksHtml);
 
-    // Attach event handlers para imágenes
+    // Attach event handlers para imágenes (incluyendo cover)
     this._attachImageHandlers(notionContent);
+  }
+
+  /**
+   * Extrae el título de una página de Notion desde pageInfo
+   * @param {Object} pageInfo - Info de la página de Notion
+   * @returns {string|null} - Título o null
+   * @private
+   */
+  _extractNotionPageTitle(pageInfo) {
+    if (!pageInfo || !pageInfo.properties) {
+      return null;
+    }
+    
+    // Buscar la propiedad de tipo 'title'
+    for (const key in pageInfo.properties) {
+      const prop = pageInfo.properties[key];
+      if (prop && prop.type === 'title' && prop.title && prop.title.length > 0) {
+        // Renderizar rich text del título
+        return prop.title.map(t => t.plain_text || '').join('');
+      }
+    }
+    
+    return null;
   }
 
   /**
