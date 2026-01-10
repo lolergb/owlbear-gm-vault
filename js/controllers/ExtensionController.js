@@ -115,15 +115,17 @@ export class ExtensionController {
     // Configurar event handlers
     this._setupEventHandlers();
     
-    // Configurar broadcast (si es GM)
-    if (this.isGM) {
-      // Establecer vault owner y iniciar heartbeat (solo si no es coGM)
-      if (!this.isCoGM) {
-        await this._establishVaultOwnership();
-        this._startHeartbeat();
-      }
+    // Configurar broadcast según rol
+    if (this.isGM && !this.isCoGM) {
+      // Master GM: establecer ownership e iniciar heartbeat
+      await this._establishVaultOwnership();
+      this._startHeartbeat();
       this._setupGMBroadcast();
+    } else if (this.isCoGM) {
+      // Co-GM: escuchar actualizaciones como player pero también responder a solicitudes de contenido
+      this._setupCoGMBroadcast();
     } else {
+      // Player: escuchar actualizaciones
       this._setupPlayerBroadcast();
       // Verificar si el GM está activo
       this._checkGMAvailability();
@@ -387,13 +389,20 @@ export class ExtensionController {
     // Guardar en localStorage
     this.storageService.saveLocalConfig(config.toJSON ? config.toJSON() : config);
 
-    // Si es GM, guardar en room metadata y broadcast
-    if (this.isGM) {
+    // Si es Master GM, guardar en room metadata y broadcast
+    if (this.isGM && !this.isCoGM) {
       await this.storageService.saveRoomConfig(config.toJSON ? config.toJSON() : config);
       
-      // Broadcast páginas visibles
+      // Broadcast páginas visibles para Players
       const visibleConfig = filterVisiblePages(config.toJSON ? config.toJSON() : config);
       this.broadcastService.broadcastVisiblePages(visibleConfig);
+      
+      // Broadcast vault completo para Co-GMs
+      const configJson = config.toJSON ? config.toJSON() : config;
+      await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
+        config: configJson
+      });
+      log('📤 Vault completo enviado a Co-GMs');
     }
 
     // Re-renderizar
@@ -741,10 +750,12 @@ export class ExtensionController {
           continue;
         }
         
-        const indent = '  '.repeat(path.length);
+        // Usar non-breaking spaces (\u00A0) para indentación visible en <select>
+        const indent = '\u00A0\u00A0\u00A0\u00A0'.repeat(path.length);
+        const prefix = path.length > 0 ? '└─ ' : '';
         options.push({
           value: currentPath.join('/'),
-          label: `${indent}📁 ${cat.name}`
+          label: `${indent}${prefix}📁 ${cat.name}`
         });
         
         // Recursivamente agregar subcarpetas
@@ -1960,8 +1971,8 @@ export class ExtensionController {
     buttonContainer.appendChild(settingsButton);
     buttonContainer.appendChild(collapseAllButton);
 
-    // Botón Add (solo para GM)
-    if (this.isGM) {
+    // Botón Add (solo para Master GM, no Co-GM)
+    if (this.isGM && !this.isCoGM) {
       const addButton = document.createElement('button');
       addButton.className = 'icon-button';
       addButton.title = 'Add folder or page';
@@ -2829,6 +2840,35 @@ export class ExtensionController {
 
     // Configurar listeners para contenido compartido (común para todos)
     // El GM también debe recibir contenido compartido por otros (players, co-GMs)
+    this._setupSharedContentListeners();
+  }
+
+  /**
+   * Configura broadcast para Co-GM (modo lectura)
+   * El Co-GM escucha actualizaciones del vault completo desde el Master GM
+   * @private
+   */
+  _setupCoGMBroadcast() {
+    log('👁️ Configurando broadcast para Co-GM (modo lectura)');
+    
+    // Escuchar actualizaciones del vault completo (no solo páginas visibles)
+    this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, async (event) => {
+      const { config } = event.data;
+      if (config) {
+        log('📥 [Co-GM] Vault actualizado desde Master GM');
+        this.config = this.configParser.parse(config);
+        await this.render();
+      }
+    });
+
+    // También escuchar actualizaciones de páginas visibles (como fallback)
+    this.broadcastService.listenForVisiblePagesUpdates(async (config) => {
+      log('📥 [Co-GM] Páginas visibles actualizadas');
+      this.config = this.configParser.parse(config);
+      await this.render();
+    });
+
+    // Configurar listeners para contenido compartido (común para todos)
     this._setupSharedContentListeners();
   }
 
