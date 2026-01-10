@@ -2097,10 +2097,9 @@ export class ExtensionController {
 
     // Ocultar/mostrar secciones según rol
     const allForms = settingsContainer ? settingsContainer.querySelectorAll('.form') : [];
-    const notionTokenForm = allForms[0]; // Primera sección: Notion Token
-    const importNotionForm = allForms[1]; // Segunda sección: Import from Notion
-    const exportVaultForm = allForms[2]; // Tercera sección: Export vault
-    const feedbackForm = allForms[3]; // Cuarta sección: Feedback
+    const notionTokenForm = allForms[0]; // Primera sección: Notion Token (incluye Import from Notion)
+    const exportVaultForm = allForms[1]; // Segunda sección: Export vault
+    const feedbackForm = allForms[2]; // Tercera sección: Feedback
     const loadJsonBtn = document.getElementById('load-json-btn');
 
     log('⚙️ Settings - isGM:', this.isGM, '| isCoGM:', this.isCoGM);
@@ -2109,14 +2108,12 @@ export class ExtensionController {
       // Player: solo mostrar feedback/patreon (última sección)
       log('⚙️ Mostrando settings para Player (solo feedback)');
       if (notionTokenForm) notionTokenForm.style.display = 'none';
-      if (importNotionForm) importNotionForm.style.display = 'none';
       if (exportVaultForm) exportVaultForm.style.display = 'none';
       if (feedbackForm) feedbackForm.style.display = '';
     } else if (this.isCoGM) {
-      // Co-GM: ocultar Notion Token e Import, mostrar Export vault (con vault status) y Feedback
+      // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
       log('⚙️ Mostrando settings para Co-GM (export + feedback)');
       if (notionTokenForm) notionTokenForm.style.display = 'none';
-      if (importNotionForm) importNotionForm.style.display = 'none';
       if (exportVaultForm) exportVaultForm.style.display = '';
       if (feedbackForm) feedbackForm.style.display = '';
       // Ocultar botón "Load vault" para Co-GM (solo lectura)
