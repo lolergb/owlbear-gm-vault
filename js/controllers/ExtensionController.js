@@ -6,7 +6,7 @@
 
 import { log, logError, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
 import { filterVisiblePages } from '../utils/helpers.js';
-import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT } from '../utils/constants.js';
+import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 
 // Models
 import { Page } from '../models/Page.js';
@@ -17,6 +17,7 @@ import { CacheService } from '../services/CacheService.js';
 import { StorageService } from '../services/StorageService.js';
 import { NotionService } from '../services/NotionService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
+import { AnalyticsService } from '../services/AnalyticsService.js';
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js';
@@ -52,6 +53,7 @@ export class ExtensionController {
     this.storageService = new StorageService();
     this.notionService = new NotionService();
     this.broadcastService = new BroadcastService();
+    this.analyticsService = new AnalyticsService();
 
     // Renderers
     this.notionRenderer = new NotionRenderer();
@@ -169,6 +171,11 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
+    }
+    
+    // Configurar menús contextuales para tokens (solo si es GM)
+    if (this.isGM) {
+      await this._setupTokenContextMenus();
     }
     
     this.isInitialized = true;
@@ -317,6 +324,13 @@ export class ExtensionController {
     this.currentCategoryPath = categoryPath;
     this.currentPageIndex = pageIndex;
 
+    // Track page view
+    const pageType = page.isNotionPage() ? 'notion' : 
+                     page.isImage() ? 'image' : 
+                     page.isVideo() ? 'video' : 
+                     page.isGoogleDoc() ? 'google_doc' : 'iframe';
+    this.analyticsService.trackPageView(page.name, pageType);
+
     // Mostrar el contenedor de Notion y ocultar la lista
     const notionContainer = document.getElementById('notion-container');
     const pageList = document.getElementById('page-list');
@@ -437,6 +451,7 @@ export class ExtensionController {
       if (result) {
         alert('✅ Room metadata limpiado correctamente');
         log('✅ Room metadata limpiado. La configuración sigue en localStorage.');
+        this.analyticsService.trackCacheCleared();
       } else {
         alert('❌ Error al limpiar room metadata');
       }
@@ -489,6 +504,7 @@ export class ExtensionController {
    */
   async _handleVisibilityChange(page, categoryPath, pageIndex, visible) {
     await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
+    this.analyticsService.trackVisibilityToggle(page.name, visible);
   }
 
   /**
@@ -527,6 +543,7 @@ export class ExtensionController {
       log('📝 Página actualizada con blockTypes:', pageToUpdate.blockTypes);
       
       await this.saveConfig(this.config);
+      this.analyticsService.trackPageEdited(newData.name || page.name);
     } else {
       logError('No se encontró la página:', page.name);
     }
@@ -559,6 +576,7 @@ export class ExtensionController {
     if (pageIndexInArray !== -1) {
       pages.splice(pageIndexInArray, 1);
       await this.saveConfig(this.config);
+      this.analyticsService.trackPageDeleted(page.name);
     } else {
       logError('No se encontró la página:', page.name);
     }
@@ -693,6 +711,7 @@ export class ExtensionController {
     currentLevel.order = combinedOrder;
     
     await this.saveConfig(this.config);
+    this.analyticsService.trackPageMoved(page.name, direction);
     log('✅ Orden guardado');
   }
 
@@ -868,6 +887,7 @@ export class ExtensionController {
         if (catIndex !== -1) {
           currentLevel.categories[catIndex].name = data.name;
           await this.saveConfig(this.config);
+          this.analyticsService.trackFolderEdited(category.name, data.name);
         }
       }
     });
@@ -895,6 +915,7 @@ export class ExtensionController {
     if (catIndex !== -1) {
       categories.splice(catIndex, 1);
       await this.saveConfig(this.config);
+      this.analyticsService.trackFolderDeleted(category.name);
     }
   }
 
@@ -1247,6 +1268,7 @@ export class ExtensionController {
         message: `Storage limit reached while ${action}. Some data may not be saved.`,
         type: 'warning'
       });
+      this.analyticsService.trackStorageLimitReached('cache: ' + action);
     });
 
     // Storage Service
@@ -1257,6 +1279,7 @@ export class ExtensionController {
         message: `Storage limit reached while ${action}.`,
         type: 'warning'
       });
+      this.analyticsService.trackStorageLimitReached('storage: ' + action);
     });
 
     // Notion Service
@@ -1271,6 +1294,11 @@ export class ExtensionController {
       OBR: this.OBR,
       cacheService: this.cacheService
     });
+
+    // Analytics Service
+    this.analyticsService.setOBR(this.OBR);
+    // Iniciar analytics (mostrará banner de cookies si es necesario)
+    this.analyticsService.init();
 
     // Notion Renderer
     this.notionRenderer.setDependencies({
@@ -1664,6 +1692,7 @@ export class ExtensionController {
           const pageId = page.getNotionPageId();
           if (pageId) {
             await this._renderNotionPage(page, pageId, true);
+            this.analyticsService.trackPageReloaded(page.name);
           }
         }
       });
@@ -2171,6 +2200,7 @@ export class ExtensionController {
         }
         
         this.storageService.saveUserToken(token);
+        this.analyticsService.trackTokenConfigured();
         alert('✅ Token saved successfully!');
         this._goBackToList();
       });
@@ -2182,6 +2212,7 @@ export class ExtensionController {
       clearBtn.addEventListener('click', () => {
         if (confirm('Delete token? You will go back to using the server token.')) {
           this.storageService.saveUserToken('');
+          this.analyticsService.trackTokenRemoved();
           if (tokenInput) tokenInput.value = '';
           if (tokenMasked) tokenMasked.textContent = '';
           alert('Token deleted.');
@@ -2212,6 +2243,16 @@ export class ExtensionController {
             }
             
             await this.saveConfig(config);
+            // Contar items para analytics
+            let itemCount = 0;
+            const countItems = (cats) => {
+              for (const cat of cats || []) {
+                itemCount += (cat.pages || []).length;
+                if (cat.categories) countItems(cat.categories);
+              }
+            };
+            countItems(config.categories);
+            this.analyticsService.trackJSONImported(itemCount);
             alert('✅ Vault loaded successfully!');
             this._goBackToList();
           } catch (err) {
@@ -2242,6 +2283,17 @@ export class ExtensionController {
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
+          
+          // Contar items para analytics
+          let itemCount = 0;
+          const countExportItems = (cats) => {
+            for (const cat of cats || []) {
+              itemCount += (cat.pages || []).length;
+              if (cat.categories) countExportItems(cat.categories);
+            }
+          };
+          countExportItems(config.categories);
+          this.analyticsService.trackJSONExported(itemCount);
         } catch (err) {
           alert('❌ Error downloading: ' + err.message);
         }
@@ -2446,6 +2498,7 @@ export class ExtensionController {
       }
       
       await this.saveConfig(this.config);
+      this.analyticsService.trackFolderAdded(data.name);
     });
   }
 
@@ -2476,6 +2529,7 @@ export class ExtensionController {
         });
         
         await this.saveConfig(this.config);
+        this.analyticsService.trackPageAdded(data.name, this._detectPageType(data.url));
       });
       return;
     }
@@ -2502,8 +2556,22 @@ export class ExtensionController {
           visibleToPlayers: false
         });
         await this.saveConfig(this.config);
+        this.analyticsService.trackPageAdded(data.name, this._detectPageType(data.url));
       }
     });
+  }
+
+  /**
+   * Detecta el tipo de página basándose en la URL
+   * @private
+   */
+  _detectPageType(url) {
+    if (!url) return 'unknown';
+    if (url.includes('notion.so') || url.includes('notion.site')) return 'notion';
+    if (/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)) return 'image';
+    if (/\.(mp4|webm|mov)$/i.test(url) || url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com')) return 'video';
+    if (url.includes('docs.google.com')) return 'google_doc';
+    return 'iframe';
   }
 
   /**
@@ -3073,6 +3141,9 @@ export class ExtensionController {
     const availability = await this._checkGMAvailability();
     
     if (availability.isActive) return true;
+    
+    // Trackear evento de GM no activo
+    this.analyticsService.trackGMNotActive();
     
     const notionContent = document.getElementById('notion-content');
     if (notionContent) {
@@ -3862,6 +3933,7 @@ export class ExtensionController {
       
       log('📤 Imagen compartida:', absoluteImageUrl.substring(0, 80));
       this._showFeedback('📸 Image shared!');
+      this.analyticsService.trackImageShare(absoluteImageUrl);
     } catch (e) {
       logError('Error compartiendo imagen:', e);
       this._showFeedback('❌ Error sharing image');
@@ -4057,6 +4129,294 @@ export class ExtensionController {
       logError('Error al abrir modal de contenido:', error);
       window.open(url, '_blank', 'noopener,noreferrer');
     }
+  }
+
+  // ============================================
+  // Token Context Menus - Vincular páginas a tokens
+  // ============================================
+
+  /**
+   * Configura los menús contextuales para tokens de OBR
+   * @private
+   */
+  async _setupTokenContextMenus() {
+    try {
+      log('🎯 Configurando menús contextuales para tokens...');
+      
+      // Obtener la URL base para los iconos
+      const baseUrl = window.location.origin;
+      
+      // Menú: Vincular página (solo GM)
+      await this.OBR.contextMenu.create({
+        id: `${METADATA_KEY}/link-page`,
+        icons: [
+          {
+            icon: `${baseUrl}/img/icon-page.svg`,
+            label: 'Link page',
+            filter: {
+              every: [{ key: 'layer', value: 'CHARACTER' }],
+              roles: ['GM']
+            }
+          }
+        ],
+        onClick: async (context) => {
+          const items = context.items;
+          if (!items || items.length === 0) return;
+          
+          // Obtener los IDs de todos los tokens seleccionados
+          const itemIds = items.map(item => item.id);
+          
+          // Abrir el panel de la extensión
+          await this.OBR.action.open();
+          
+          // Pequeña espera para que el panel se abra
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Mostrar selector de páginas
+          await this._showPageSelectorForToken(itemIds);
+        }
+      });
+      
+      // Menú: Ver página vinculada (todos, si tiene página)
+      await this.OBR.contextMenu.create({
+        id: `${METADATA_KEY}/view-page`,
+        icons: [
+          {
+            icon: `${baseUrl}/img/icon-view-page.svg`,
+            label: 'View linked page',
+            filter: {
+              every: [
+                { key: 'layer', value: 'CHARACTER' },
+                { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
+              ]
+            }
+          }
+        ],
+        onClick: async (context) => {
+          const item = context.items[0];
+          if (!item) return;
+          
+          const pageUrl = item.metadata[`${METADATA_KEY}/pageUrl`];
+          const pageName = item.metadata[`${METADATA_KEY}/pageName`] || 'Linked page';
+          
+          if (pageUrl) {
+            // Abrir el panel de la extensión
+            await this.OBR.action.open();
+            
+            // Pequeña espera para que el panel se abra
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Trackear y abrir la página
+            this.analyticsService.trackPageViewedFromToken(pageName);
+            await this._openLinkedPage(pageUrl, pageName);
+          }
+        }
+      });
+      
+      // Menú: Desvincular página (solo GM)
+      await this.OBR.contextMenu.create({
+        id: `${METADATA_KEY}/unlink-page`,
+        icons: [
+          {
+            icon: `${baseUrl}/img/icon-trash.svg`,
+            label: 'Unlink page',
+            filter: {
+              every: [
+                { key: 'layer', value: 'CHARACTER' },
+                { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
+              ],
+              roles: ['GM']
+            }
+          }
+        ],
+        onClick: async (context) => {
+          const items = context.items;
+          if (!items || items.length === 0) return;
+          
+          // Desvincular todos los tokens seleccionados
+          await this.OBR.scene.items.updateItems(items, (updateItems) => {
+            updateItems.forEach(item => {
+              delete item.metadata[`${METADATA_KEY}/pageUrl`];
+              delete item.metadata[`${METADATA_KEY}/pageName`];
+              delete item.metadata[`${METADATA_KEY}/pageIcon`];
+            });
+          });
+          
+          const count = items.length;
+          log(`🗑️ Página desvinculada de ${count} token(s)`);
+          this._showFeedback(count === 1 ? '🔗 Page unlinked' : `🔗 Page unlinked from ${count} tokens`);
+        }
+      });
+      
+      log('✅ Menús contextuales para tokens configurados');
+      
+    } catch (error) {
+      logError('❌ Error al configurar menús contextuales:', error);
+    }
+  }
+
+  /**
+   * Muestra el selector de páginas para vincular a tokens
+   * @param {string[]} itemIds - IDs de los tokens seleccionados
+   * @private
+   */
+  async _showPageSelectorForToken(itemIds) {
+    const tokenIds = Array.isArray(itemIds) ? itemIds : [itemIds];
+    
+    // Verificar que tengamos configuración
+    if (!this.config || !this.config.categories) {
+      alert('No pages configured. Add pages from the main panel.');
+      return;
+    }
+    
+    // Recopilar todas las páginas respetando el orden del vault
+    const allPages = [];
+    
+    const collectPagesOrdered = (category, path = [], level = 0) => {
+      if (!category) return;
+      
+      const currentPath = [...path, category.name];
+      const combinedOrder = this._getCombinedOrder(category);
+      
+      combinedOrder.forEach(item => {
+        if (item.type === 'category' && category.categories && category.categories[item.index]) {
+          const subcategory = category.categories[item.index];
+          collectPagesOrdered(subcategory, currentPath, level + 1);
+        } else if (item.type === 'page' && category.pages && category.pages[item.index]) {
+          const page = category.pages[item.index];
+          allPages.push({
+            name: page.name,
+            url: page.url,
+            icon: page.icon,
+            displayPath: currentPath.join(' / '),
+            categoryPath: currentPath,
+            pageIndex: item.index
+          });
+        }
+      });
+    };
+    
+    // Procesar categorías raíz
+    const rootOrder = this._getCombinedOrder(this.config);
+    rootOrder.forEach(item => {
+      if (item.type === 'category' && this.config.categories && this.config.categories[item.index]) {
+        collectPagesOrdered(this.config.categories[item.index], [], 0);
+      }
+    });
+    
+    if (allPages.length === 0) {
+      alert('No pages configured. Add pages from the main panel.');
+      return;
+    }
+    
+    // Crear opciones para el select con indentación
+    const pageOptions = allPages.map((page, index) => ({
+      label: `${page.displayPath} → ${page.name}`,
+      value: index.toString()
+    }));
+    
+    // Determinar el título del modal
+    const modalTitle = tokenIds.length === 1 
+      ? 'Link page to token' 
+      : `Link page to ${tokenIds.length} tokens`;
+    
+    // Mostrar modal de selección
+    this._showModalForm(modalTitle, [
+      {
+        name: 'pageIndex',
+        label: 'Select a page',
+        type: 'select',
+        options: pageOptions,
+        required: true
+      }
+    ], async (data) => {
+      const selectedPage = allPages[parseInt(data.pageIndex)];
+      
+      if (!selectedPage) {
+        alert('Error: page not found');
+        return;
+      }
+      
+      try {
+        // Obtener todos los items seleccionados
+        const items = await this.OBR.scene.items.getItems(tokenIds);
+        if (items.length === 0) {
+          alert('Error: tokens not found');
+          return;
+        }
+        
+        // Actualizar metadatos de todos los tokens
+        await this.OBR.scene.items.updateItems(items, (updateItems) => {
+          updateItems.forEach(item => {
+            item.metadata[`${METADATA_KEY}/pageUrl`] = selectedPage.url;
+            item.metadata[`${METADATA_KEY}/pageName`] = selectedPage.name;
+            item.metadata[`${METADATA_KEY}/pageIcon`] = selectedPage.icon;
+          });
+        });
+        
+        // Registrar y mostrar mensaje de confirmación
+        const tokenCount = items.length;
+        log(`✅ Página "${selectedPage.name}" vinculada a ${tokenCount} token(s)`);
+        
+        // Trackear para cada token
+        tokenIds.forEach(itemId => {
+          this.analyticsService.trackPageLinkedToToken(selectedPage.name, itemId);
+        });
+        
+        const successMessage = tokenCount === 1
+          ? `✅ Page "${selectedPage.name}" linked to token`
+          : `✅ Page "${selectedPage.name}" linked to ${tokenCount} tokens`;
+        this._showFeedback(successMessage);
+        
+      } catch (error) {
+        logError('Error al vincular página:', error);
+        alert('Error linking page: ' + error.message);
+      }
+    });
+  }
+
+  /**
+   * Abre una página vinculada desde un token
+   * @param {string} url - URL de la página
+   * @param {string} name - Nombre de la página
+   * @private
+   */
+  async _openLinkedPage(url, name) {
+    // Buscar la página en la configuración para obtener todos sus datos
+    let foundPage = null;
+    
+    const findPage = (category) => {
+      if (!category || foundPage) return;
+      
+      // Buscar en páginas de esta categoría
+      const pages = category.pages || [];
+      for (const page of pages) {
+        if (page.url === url) {
+          foundPage = page;
+          return;
+        }
+      }
+      
+      // Buscar en subcategorías
+      const subcategories = category.categories || [];
+      for (const subcat of subcategories) {
+        findPage(subcat);
+      }
+    };
+    
+    // Buscar en todas las categorías raíz
+    if (this.config && this.config.categories) {
+      for (const cat of this.config.categories) {
+        findPage(cat);
+        if (foundPage) break;
+      }
+    }
+    
+    // Si encontramos la página, usarla; sino crear una básica
+    const page = foundPage || { name, url, visibleToPlayers: false, blockTypes: null };
+    
+    // Abrir la página
+    await this.openPage(page, [], 0);
   }
 
   /**
