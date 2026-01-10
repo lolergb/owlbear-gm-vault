@@ -2428,28 +2428,30 @@ export class ExtensionController {
       return;
     }
 
-    // Crear modal
+    // Crear overlay (mismo estilo que _showModalForm)
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
     overlay.id = 'notion-pages-modal';
+    overlay.className = 'modal';
 
-    const container = document.createElement('div');
-    container.className = 'modal-container notion-pages-modal';
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.className = 'modal__content notion-pages-modal';
 
-    container.innerHTML = `
-      <div class="modal-header">
-        <h3 class="modal-title">Import from Notion</h3>
-        <button class="modal-close-button">&times;</button>
-      </div>
-      <div class="modal-content">
-        <div class="notion-pages-search">
-          <input type="text" placeholder="Search pages..." id="notion-search-input" />
+    modal.innerHTML = `
+      <h2 class="modal__title">Import from Notion</h2>
+      <div class="form">
+        <div class="form__field">
+          <label class="form__label">Search pages</label>
+          <input type="text" placeholder="Search..." id="notion-search-input" class="input" />
         </div>
-        <div class="notion-pages-list" id="notion-pages-list">
-          <div class="notion-pages-loading">Loading pages...</div>
+        <div class="form__field">
+          <label class="form__label">Select a page</label>
+          <div class="notion-pages-list" id="notion-pages-list">
+            <div class="notion-pages-loading">Loading pages...</div>
+          </div>
         </div>
         <p class="notion-pages-hint">
-          💡 Select a page to import its structure. Child pages will become folders/pages in your vault.
+          💡 Child pages will become folders/pages in your vault.
         </p>
         <div id="import-progress" class="import-progress" style="display: none;">
           <div class="import-progress__status" id="import-status">Preparing...</div>
@@ -2457,29 +2459,26 @@ export class ExtensionController {
             <div class="import-progress__fill" id="import-fill"></div>
           </div>
         </div>
-      </div>
-      <div class="modal-buttons">
-        <button class="modal-button modal-button-cancel" id="notion-cancel-btn">Cancel</button>
-        <button class="modal-button modal-button-submit" id="notion-import-btn" disabled>Import Selected</button>
+        <div class="form__actions">
+          <button type="button" id="notion-cancel-btn" class="btn btn--ghost btn--flex">Cancel</button>
+          <button type="button" id="notion-import-btn" class="btn btn--primary btn--flex" disabled>Import</button>
+        </div>
       </div>
     `;
 
-    overlay.appendChild(container);
+    overlay.appendChild(modal);
 
     // Eventos
     const closeModal = () => {
-      overlay.classList.remove('modal-visible');
-      setTimeout(() => overlay.remove(), 200);
+      overlay.remove();
     };
 
-    container.querySelector('.modal-close-button').addEventListener('click', closeModal);
-    container.querySelector('#notion-cancel-btn').addEventListener('click', closeModal);
+    modal.querySelector('#notion-cancel-btn').addEventListener('click', closeModal);
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) closeModal();
     });
 
     document.body.appendChild(overlay);
-    requestAnimationFrame(() => overlay.classList.add('modal-visible'));
 
     // Variables de estado
     let selectedPage = null;
