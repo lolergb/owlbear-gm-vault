@@ -159,13 +159,13 @@ exports.handler = async (event, context) => {
     // ============================================
     // ACCIONES EXISTENTES: page, blocks
     // ============================================
-    if (!pageId) {
-      return {
-        statusCode: 400,
+  if (!pageId) {
+    return {
+      statusCode: 400,
         headers: CORS_HEADERS,
-        body: JSON.stringify({ error: 'pageId parameter is required' })
-      };
-    }
+      body: JSON.stringify({ error: 'pageId parameter is required' })
+    };
+  }
 
     // Si type es 'page', obtener información de la página (para last_edited_time)
     // Si no, obtener los bloques hijos

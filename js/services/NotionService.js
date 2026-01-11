@@ -387,7 +387,8 @@ export class NotionService {
   }
 
   /**
-   * Verifica si una página tiene contenido real (no solo títulos o vacía)
+   * Verifica si una página tiene contenido real (no solo títulos, links o vacía)
+   * child_page y link_to_page NO cuentan como contenido propio (se procesan como hijas)
    * @param {string} pageId - ID de la página
    * @returns {Promise<boolean>} - true si tiene contenido real
    */
@@ -400,48 +401,61 @@ export class NotionService {
       }
 
       // Tipos de bloques que consideramos "contenido real"
+      // NO incluimos child_page ni link_to_page (esos son hijos, no contenido propio)
       const contentTypes = [
         'paragraph', 'bulleted_list_item', 'numbered_list_item',
         'image', 'video', 'embed', 'bookmark', 'code', 'quote',
         'callout', 'table', 'toggle', 'to_do', 'equation',
         'column_list', 'synced_block', 'template', 'link_preview',
-        'file', 'pdf', 'audio'
+        'file', 'pdf', 'audio', 'divider'
       ];
 
-      // Verificar si hay al menos un bloque con contenido real
+      let contentScore = 0;
+      const MIN_CONTENT_SCORE = 1; // Mínimo para considerar que tiene contenido
+
+      // Verificar si hay contenido real
       for (const block of blocks) {
+        // Ignorar child_page y link_to_page (son hijas, no contenido propio)
+        if (block.type === 'child_page' || block.type === 'link_to_page') {
+          continue;
+        }
+
         // Si es un tipo de contenido
         if (contentTypes.includes(block.type)) {
           // Para párrafos, verificar que no estén vacíos
           if (block.type === 'paragraph') {
             const text = block.paragraph?.rich_text;
             if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
-              return true;
+              contentScore += 1;
             }
+          } else if (block.type === 'divider') {
+            // Los dividers solos no cuentan mucho
+            contentScore += 0.1;
           } else {
-            return true;
+            // Imágenes, videos, tablas, etc. cuentan más
+            contentScore += 2;
           }
         }
         
-        // Headings con contenido también cuentan
+        // Headings con contenido toggle cuentan
         if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
           const headingData = block[block.type];
-          const text = headingData?.rich_text;
-          if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
-            // Si el heading tiene hijos (toggle), cuenta como contenido
-            if (block.has_children) {
-              return true;
-            }
+          // Si el heading tiene hijos (toggle), cuenta como contenido
+          if (block.has_children) {
+            contentScore += 2;
+          } else {
+            // Headings solos no cuentan mucho (son solo títulos)
+            contentScore += 0.2;
           }
         }
-        
-        // child_page y link_to_page cuentan como contenido (tienen subpáginas)
-        if (block.type === 'child_page' || block.type === 'link_to_page') {
+
+        // Si ya tenemos suficiente contenido, no seguir contando
+        if (contentScore >= MIN_CONTENT_SCORE) {
           return true;
         }
       }
 
-      return false;
+      return contentScore >= MIN_CONTENT_SCORE;
     } catch (e) {
       logWarn('Error verificando contenido de página:', pageId, e);
       return true; // En caso de error, asumimos que tiene contenido
