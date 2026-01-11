@@ -1516,8 +1516,8 @@ export class ExtensionController {
       newShareBtn.addEventListener('click', () => this._shareCurrentPageToPlayers(page));
     }
 
-    // Solo para GM: Botones de visibilidad y menú contextual
-    if (this.isGM) {
+    // Botones solo para Master GM (no Co-GM)
+    if (this.isGM && !this.isCoGM) {
       // Botón de Visibilidad
       let visibilityBtn = document.getElementById('page-visibility-button-header');
       if (!visibilityBtn) {
@@ -1542,8 +1542,10 @@ export class ExtensionController {
         newVisibilityBtn.title = newVisibility ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
         page.visibleToPlayers = newVisibility;
       });
+    }
 
-      // Botón Menú Contextual (solo GM)
+    // Botón Menú Contextual (para GM y Co-GM)
+    if (this.isGM) {
       let contextMenuBtn = document.getElementById('page-context-menu-button-header');
       if (!contextMenuBtn) {
         contextMenuBtn = document.createElement('button');
@@ -1767,15 +1769,18 @@ export class ExtensionController {
 
     const rect = button.getBoundingClientRect();
     
-    const menuItems = [
-      { 
+    const menuItems = [];
+
+    // Solo Master GM puede editar y eliminar
+    if (this.isGM && !this.isCoGM) {
+      menuItems.push({ 
         icon: 'img/icon-edit.svg', 
         text: 'Edit page',
         action: () => this._showEditPageModal(page)
-      }
-    ];
+      });
+    }
 
-    // Agregar Refresh solo para páginas de Notion
+    // Agregar Refresh solo para páginas de Notion (disponible para GM y Co-GM)
     if (page.isNotionPage()) {
       menuItems.push({
         icon: 'img/icon-reload.svg',
@@ -1790,19 +1795,27 @@ export class ExtensionController {
       });
     }
 
-    menuItems.push(
-      { separator: true },
-      { 
-        icon: 'img/icon-trash.svg', 
-        text: 'Delete page',
-        action: () => {
-          if (confirm(`Delete "${page.name}"?`)) {
-            this._handlePageDelete(page, this.currentCategoryPath, this.currentPageIndex);
-            this._goBackToList();
+    // Solo Master GM puede eliminar
+    if (this.isGM && !this.isCoGM) {
+      menuItems.push(
+        { separator: true },
+        { 
+          icon: 'img/icon-trash.svg', 
+          text: 'Delete page',
+          action: () => {
+            if (confirm(`Delete "${page.name}"?`)) {
+              this._handlePageDelete(page, this.currentCategoryPath, this.currentPageIndex);
+              this._goBackToList();
+            }
           }
         }
-      }
-    );
+      );
+    }
+
+    // Si no hay items, no mostrar el menú
+    if (menuItems.length === 0) {
+      return;
+    }
 
     const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
       button.classList.remove('context-menu-active');
