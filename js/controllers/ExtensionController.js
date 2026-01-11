@@ -445,24 +445,26 @@ export class ExtensionController {
   async saveConfig(config) {
     log('💾 Guardando configuración...');
 
-    this.config = config;
-    this.configBuilder = new ConfigBuilder(config);
+    // Parsear el config para convertir formato items[] a formato interno si es necesario
+    const configJson = config.toJSON ? config.toJSON() : config;
+    this.config = this.configParser.parse(configJson);
+    this.configBuilder = new ConfigBuilder(this.config);
 
-    // Guardar en localStorage
-    this.storageService.saveLocalConfig(config.toJSON ? config.toJSON() : config);
+    // Guardar en localStorage (guardamos el JSON parseado con formato legacy + order)
+    this.storageService.saveLocalConfig(this.config.toJSON ? this.config.toJSON() : this.config);
 
     // Si es Master GM, guardar en room metadata y broadcast
     if (this.isGM && !this.isCoGM) {
-      await this.storageService.saveRoomConfig(config.toJSON ? config.toJSON() : config);
+      const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
+      await this.storageService.saveRoomConfig(configToSave);
       
       // Broadcast páginas visibles para Players
-      const visibleConfig = filterVisiblePages(config.toJSON ? config.toJSON() : config);
+      const visibleConfig = filterVisiblePages(configToSave);
       this.broadcastService.broadcastVisiblePages(visibleConfig);
       
       // Broadcast vault completo para Co-GMs
-      const configJson = config.toJSON ? config.toJSON() : config;
       await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-        config: configJson
+        config: configToSave
       });
       log('📤 Vault completo enviado a Co-GMs');
     }
@@ -3679,7 +3681,9 @@ export class ExtensionController {
                    class="notion-cover-image notion-image-clickable" 
                    data-image-url="${coverUrl}"
                    data-image-caption=""
-                   onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();" />
+                   data-block-id="cover-${pageId}"
+                   onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
+                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv);" />
               <button class="notion-image-share-button share-button" 
                       data-image-url="${coverUrl}" 
                       data-image-caption=""

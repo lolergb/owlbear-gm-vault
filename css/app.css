@@ -1261,25 +1261,36 @@
   .add-first-category-button { margin-top: var(--spacing-lg); }
   
   /* ==========================================================================
-      Refresh Button
+      Page Header Action Buttons
+      Mismo estilo que los botones de la lista (.page-share-button, etc.)
       ========================================================================== */
   #page-context-menu-button-header,
   #refresh-page-button,
   #page-visibility-button-header,
   #page-open-modal-button-header,
   #page-share-button-header {
+    width: 32px;
+    height: 32px;
     background: transparent;
     border: none;
     border-radius: var(--radius-full);
-    width: var(--icon-size-lg);
-    height: var(--icon-size-lg);
-    padding: 0;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    margin-left: var(--spacing-sm);
+    transition: background var(--transition-fast);
+    padding: var(--spacing-sm);
+    flex-shrink: 0;
+    margin-left: var(--spacing-xs);
+  }
+
+  #page-context-menu-button-header img,
+  #refresh-page-button img,
+  #page-visibility-button-header img,
+  #page-open-modal-button-header img,
+  #page-share-button-header img {
+    width: var(--icon-size-md);
+    height: var(--icon-size-md);
   }
 
   /* Orden de botones de derecha a izquierda: menú contextual, refresh, visibility, open-modal */
@@ -1353,6 +1364,45 @@
     user-select: none;
   }
   
+  /* ==========================================================================
+     List Item Animations
+     ========================================================================== */
+  @keyframes listItemFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .page-button,
+  .category-title-container {
+    animation: listItemFadeIn 0.2s ease-out forwards;
+  }
+
+  /* Stagger animation delays for list items */
+  .page-button:nth-child(1),
+  .category:nth-child(1) > .category-title-container { animation-delay: 0ms; }
+  .page-button:nth-child(2),
+  .category:nth-child(2) > .category-title-container { animation-delay: 30ms; }
+  .page-button:nth-child(3),
+  .category:nth-child(3) > .category-title-container { animation-delay: 60ms; }
+  .page-button:nth-child(4),
+  .category:nth-child(4) > .category-title-container { animation-delay: 90ms; }
+  .page-button:nth-child(5),
+  .category:nth-child(5) > .category-title-container { animation-delay: 120ms; }
+  .page-button:nth-child(6),
+  .category:nth-child(6) > .category-title-container { animation-delay: 150ms; }
+  .page-button:nth-child(7),
+  .category:nth-child(7) > .category-title-container { animation-delay: 180ms; }
+  .page-button:nth-child(8),
+  .category:nth-child(8) > .category-title-container { animation-delay: 210ms; }
+  .page-button:nth-child(n+9),
+  .category:nth-child(n+9) > .category-title-container { animation-delay: 240ms; }
+
   /* Compatibility aliases for page-button */
   .page-button {
     display: flex;
