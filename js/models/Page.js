@@ -1,0 +1,174 @@
+/**
+ * @fileoverview Modelo de Página
+ * 
+ * Representa una página de contenido (Notion, Google Docs, imagen, etc.)
+ * Este modelo es independiente del framework y puede ser serializado a JSON.
+ */
+
+import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js';
+
+/**
+ * Clase que representa una página de contenido
+ */
+export class Page {
+  /**
+   * @param {string} name - Nombre de la página
+   * @param {string} url - URL de la página
+   * @param {Object} options - Opciones adicionales
+   * @param {boolean} [options.visibleToPlayers=false] - Si está visible para jugadores
+   * @param {string[]} [options.blockTypes] - Tipos de bloques a filtrar (Notion)
+   * @param {Object} [options.icon] - Icono de la página
+   * @param {string} [options.linkedTokenId] - ID del token vinculado
+   */
+  constructor(name, url, options = {}) {
+    this.name = name;
+    this.url = url;
+    this.visibleToPlayers = options.visibleToPlayers || false;
+    this.blockTypes = options.blockTypes || null;
+    this.icon = options.icon || null;
+    this.linkedTokenId = options.linkedTokenId || null;
+  }
+
+  /**
+   * Obtiene el ID de página de Notion (si aplica)
+   * Para content-demo devuelve null ya que no son páginas de Notion reales
+   * @returns {string|null}
+   */
+  getNotionPageId() {
+    // Content-demo no tiene pageId de Notion
+    if (this.isDemoHtmlFile()) return null;
+    return extractNotionPageId(this.url);
+  }
+
+  /**
+   * Verifica si esta página es de Notion real
+   * @returns {boolean}
+   */
+  isNotionPage() {
+    if (!this.url) return false;
+    return isNotionUrl(this.url);
+  }
+
+  /**
+   * Verifica si esta página es un archivo HTML de demo (content-demo)
+   * Estos se renderizan con estilo Notion pero son archivos HTML estáticos
+   * @returns {boolean}
+   */
+  isDemoHtmlFile() {
+    return isDemoHtmlFile(this.url);
+  }
+
+  /**
+   * Verifica si debe mostrarse con estilo Notion (Notion real o demo)
+   * @returns {boolean}
+   */
+  isNotionStyle() {
+    if (!this.url) return false;
+    return isNotionUrl(this.url) || isDemoHtmlFile(this.url);
+  }
+
+  /**
+   * Verifica si esta página es un documento de Google
+   * @returns {boolean}
+   */
+  isGoogleDoc() {
+    return this.url && (
+      this.url.includes('docs.google.com') ||
+      this.url.includes('drive.google.com')
+    );
+  }
+
+  /**
+   * Verifica si esta página es una imagen
+   * @returns {boolean}
+   */
+  isImage() {
+    if (!this.url) return false;
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
+    const lowercaseUrl = this.url.toLowerCase();
+    return imageExtensions.some(ext => lowercaseUrl.includes(ext));
+  }
+
+  /**
+   * Verifica si esta página es un video
+   * @returns {boolean}
+   */
+  isVideo() {
+    if (!this.url) return false;
+    return this.url.includes('youtube.com') || 
+           this.url.includes('youtu.be') || 
+           this.url.includes('vimeo.com') ||
+           this.url.includes('.mp4');
+  }
+
+  /**
+   * Obtiene el tipo de contenido de la página
+   * @returns {'notion'|'google-doc'|'image'|'video'|'external'}
+   */
+  getContentType() {
+    if (this.isNotionPage()) return 'notion';
+    if (this.isGoogleDoc()) return 'google-doc';
+    if (this.isImage()) return 'image';
+    if (this.isVideo()) return 'video';
+    return 'external';
+  }
+
+  /**
+   * Crea una copia de la página
+   * @returns {Page}
+   */
+  clone() {
+    return new Page(this.name, this.url, {
+      visibleToPlayers: this.visibleToPlayers,
+      blockTypes: this.blockTypes ? [...this.blockTypes] : null,
+      icon: this.icon ? { ...this.icon } : null,
+      linkedTokenId: this.linkedTokenId
+    });
+  }
+
+  /**
+   * Serializa la página a un objeto JSON plano
+   * @returns {Object}
+   */
+  toJSON() {
+    const json = {
+      name: this.name,
+      url: this.url
+    };
+
+    if (this.visibleToPlayers) {
+      json.visibleToPlayers = true;
+    }
+
+    if (this.blockTypes && this.blockTypes.length > 0) {
+      json.blockTypes = this.blockTypes;
+    }
+
+    if (this.icon) {
+      json.icon = this.icon;
+    }
+
+    if (this.linkedTokenId) {
+      json.linkedTokenId = this.linkedTokenId;
+    }
+
+    return json;
+  }
+
+  /**
+   * Crea una Page desde un objeto JSON plano
+   * @param {Object} json - Objeto JSON
+   * @returns {Page}
+   */
+  static fromJSON(json) {
+    return new Page(json.name, json.url, {
+      visibleToPlayers: json.visibleToPlayers,
+      blockTypes: json.blockTypes,
+      icon: json.icon,
+      linkedTokenId: json.linkedTokenId
+    });
+  }
+}
+
+export default Page;
+
