@@ -67,13 +67,13 @@ export class NotionRenderer {
         return `<p class="notion-paragraph">${paragraphText || '<br>'}</p>`;
       
       case 'heading_1':
-        return `<h1>${this.renderRichText(block.heading_1?.rich_text)}</h1>`;
+        return this._renderHeading(block, 1);
       
       case 'heading_2':
-        return `<h2>${this.renderRichText(block.heading_2?.rich_text)}</h2>`;
+        return this._renderHeading(block, 2);
       
       case 'heading_3':
-        return `<h3>${this.renderRichText(block.heading_3?.rich_text)}</h3>`;
+        return this._renderHeading(block, 3);
       
       case 'bulleted_list_item':
         return `<li class="notion-bulleted-list-item">${this.renderRichText(block.bulleted_list_item?.rich_text)}</li>`;
@@ -201,17 +201,44 @@ export class NotionRenderer {
   }
 
   /**
-   * Renderiza un callout
+   * Renderiza un heading (soporta toggleable headings)
+   * @private
+   */
+  _renderHeading(block, level) {
+    const headingData = block[`heading_${level}`];
+    const text = this.renderRichText(headingData?.rich_text);
+    const isToggleable = headingData?.is_toggleable === true;
+    
+    if (isToggleable) {
+      // Heading con toggle - se renderizará con hijos en renderBlocks
+      return `<h${level} class="notion-heading notion-heading-toggle" data-toggle-heading="${block.id}">${text}</h${level}>`;
+    }
+    
+    return `<h${level} class="notion-heading">${text}</h${level}>`;
+  }
+
+  /**
+   * Renderiza un callout (soporta hijos)
    * @private
    */
   _renderCallout(block) {
     const callout = block.callout;
     const icon = callout?.icon?.emoji || '💡';
     const calloutText = this.renderRichText(callout?.rich_text);
+    
+    // Si tiene hijos, se renderizarán después
+    const hasChildren = block.has_children;
+    const childrenPlaceholder = hasChildren 
+      ? `<div class="notion-callout-children" data-callout-id="${block.id}"></div>`
+      : '';
+    
     return `
-      <div class="notion-callout">
+      <div class="notion-callout" data-has-children="${hasChildren}">
         <div class="notion-callout-icon">${icon}</div>
-        <div class="notion-callout-content">${calloutText}</div>
+        <div class="notion-callout-content">
+          ${calloutText}
+          ${childrenPlaceholder}
+        </div>
       </div>
     `;
   }
@@ -430,6 +457,21 @@ export class NotionRenderer {
         continue;
       }
 
+      // Manejar toggle headings (heading_1, heading_2, heading_3 con is_toggleable)
+      if ((type === 'heading_1' || type === 'heading_2' || type === 'heading_3') && block.has_children) {
+        const headingData = block[type];
+        if (headingData?.is_toggleable) {
+          html += await this._renderToggleHeading(block, type, typesArray, headingLevelOffset);
+          continue;
+        }
+      }
+
+      // Manejar callouts con hijos
+      if (type === 'callout' && block.has_children) {
+        html += await this._renderCalloutWithChildren(block, typesArray, headingLevelOffset);
+        continue;
+      }
+
       // Manejar column_list
       if (type === 'column_list') {
         const result = await this._renderColumnList(block, blocks, i, typesArray, headingLevelOffset);
@@ -475,9 +517,9 @@ export class NotionRenderer {
   _matchesFilter(block, typesArray) {
     if (!typesArray) return true;
     
-    // Los toggles, column_list, y bloques con hijos siempre se procesan 
+    // Los toggles, column_list, callouts, y bloques con hijos siempre se procesan 
     // para buscar contenido filtrado dentro de ellos
-    if (block.type === 'toggle' || block.type === 'column_list' || block.has_children) {
+    if (block.type === 'toggle' || block.type === 'column_list' || block.type === 'callout' || block.has_children) {
       return true;
     }
     
@@ -509,6 +551,64 @@ export class NotionRenderer {
         <summary class="notion-toggle-summary">${toggleText}</summary>
         <div class="notion-toggle-content">${toggleContent}</div>
       </details>
+    `;
+  }
+
+  /**
+   * Renderiza un heading toggle (h1, h2, h3 con is_toggleable)
+   * @private
+   */
+  async _renderToggleHeading(block, type, typesArray, headingLevelOffset) {
+    const level = parseInt(type.replace('heading_', ''));
+    const headingData = block[type];
+    const headingText = this.renderRichText(headingData?.rich_text);
+    let toggleContent = '';
+
+    if (block.has_children && this.notionService) {
+      const children = await this.notionService.fetchChildBlocks(block.id);
+      if (children.length > 0) {
+        toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
+      }
+    }
+
+    // Si hay filtro y el toggle no tiene contenido, no mostrarlo
+    if (typesArray && !typesArray.includes(type) && !toggleContent.trim()) {
+      return '';
+    }
+
+    return `
+      <details class="notion-toggle notion-toggle-heading notion-toggle-h${level}">
+        <summary class="notion-toggle-summary"><h${level} class="notion-heading">${headingText}</h${level}></summary>
+        <div class="notion-toggle-content">${toggleContent}</div>
+      </details>
+    `;
+  }
+
+  /**
+   * Renderiza un callout con sus hijos
+   * @private
+   */
+  async _renderCalloutWithChildren(block, typesArray, headingLevelOffset) {
+    const callout = block.callout;
+    const icon = callout?.icon?.emoji || '💡';
+    const calloutText = this.renderRichText(callout?.rich_text);
+    let childrenContent = '';
+
+    if (block.has_children && this.notionService) {
+      const children = await this.notionService.fetchChildBlocks(block.id);
+      if (children.length > 0) {
+        childrenContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
+      }
+    }
+
+    return `
+      <div class="notion-callout">
+        <div class="notion-callout-icon">${icon}</div>
+        <div class="notion-callout-content">
+          ${calloutText}
+          ${childrenContent ? `<div class="notion-callout-children">${childrenContent}</div>` : ''}
+        </div>
+      </div>
     `;
   }
 

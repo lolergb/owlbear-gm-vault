@@ -1408,6 +1408,13 @@
     line-height: var(--font-line-sm);
   }
   
+  .page-visibility-badge {
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-left: var(--spacing-xs);
+    flex-shrink: 0;
+  }
+  
   .page-link-icon {
     position: absolute;
     right: var(--spacing-lg);

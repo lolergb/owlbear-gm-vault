@@ -2551,12 +2551,16 @@ export class ExtensionController {
           closeModal();
           
           // Mostrar resultado
-          const { pagesImported, pagesSkipped, unsupportedTypes } = result.stats;
+          const { pagesImported, pagesSkipped, emptyPages } = result.stats;
           
-          if (pagesSkipped > 0 || unsupportedTypes.length > 0) {
+          if (pagesSkipped > 0 || emptyPages > 0) {
+            const skippedInfo = [];
+            if (emptyPages > 0) skippedInfo.push(`${emptyPages} empty`);
+            if (pagesSkipped - emptyPages > 0) skippedInfo.push(`${pagesSkipped - emptyPages} over depth`);
+            
             this.uiRenderer.showWarningToast(
-              'Import completed with warnings',
-              `${pagesImported} pages imported. ${pagesSkipped} skipped (depth limit or errors).`,
+              'Import completed',
+              `${pagesImported} pages imported. Skipped: ${skippedInfo.join(', ')}.`,
               8000
             );
           } else {

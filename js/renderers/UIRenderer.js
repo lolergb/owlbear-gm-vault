@@ -344,13 +344,16 @@ export class UIRenderer {
     }
 
     // Indicador de visible para players
-    const visibleIndicator = page.visibleToPlayers ? ' <span style="opacity:0.6">(Player)</span>' : '';
+    const visibleIndicator = page.visibleToPlayers 
+      ? '<span class="page-visibility-badge">👁️</span>' 
+      : '';
 
     // HTML del botón
     button.innerHTML = `
       <div class="page-button-inner">
         <div class="page-icon-placeholder" style="background: ${placeholderColor};">${placeholderInitial}</div>
-        <div class="page-name-text">${page.name}${visibleIndicator}</div>
+        <div class="page-name-text">${page.name}</div>
+        ${visibleIndicator}
         ${linkIconHtml}
       </div>
     `;

@@ -305,9 +305,9 @@ export class NotionService {
   }
 
   /**
-   * Obtiene las páginas hijas y enlaces de una página
+   * Obtiene las páginas hijas y enlaces de una página (en orden de Notion)
    * @param {string} pageId - ID de la página padre
-   * @returns {Promise<Array>} - Lista de páginas hijas y enlazadas
+   * @returns {Promise<Array>} - Lista de páginas hijas y enlazadas en orden
    */
   async fetchChildPages(pageId) {
     try {
@@ -333,51 +333,49 @@ export class NotionService {
       }
 
       const data = await response.json();
-      const childPages = data.results || [];
-      const linkedPages = data.linked_pages || [];
+      const pageBlocks = data.results || [];
       
-      log('📂 Páginas hijas encontradas:', childPages.length, '| Enlaces:', linkedPages.length);
+      log('📂 Bloques de página encontrados:', pageBlocks.length);
       
-      // Mapear child_page a formato simplificado
-      const results = childPages.map(block => {
-        const title = block.child_page?.title || 'Untitled';
-        return {
-          id: block.id,
-          title,
-          url: this._buildNotionUrl(title, block.id),
-          type: 'child_page'
-        };
-      });
-
-      // Procesar link_to_page (necesitamos obtener info de cada página enlazada)
-      for (const block of linkedPages) {
-        const linkInfo = block.link_to_page;
-        if (!linkInfo) continue;
-
-        // Obtener el ID de la página enlazada
-        let linkedPageId = null;
-        if (linkInfo.type === 'page_id') {
-          linkedPageId = linkInfo.page_id;
-        } else if (linkInfo.type === 'database_id') {
-          // Las bases de datos no las soportamos por ahora
-          continue;
-        }
-
-        if (!linkedPageId) continue;
-
-        try {
-          // Obtener información de la página enlazada
-          const pageInfo = await this.fetchPageInfo(linkedPageId, false);
-          const title = this._extractPageTitleFromInfo(pageInfo) || 'Linked Page';
-          
+      // Procesar bloques en orden (child_page y link_to_page mezclados)
+      const results = [];
+      
+      for (const block of pageBlocks) {
+        if (block.type === 'child_page') {
+          const title = block.child_page?.title || 'Untitled';
           results.push({
-            id: linkedPageId,
+            id: block.id,
             title,
-            url: this._buildNotionUrl(title, linkedPageId),
-            type: 'link_to_page'
+            url: this._buildNotionUrl(title, block.id),
+            type: 'child_page'
           });
-        } catch (e) {
-          logWarn('No se pudo obtener info de página enlazada:', linkedPageId, e);
+        } else if (block.type === 'link_to_page') {
+          const linkInfo = block.link_to_page;
+          if (!linkInfo) continue;
+
+          let linkedPageId = null;
+          if (linkInfo.type === 'page_id') {
+            linkedPageId = linkInfo.page_id;
+          } else if (linkInfo.type === 'database_id') {
+            // Las bases de datos no las soportamos por ahora
+            continue;
+          }
+
+          if (!linkedPageId) continue;
+
+          try {
+            const pageInfo = await this.fetchPageInfo(linkedPageId, false);
+            const title = this._extractPageTitleFromInfo(pageInfo) || 'Linked Page';
+            
+            results.push({
+              id: linkedPageId,
+              title,
+              url: this._buildNotionUrl(title, linkedPageId),
+              type: 'link_to_page'
+            });
+          } catch (e) {
+            logWarn('No se pudo obtener info de página enlazada:', linkedPageId, e);
+          }
         }
       }
 
@@ -385,6 +383,68 @@ export class NotionService {
     } catch (e) {
       logError('Error al obtener páginas hijas:', e);
       throw e;
+    }
+  }
+
+  /**
+   * Verifica si una página tiene contenido real (no solo títulos o vacía)
+   * @param {string} pageId - ID de la página
+   * @returns {Promise<boolean>} - true si tiene contenido real
+   */
+  async hasRealContent(pageId) {
+    try {
+      const blocks = await this.fetchBlocks(pageId, true);
+      
+      if (!blocks || blocks.length === 0) {
+        return false;
+      }
+
+      // Tipos de bloques que consideramos "contenido real"
+      const contentTypes = [
+        'paragraph', 'bulleted_list_item', 'numbered_list_item',
+        'image', 'video', 'embed', 'bookmark', 'code', 'quote',
+        'callout', 'table', 'toggle', 'to_do', 'equation',
+        'column_list', 'synced_block', 'template', 'link_preview',
+        'file', 'pdf', 'audio'
+      ];
+
+      // Verificar si hay al menos un bloque con contenido real
+      for (const block of blocks) {
+        // Si es un tipo de contenido
+        if (contentTypes.includes(block.type)) {
+          // Para párrafos, verificar que no estén vacíos
+          if (block.type === 'paragraph') {
+            const text = block.paragraph?.rich_text;
+            if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
+              return true;
+            }
+          } else {
+            return true;
+          }
+        }
+        
+        // Headings con contenido también cuentan
+        if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+          const headingData = block[block.type];
+          const text = headingData?.rich_text;
+          if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
+            // Si el heading tiene hijos (toggle), cuenta como contenido
+            if (block.has_children) {
+              return true;
+            }
+          }
+        }
+        
+        // child_page y link_to_page cuentan como contenido (tienen subpáginas)
+        if (block.type === 'child_page' || block.type === 'link_to_page') {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      logWarn('Error verificando contenido de página:', pageId, e);
+      return true; // En caso de error, asumimos que tiene contenido
     }
   }
 
@@ -424,6 +484,7 @@ export class NotionService {
     const stats = {
       pagesImported: 0,
       pagesSkipped: 0,
+      emptyPages: 0,
       unsupportedTypes: new Set()
     };
 
@@ -443,11 +504,21 @@ export class NotionService {
           });
         }
 
-        // Obtener páginas hijas
+        // Obtener páginas hijas (ya vienen en orden de Notion)
         const childPages = await this.fetchChildPages(id);
         
-        // Si no hay hijas, es una página final
+        // Si no hay hijas, verificar si tiene contenido real
         if (childPages.length === 0) {
+          // Verificar contenido real (evitar páginas vacías o solo con título)
+          const hasContent = await this.hasRealContent(id);
+          
+          if (!hasContent) {
+            log(`⏭️ Saltando página vacía: ${title}`);
+            stats.emptyPages++;
+            stats.pagesSkipped++;
+            return null;
+          }
+          
           stats.pagesImported++;
           return {
             type: 'page',
@@ -464,16 +535,19 @@ export class NotionService {
           categories: []
         };
 
-        // Añadir la página principal como primera página de la categoría
-        category.pages.push({
-          type: 'page',
-          name: title,
-          url: this._buildNotionUrl(title, id),
-          visibleToPlayers: false
-        });
-        stats.pagesImported++;
+        // Verificar si la página principal tiene contenido real antes de añadirla
+        const mainPageHasContent = await this.hasRealContent(id);
+        if (mainPageHasContent) {
+          category.pages.push({
+            type: 'page',
+            name: title,
+            url: this._buildNotionUrl(title, id),
+            visibleToPlayers: false
+          });
+          stats.pagesImported++;
+        }
 
-        // Procesar cada página hija
+        // Procesar cada página hija (en orden de Notion)
         for (const child of childPages) {
           const result = await processPage(child.id, child.title, depth + 1);
           
@@ -487,9 +561,11 @@ export class NotionService {
           }
         }
 
-        // Devolver la categoría (siempre tiene al menos la página principal)
-        return category;
-
+        // Solo devolver la categoría si tiene contenido
+        if (category.pages.length > 0 || category.categories.length > 0) {
+          return category;
+        }
+        
         return null;
       } catch (e) {
         logWarn(`Error procesando página ${title}:`, e);
@@ -529,6 +605,7 @@ export class NotionService {
       stats: {
         pagesImported: stats.pagesImported,
         pagesSkipped: stats.pagesSkipped,
+        emptyPages: stats.emptyPages,
         unsupportedTypes: Array.from(stats.unsupportedTypes)
       }
     };
