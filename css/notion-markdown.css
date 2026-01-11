@@ -203,6 +203,8 @@
 .notion-content .notion-numbered-list {
   margin: var(--spacing-xs) 0;
   padding-left: calc(var(--spacing-lg) + var(--spacing-md));
+  margin-left: var(--spacing-xl);
+  color: var(--color-text-primary);
 }
 
 /* Listas anidadas dentro de elementos de lista */
