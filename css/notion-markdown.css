@@ -203,8 +203,6 @@
 .notion-content .notion-numbered-list {
   margin: var(--spacing-xs) 0;
   padding-left: calc(var(--spacing-lg) + var(--spacing-md));
-  margin-left: var(--spacing-xl);
-  color: var(--color-text-primary);
 }
 
 /* Listas anidadas dentro de elementos de lista */
@@ -221,14 +219,15 @@
 .notion-content .notion-numbered-list-item {
   margin: var(--spacing-xs) 0;
   padding-left: var(--radius-sm);
+  margin-left: var(--spacing-xl);
 }
 
 .notion-content .notion-bulleted-list-item::marker {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .notion-content .notion-numbered-list-item::marker {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .notion-content .notion-callout {
