@@ -2242,7 +2242,7 @@
 .import-progress__status {
   font-size: var(--font-size-base);
   color: var(--color-text-primary);
-  margin-bottom: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
   line-height: var(--font-line-base);
 }
 
