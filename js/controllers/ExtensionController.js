@@ -47,6 +47,7 @@ export class ExtensionController {
     this.playerName = null;
     this.config = null;
     this.isInitialized = false;
+    this.playerViewMode = false; // Toggle para vista de jugador (solo páginas visibles)
 
     // Servicios
     this.cacheService = new CacheService();
@@ -339,11 +340,16 @@ export class ExtensionController {
     // Pasar la config al UIRenderer para calcular posiciones
     this.uiRenderer.setConfig(this.config);
     
+    // Si playerViewMode está activo, simular vista de jugador (isGM: false)
+    const viewOptions = this.playerViewMode 
+      ? { isGM: false, isCoGM: false }
+      : { isGM: this.isGM, isCoGM: this.isCoGM };
+    
     this.uiRenderer.renderAllCategories(
       this.config,
       this.pagesContainer,
       this.roomId,
-      { isGM: this.isGM, isCoGM: this.isCoGM }
+      viewOptions
     );
   }
 
@@ -378,6 +384,7 @@ export class ExtensionController {
     const backButton = document.getElementById('back-button');
     const pageTitle = document.getElementById('page-title');
     const buttonContainer = document.querySelector('.button-container');
+    const playerViewToggle = document.querySelector('.player-view-toggle');
     
     if (notionContainer) notionContainer.classList.remove('hidden');
     if (pageList) pageList.classList.add('hidden');
@@ -388,6 +395,7 @@ export class ExtensionController {
       pageTitle.innerHTML = page.name + visibilityIndicator;
     }
     if (buttonContainer) buttonContainer.classList.add('hidden');
+    if (playerViewToggle) playerViewToggle.classList.add('hidden');
 
     // Crear botones del header para la página de detalle
     this._createPageDetailButtons(page);
@@ -1454,6 +1462,10 @@ export class ExtensionController {
     if (backButton) backButton.classList.add('hidden');
     if (pageTitle) pageTitle.textContent = 'GM vault';
     if (buttonContainer) buttonContainer.classList.remove('hidden');
+    
+    // Mostrar toggle de player view (solo si es GM)
+    const playerViewToggle = document.querySelector('.player-view-toggle');
+    if (playerViewToggle && this.isGM) playerViewToggle.classList.remove('hidden');
 
     // Ocultar botones de página de detalle
     this._hidePageDetailButtons();
@@ -2085,6 +2097,11 @@ export class ExtensionController {
     // Verificar si ya existen
     if (document.querySelector('.button-container')) return;
 
+    // Toggle Player View (solo para GMs - Master o Co-GM)
+    if (this.isGM) {
+      this._createPlayerViewToggle(header);
+    }
+
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'button-container';
 
@@ -2122,6 +2139,66 @@ export class ExtensionController {
   }
 
   /**
+   * Crea el toggle de Player View en el header
+   * @private
+   * @param {HTMLElement} header - Elemento header
+   */
+  _createPlayerViewToggle(header) {
+    // Verificar si ya existe
+    if (document.querySelector('.player-view-toggle')) return;
+
+    const toggleContainer = document.createElement('div');
+    toggleContainer.className = 'player-view-toggle';
+
+    const label = document.createElement('span');
+    label.className = 'player-view-toggle__label';
+    label.textContent = 'Player view';
+
+    const toggleSwitch = document.createElement('div');
+    toggleSwitch.className = 'player-view-toggle__switch';
+    toggleSwitch.id = 'player-view-switch';
+    toggleSwitch.title = 'Toggle between GM view (all pages) and Player view (only visible pages)';
+
+    // Click handler
+    toggleSwitch.addEventListener('click', () => this._togglePlayerViewMode());
+
+    toggleContainer.appendChild(label);
+    toggleContainer.appendChild(toggleSwitch);
+
+    // Insertar después del título
+    const pageTitle = header.querySelector('#page-title');
+    if (pageTitle && pageTitle.nextSibling) {
+      header.insertBefore(toggleContainer, pageTitle.nextSibling);
+    } else {
+      header.appendChild(toggleContainer);
+    }
+  }
+
+  /**
+   * Alterna el modo de vista de jugador
+   * @private
+   */
+  async _togglePlayerViewMode() {
+    this.playerViewMode = !this.playerViewMode;
+    
+    log(`🔄 Player View Mode: ${this.playerViewMode ? 'ON' : 'OFF'}`);
+    
+    // Actualizar UI del toggle
+    const toggleSwitch = document.getElementById('player-view-switch');
+    const toggleLabel = document.querySelector('.player-view-toggle__label');
+    
+    if (toggleSwitch) {
+      toggleSwitch.classList.toggle('player-view-toggle__switch--active', this.playerViewMode);
+    }
+    if (toggleLabel) {
+      toggleLabel.classList.toggle('player-view-toggle__label--active', this.playerViewMode);
+    }
+    
+    // Re-renderizar la lista de páginas
+    await this.render();
+  }
+
+  /**
    * Muestra el panel de settings
    * @private
    */
@@ -2132,6 +2209,7 @@ export class ExtensionController {
     const backButton = document.getElementById('back-button');
     const pageTitle = document.getElementById('page-title');
     const buttonContainer = document.querySelector('.button-container');
+    const playerViewToggle = document.querySelector('.player-view-toggle');
 
     if (pageList) pageList.classList.add('hidden');
     if (notionContainer) notionContainer.classList.add('hidden');
@@ -2139,6 +2217,7 @@ export class ExtensionController {
     if (backButton) backButton.classList.remove('hidden');
     if (pageTitle) pageTitle.textContent = 'Settings';
     if (buttonContainer) buttonContainer.classList.add('hidden');
+    if (playerViewToggle) playerViewToggle.classList.add('hidden');
 
     // Ocultar/mostrar secciones según rol
     const allForms = settingsContainer ? settingsContainer.querySelectorAll('.form') : [];
@@ -5064,7 +5143,7 @@ export class ExtensionController {
     // Emoji: return ' <span class="visibility-indicator">👁️</span>';
     // Icono: return ' <img src="img/icon-players.svg" class="visibility-indicator-icon" alt="Visible to players" title="Visible to players" />';
     
-    return ' <span class="visibility-indicator" title="Visible to players">👁️</span>';
+    return ' <span class="visibility-indicator" title="Visible to players">(Player)</span>';
   }
 
   /**

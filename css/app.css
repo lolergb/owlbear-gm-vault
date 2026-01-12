@@ -450,6 +450,66 @@
     background-color: var(--color-bg-active);
     border-color: var(--color-border-active);
   }
+
+  /* ==========================================================================
+      Player View Toggle
+      ========================================================================== */
+  .player-view-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-right: auto;
+    margin-left: var(--spacing-md);
+  }
+
+  .player-view-toggle__label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    user-select: none;
+    transition: color var(--transition-fast);
+  }
+
+  .player-view-toggle__label--active {
+    color: var(--color-text-primary);
+  }
+
+  .player-view-toggle__switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background-color: var(--color-bg-overlay);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background-color var(--transition-normal);
+    flex-shrink: 0;
+  }
+
+  .player-view-toggle__switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background-color: var(--color-bg-primary);
+    border-radius: var(--radius-full);
+    transition: transform var(--transition-normal), background-color var(--transition-normal);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .player-view-toggle__switch--active {
+    background-color: var(--color-accent-primary);
+  }
+
+  .player-view-toggle__switch--active::after {
+    transform: translateX(16px);
+    background-color: var(--color-text-primary);
+  }
+
+  .player-view-toggle__switch:hover {
+    opacity: 0.9;
+  }
   
   /* ==========================================================================
       Page List
@@ -1217,6 +1277,7 @@
     color: var(--color-primary);
     opacity: 0.8;
     margin-left: var(--spacing-xs);
+    display: none;
   }
 
   .visibility-indicator-icon {
