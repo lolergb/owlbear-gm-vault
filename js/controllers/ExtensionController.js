@@ -3839,12 +3839,14 @@ export class ExtensionController {
       if (notionIframe) {
         notionIframe.src = 'about:blank';
       }
+      notionContainer.classList.remove('hidden');
       notionContainer.classList.add('show-content');
     } else if (mode === 'iframe') {
       // Mostrar iframe, ocultar y limpiar content
       if (notionContent) {
         notionContent.innerHTML = '';
       }
+      notionContainer.classList.remove('hidden');
       notionContainer.classList.remove('show-content');
     }
   }
