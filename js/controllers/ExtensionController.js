@@ -3838,12 +3838,15 @@ export class ExtensionController {
       // Mostrar content, ocultar y limpiar iframe
       if (notionIframe) {
         notionIframe.src = 'about:blank';
-        notionIframe.style.display = 'none';
+        notionIframe.style.cssText = 'display: none !important; visibility: hidden !important;';
       }
       notionContainer.classList.remove('hidden');
       notionContainer.classList.add('show-content');
     } else if (mode === 'iframe') {
       // Mostrar iframe, ocultar y limpiar content
+      if (notionIframe) {
+        notionIframe.style.cssText = 'width: 100%; height: 100%; display: block; visibility: visible;';
+      }
       if (notionContent) {
         notionContent.innerHTML = '';
       }
@@ -3926,11 +3929,12 @@ export class ExtensionController {
                 <div class="loading-spinner"></div>
               </div>
               <img src="${coverUrl}" alt="Page cover" 
-                   class="notion-cover-image notion-image-clickable" 
+                   class="notion-cover-image notion-image-clickable loaded" 
+                   style="opacity: 1 !important; display: block !important;"
                    data-image-url="${coverUrl}"
                    data-image-caption=""
                    data-block-id="cover-${pageId}"
-                   onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
+                   onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
                    onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv);" />
               <button class="notion-image-share-button share-button" 
                       data-image-url="${coverUrl}" 

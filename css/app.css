@@ -1238,15 +1238,16 @@
     height: 280px;
     object-fit: cover;
     cursor: pointer;
+    opacity: 1 !important;
     transition: opacity var(--transition-normal);
   }
 
   .notion-cover-image:hover {
-    opacity: 0.9;
+    opacity: 0.9 !important;
   }
 
   .notion-cover-image.loaded {
-    opacity: 1;
+    opacity: 1 !important;
   }
 
   /* ==========================================================================
