@@ -1613,7 +1613,8 @@
   @media (max-width: 399px) {
     .category-title,
     .page-name-text,
-    #page-title {
+    #page-title,
+    .page-name {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1621,11 +1622,16 @@
     }
     .category-title { margin-right: 72px}
     #page-title,
-    .page-icon-placeholder {
+    .page-icon-placeholder,
+    .page-icon-emoji {
       display: none;
     }
     .form__actions {
       flex-direction: row;
+    }
+    .page-button-inner {
+      flex-shrink: 1;
+      min-width: 0;
     }
   }
 
