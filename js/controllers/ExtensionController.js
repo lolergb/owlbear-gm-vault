@@ -18,6 +18,7 @@ import { StorageService } from '../services/StorageService.js';
 import { NotionService } from '../services/NotionService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js';
+import { getImageCacheService } from '../services/ImageCacheService.js';
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js';
@@ -55,6 +56,7 @@ export class ExtensionController {
     this.notionService = new NotionService();
     this.broadcastService = new BroadcastService();
     this.analyticsService = new AnalyticsService();
+    this.imageCacheService = getImageCacheService();
 
     // Renderers
     this.notionRenderer = new NotionRenderer();
@@ -1405,6 +1407,31 @@ export class ExtensionController {
     this.uiRenderer.setDependencies({
       storageService: this.storageService,
       notionService: this.notionService
+    });
+
+    // Image Cache Service - inicializar en background
+    this.imageCacheService.init().then(() => {
+      // Precargar iconos de la app
+      const appIcons = [
+        'img/icon-add.svg',
+        'img/icon-arrow.svg',
+        'img/icon-edit.svg',
+        'img/icon-delete.svg',
+        'img/icon-eye-open.svg',
+        'img/icon-eye-close.svg',
+        'img/icon-collapse-true.svg',
+        'img/icon-collapse-false.svg',
+        'img/folder-open.svg',
+        'img/folder-close.svg',
+        'img/icon-notion.svg',
+        'img/icon-page.svg',
+        'img/icon-image.svg',
+        'img/icon-pdf.svg',
+        'img/icon-youtube.svg',
+        'img/icon-link.svg'
+      ].map(icon => new URL(icon, window.location.origin).href);
+      
+      this.imageCacheService.preloadImages(appIcons);
     });
   }
 
