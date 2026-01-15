@@ -21,6 +21,7 @@
 .notion-page-cover {
   width: calc(100% + var(--spacing-xl)*2);
   max-width: calc(100% + var(--spacing-xl)*2);
+  min-height: 200px;
   margin: calc(var(--spacing-xl) * -1) calc(var(--spacing-xl) * -1) var(--spacing-xl);
   margin-top: calc(var(--spacing-xl) * -1);
   overflow: hidden;
@@ -31,20 +32,24 @@
 .notion-page-cover .notion-image-container {
   position: relative;
   width: 100%;
+  min-height: 200px;
 }
 
+.notion-page-cover .notion-image-container img,
 .notion-cover-image {
   width: 100%;
   height: auto;
   display: block;
   object-fit: cover;
+  object-position: center center;
   max-height: 400px;
   cursor: pointer;
+  opacity: 1 !important;
   transition: opacity 0.2s ease;
 }
 
 .notion-cover-image:hover {
-  opacity: 0.9;
+  opacity: 0.9 !important;
 }
 
 /* Título de página de Notion (después del cover) */
@@ -219,14 +224,15 @@
 .notion-content .notion-numbered-list-item {
   margin: var(--spacing-xs) 0;
   padding-left: var(--radius-sm);
+  margin-left: var(--spacing-xl);
 }
 
 .notion-content .notion-bulleted-list-item::marker {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .notion-content .notion-numbered-list-item::marker {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .notion-content .notion-callout {
