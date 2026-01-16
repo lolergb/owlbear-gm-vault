@@ -522,6 +522,10 @@
     gap: var(--spacing-sm);
     overflow-y: auto;
   }
+
+  .container .page-list > * {
+    margin-bottom: 0;
+  }
   
   /* ==========================================================================
       Page (item de página)
@@ -696,7 +700,6 @@
   }
   
   /* Alias para compatibilidad */
-  .category-group { margin-bottom: 0; }
   .category-title-container { display: flex; align-items: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-sm); cursor: pointer; position: relative; }
   .category-collapse-button { background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: var(--icon-size-lg); height: 32px; transition: transform var(--transition-normal); }
   .category-collapse-icon { width: var(--icon-size-lg); height: var(--icon-size-lg); display: block; }

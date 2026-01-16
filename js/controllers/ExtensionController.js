@@ -243,9 +243,13 @@ export class ExtensionController {
     
     if (html && notionContent) {
       notionContent.innerHTML = html;
+      
+      // Remover botones de compartir (el player no debe verlos)
+      notionContent.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
+      
       // Limpiar el sessionStorage después de usar
       sessionStorage.removeItem(contentKey);
-      log('✅ Contenido HTML cargado correctamente');
+      log('✅ Contenido HTML cargado correctamente (botones de share removidos)');
     } else if (notionContent) {
       notionContent.innerHTML = `
         <div class="empty-state">
@@ -5117,9 +5121,10 @@ export class ExtensionController {
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
       }
-      // Mostrar botón de compartir solo si es GM
-      if (showShareButton && this.isGM) {
-        viewerUrl.searchParams.set('showShareButton', 'true');
+      // Mostrar botón de compartir solo si es GM y showShareButton es true
+      // El viewer usa el parámetro 'share' (default true si no se especifica)
+      if (!(showShareButton && this.isGM)) {
+        viewerUrl.searchParams.set('share', 'false');
       }
       
       // Abrir modal usando Owlbear SDK
