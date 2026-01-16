@@ -127,6 +127,287 @@ export class NotionRenderer {
   }
 
   /**
+   * Renderiza las propiedades de una página de base de datos
+   * @param {Object} properties - Propiedades de la página
+   * @returns {string} - HTML de las propiedades
+   */
+  renderPageProperties(properties) {
+    if (!properties) return '';
+    
+    // Filtrar propiedades del sistema y vacías
+    const systemProps = ['created_time', 'last_edited_time', 'created_by', 'last_edited_by'];
+    
+    const relevantProps = Object.entries(properties)
+      .filter(([key, prop]) => {
+        // Excluir propiedades del sistema
+        if (systemProps.includes(prop.type)) return false;
+        // Excluir el título (ya se muestra arriba)
+        if (prop.type === 'title') return false;
+        // Excluir propiedades vacías
+        const value = this._getPropertyValue(prop);
+        return value !== null && value !== '';
+      });
+    
+    if (relevantProps.length === 0) return '';
+    
+    const propsHtml = relevantProps.map(([propName, prop]) => 
+      this._renderProperty(propName, prop)
+    ).join('');
+    
+    return `<div class="notion-page-properties">${propsHtml}</div>`;
+  }
+
+  /**
+   * Renderiza una propiedad individual
+   * @private
+   */
+  _renderProperty(propName, property) {
+    const valueHtml = this._formatPropertyValue(property);
+    if (!valueHtml) return '';
+    
+    return `
+      <div class="notion-property">
+        <span class="notion-property__name">${this._escapeHtml(propName)}</span>
+        <span class="notion-property__value">${valueHtml}</span>
+      </div>
+    `;
+  }
+
+  /**
+   * Obtiene el valor de una propiedad (para filtrar vacías)
+   * @private
+   */
+  _getPropertyValue(property) {
+    switch (property.type) {
+      case 'title':
+        return property.title?.map(t => t.plain_text).join('') || null;
+      case 'rich_text':
+        return property.rich_text?.map(t => t.plain_text).join('') || null;
+      case 'number':
+        return property.number;
+      case 'select':
+        return property.select?.name || null;
+      case 'multi_select':
+        return property.multi_select?.length > 0 ? property.multi_select : null;
+      case 'date':
+        return property.date?.start || null;
+      case 'checkbox':
+        return property.checkbox;
+      case 'url':
+        return property.url || null;
+      case 'email':
+        return property.email || null;
+      case 'phone_number':
+        return property.phone_number || null;
+      case 'formula':
+        return this._getFormulaValue(property.formula);
+      case 'rollup':
+        return this._getRollupValue(property.rollup);
+      case 'relation':
+        return property.relation?.length > 0 ? property.relation : null;
+      case 'people':
+        return property.people?.length > 0 ? property.people : null;
+      case 'files':
+        return property.files?.length > 0 ? property.files : null;
+      case 'status':
+        return property.status?.name || null;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Formatea el valor de una propiedad para HTML
+   * @private
+   */
+  _formatPropertyValue(property) {
+    switch (property.type) {
+      case 'rich_text':
+        return this.renderRichText(property.rich_text);
+      
+      case 'number':
+        return property.number !== null ? property.number.toString() : '';
+      
+      case 'select':
+        if (!property.select) return '';
+        return this._renderSelectTag(property.select.name, property.select.color);
+      
+      case 'multi_select':
+        if (!property.multi_select?.length) return '';
+        return property.multi_select
+          .map(s => this._renderSelectTag(s.name, s.color))
+          .join('');
+      
+      case 'status':
+        if (!property.status) return '';
+        return this._renderSelectTag(property.status.name, property.status.color);
+      
+      case 'date':
+        if (!property.date) return '';
+        const start = property.date.start;
+        const end = property.date.end;
+        if (end) {
+          return `${this._formatDate(start)} → ${this._formatDate(end)}`;
+        }
+        return this._formatDate(start);
+      
+      case 'checkbox':
+        return property.checkbox 
+          ? '<span class="notion-checkbox notion-checkbox--checked">✓</span>' 
+          : '<span class="notion-checkbox">○</span>';
+      
+      case 'url':
+        if (!property.url) return '';
+        const displayUrl = property.url.length > 40 
+          ? property.url.substring(0, 40) + '...' 
+          : property.url;
+        return `<a href="${this._escapeHtml(property.url)}" class="notion-property-link" target="_blank" rel="noopener">${this._escapeHtml(displayUrl)}</a>`;
+      
+      case 'email':
+        if (!property.email) return '';
+        return `<a href="mailto:${this._escapeHtml(property.email)}" class="notion-property-link">${this._escapeHtml(property.email)}</a>`;
+      
+      case 'phone_number':
+        if (!property.phone_number) return '';
+        return `<a href="tel:${this._escapeHtml(property.phone_number)}" class="notion-property-link">${this._escapeHtml(property.phone_number)}</a>`;
+      
+      case 'formula':
+        return this._formatFormulaValue(property.formula);
+      
+      case 'rollup':
+        return this._formatRollupValue(property.rollup);
+      
+      case 'relation':
+        if (!property.relation?.length) return '';
+        return `<span class="notion-relation-count">${property.relation.length} linked</span>`;
+      
+      case 'people':
+        if (!property.people?.length) return '';
+        return property.people
+          .map(p => `<span class="notion-person">${this._escapeHtml(p.name || 'Unknown')}</span>`)
+          .join('');
+      
+      case 'files':
+        if (!property.files?.length) return '';
+        return `<span class="notion-files-count">${property.files.length} file(s)</span>`;
+      
+      default:
+        return '';
+    }
+  }
+
+  /**
+   * Renderiza un tag de select/multi_select
+   * @private
+   */
+  _renderSelectTag(name, color) {
+    const colorClass = color ? `notion-tag--${color}` : '';
+    return `<span class="notion-tag ${colorClass}">${this._escapeHtml(name)}</span>`;
+  }
+
+  /**
+   * Formatea una fecha
+   * @private
+   */
+  _formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      // Si tiene hora (no es medianoche UTC), mostrar también la hora
+      if (dateStr.includes('T') && !dateStr.endsWith('T00:00:00.000Z')) {
+        return date.toLocaleString('es-ES', { 
+          day: 'numeric', 
+          month: 'short', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+      return date.toLocaleDateString('es-ES', { 
+        day: 'numeric', 
+        month: 'short', 
+        year: 'numeric' 
+      });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  /**
+   * Obtiene valor de formula
+   * @private
+   */
+  _getFormulaValue(formula) {
+    if (!formula) return null;
+    switch (formula.type) {
+      case 'string': return formula.string;
+      case 'number': return formula.number;
+      case 'boolean': return formula.boolean;
+      case 'date': return formula.date?.start;
+      default: return null;
+    }
+  }
+
+  /**
+   * Formatea valor de formula
+   * @private
+   */
+  _formatFormulaValue(formula) {
+    if (!formula) return '';
+    switch (formula.type) {
+      case 'string': return this._escapeHtml(formula.string || '');
+      case 'number': return formula.number?.toString() || '';
+      case 'boolean': return formula.boolean ? '✓' : '✗';
+      case 'date': return this._formatDate(formula.date?.start);
+      default: return '';
+    }
+  }
+
+  /**
+   * Obtiene valor de rollup
+   * @private
+   */
+  _getRollupValue(rollup) {
+    if (!rollup) return null;
+    switch (rollup.type) {
+      case 'number': return rollup.number;
+      case 'date': return rollup.date?.start;
+      case 'array': return rollup.array?.length > 0 ? rollup.array : null;
+      default: return null;
+    }
+  }
+
+  /**
+   * Formatea valor de rollup
+   * @private
+   */
+  _formatRollupValue(rollup) {
+    if (!rollup) return '';
+    switch (rollup.type) {
+      case 'number': return rollup.number?.toString() || '';
+      case 'date': return this._formatDate(rollup.date?.start);
+      case 'array': 
+        if (!rollup.array?.length) return '';
+        return `${rollup.array.length} item(s)`;
+      default: return '';
+    }
+  }
+
+  /**
+   * Escapa HTML
+   * @private
+   */
+  _escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  /**
    * Renderiza un bloque individual
    * @param {Object} block - Bloque de Notion
    * @returns {string}

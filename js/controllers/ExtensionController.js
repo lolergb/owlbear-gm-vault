@@ -4456,7 +4456,10 @@ export class ExtensionController {
     const notionPageTitle = notionTitle || 'Untitled';
     headerHtml += `<h1 class="notion-page-title">${iconHtml}${notionPageTitle}${visibilityIndicator}</h1>`;
     
-    notionContent.innerHTML = headerHtml + blocksHtml;
+    // Renderizar propiedades de base de datos (si las hay)
+    const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
+    
+    notionContent.innerHTML = headerHtml + propertiesHtml + blocksHtml;
 
     // Guardar HTML en caché
     this.cacheService.saveHtmlToLocalCache(pageId, headerHtml + blocksHtml);
@@ -5267,8 +5270,11 @@ export class ExtensionController {
       // Configurar renderer para modo modal (mentions no clickeables)
       this.notionRenderer.setRenderingOptions({ isInModal: true });
       
-      // Obtener bloques y renderizar
-      const blocks = await this.notionService.fetchBlocks(notionPageId, true);
+      // Obtener bloques y pageInfo (para propiedades) en paralelo
+      const [blocks, pageInfo] = await Promise.all([
+        this.notionService.fetchBlocks(notionPageId, true),
+        this.notionService.fetchPageInfo(notionPageId, true)
+      ]);
       
       if (!blocks || blocks.length === 0) {
         content.innerHTML = `
@@ -5281,10 +5287,12 @@ export class ExtensionController {
         return;
       }
       
-      const html = await this.notionRenderer.renderBlocks(blocks);
+      // Renderizar propiedades y bloques
+      const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
+      const blocksHtml = await this.notionRenderer.renderBlocks(blocks);
       
       // Mostrar contenido
-      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${html}</div>`;
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${propertiesHtml}${blocksHtml}</div>`;
       
       // Adjuntar handlers de imágenes PERO NO de mentions (evita navegación infinita)
       const images = content.querySelectorAll('.notion-image-clickable');
