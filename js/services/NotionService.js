@@ -1144,53 +1144,6 @@ export class NotionService {
       return [];
     }
   }
-
-  /**
-   * Obtiene información de una base de datos (título, etc.)
-   * @param {string} databaseId - ID de la base de datos
-   * @returns {Promise<Object|null>} - Info de la DB o null
-   */
-  async fetchDatabaseInfo(databaseId) {
-    try {
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
-        return null;
-      }
-
-      // Usar el endpoint de página para obtener info de la DB
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(databaseId)}&token=${encodeURIComponent(tokenToUse)}&type=page`;
-      
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = await response.json();
-      
-      // Extraer título de la base de datos
-      let title = 'Database';
-      if (data.title && Array.isArray(data.title)) {
-        title = data.title.map(t => t.plain_text || '').join('') || 'Database';
-      }
-      
-      return {
-        id: databaseId,
-        title,
-        icon: data.icon || null
-      };
-    } catch (e) {
-      logWarn('Error al obtener info de base de datos:', e);
-      return null;
-    }
-  }
 }
 
 export default NotionService;
