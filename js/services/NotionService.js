@@ -736,6 +736,113 @@ export class NotionService {
     }
     return null;
   }
+
+  /**
+   * Consulta las páginas de una base de datos de Notion
+   * @param {string} databaseId - ID de la base de datos
+   * @returns {Promise<Array>} - Lista de páginas con sus IDs y títulos
+   */
+  async fetchDatabasePages(databaseId) {
+    try {
+      // Obtener token del usuario o usar el de default
+      let tokenToUse = this.storageService?.getUserToken();
+      if (!tokenToUse) {
+        tokenToUse = await this._getDefaultToken();
+      }
+      
+      if (!tokenToUse) {
+        logWarn('No hay token para consultar base de datos');
+        return [];
+      }
+
+      log('📊 Consultando páginas de base de datos:', databaseId);
+      
+      const params = new URLSearchParams({
+        action: 'database',
+        databaseId: databaseId,
+        token: tokenToUse
+      });
+      
+      const response = await fetch(`/.netlify/functions/notion-api?${params.toString()}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        logWarn('Error al consultar base de datos:', errorData.error || response.status);
+        return [];
+      }
+
+      const data = await response.json();
+      const pages = data.results || [];
+      
+      log('📊 Páginas encontradas en la base de datos:', pages.length);
+      
+      // Mapear a formato simplificado con ID y título
+      return pages.map(page => {
+        const title = this._extractPageTitle(page);
+        // Formatear el ID como UUID si no tiene guiones
+        let formattedId = page.id;
+        if (formattedId && !formattedId.includes('-') && formattedId.length === 32) {
+          formattedId = `${formattedId.substring(0, 8)}-${formattedId.substring(8, 12)}-${formattedId.substring(12, 16)}-${formattedId.substring(16, 20)}-${formattedId.substring(20, 32)}`;
+        }
+        
+        return {
+          id: formattedId,
+          title,
+          url: this._buildNotionUrl(title, page.id)
+        };
+      });
+    } catch (e) {
+      logError('Error al consultar base de datos:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Obtiene información de una base de datos (título, etc.)
+   * @param {string} databaseId - ID de la base de datos
+   * @returns {Promise<Object|null>} - Info de la DB o null
+   */
+  async fetchDatabaseInfo(databaseId) {
+    try {
+      let tokenToUse = this.storageService?.getUserToken();
+      if (!tokenToUse) {
+        tokenToUse = await this._getDefaultToken();
+      }
+      
+      if (!tokenToUse) {
+        return null;
+      }
+
+      // Usar el endpoint de página para obtener info de la DB
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(databaseId)}&token=${encodeURIComponent(tokenToUse)}&type=page`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      
+      // Extraer título de la base de datos
+      let title = 'Database';
+      if (data.title && Array.isArray(data.title)) {
+        title = data.title.map(t => t.plain_text || '').join('') || 'Database';
+      }
+      
+      return {
+        id: databaseId,
+        title,
+        icon: data.icon || null
+      };
+    } catch (e) {
+      logWarn('Error al obtener info de base de datos:', e);
+      return null;
+    }
+  }
 }
 
 export default NotionService;

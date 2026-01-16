@@ -2485,3 +2485,199 @@
 .vault-status__sync--warn {
   color: #ff9800;
 }
+
+/* ==========================================================================
+   Notion Mentions (@Page links)
+   ========================================================================== */
+
+/* Base mention style */
+.notion-mention {
+  display: inline;
+}
+
+/* Plain text mention (not in vault or not visible) */
+.notion-mention--plain {
+  /* No special styling - appears as regular text */
+}
+
+/* Clickable mention link */
+.notion-mention--link {
+  background-color: rgba(150, 122, 204, 0.15);
+  color: var(--color-accent-primary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.notion-mention--link:hover {
+  background-color: rgba(150, 122, 204, 0.3);
+  color: var(--color-accent-secondary);
+}
+
+.notion-mention--link:focus {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 1px;
+}
+
+/* Loading state */
+.notion-mention--loading {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+}
+
+.notion-mention--loading::after {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 4px;
+  border: 2px solid transparent;
+  border-top-color: var(--color-accent-primary);
+  border-radius: 50%;
+  animation: mention-spin 0.6s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes mention-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Disabled mention (inside modal - no navigation) */
+.notion-mention--disabled {
+  background-color: rgba(150, 122, 204, 0.1);
+  color: var(--color-text-secondary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: default;
+}
+
+/* ==========================================================================
+   Mention Modal (for displaying pages from mentions)
+   ========================================================================== */
+
+.mention-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  transition: background-color 0.2s ease;
+}
+
+.mention-modal-overlay--visible {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.mention-modal-overlay--closing {
+  background-color: rgba(0, 0, 0, 0);
+}
+
+.mention-modal {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  max-width: 90%;
+  max-height: 85vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  overflow: hidden;
+}
+
+.mention-modal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mention-modal--closing {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.mention-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.mention-modal__title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: var(--spacing-md);
+}
+
+.mention-modal__close {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.mention-modal__close:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.mention-modal__close:focus {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: -2px;
+}
+
+.mention-modal__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+  min-height: 200px;
+}
+
+.mention-modal__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+/* Notion content inside modal */
+.mention-modal__notion-content {
+  /* Inherit notion-content styles */
+}
+
+/* Ensure mentions inside modal are not interactive */
+.mention-modal__notion-content .notion-mention--link {
+  background-color: rgba(150, 122, 204, 0.1);
+  color: var(--color-text-secondary);
+  cursor: default;
+  pointer-events: none;
+}

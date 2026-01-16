@@ -1503,9 +1503,11 @@ export class ExtensionController {
     // Iniciar analytics (mostrará banner de cookies si es necesario)
     this.analyticsService.init();
 
-    // Notion Renderer
+    // Notion Renderer - config se actualizará después de cargarlo
     this.notionRenderer.setDependencies({
-      notionService: this.notionService
+      notionService: this.notionService,
+      isGM: this.isGM,
+      isPageVisibleCallback: (page) => page?.visibleToPlayers === true
     });
 
     // UI Renderer
@@ -3905,6 +3907,9 @@ export class ExtensionController {
 
     this.configBuilder = new ConfigBuilder(this.config);
     
+    // Actualizar config en el NotionRenderer para soporte de mentions
+    this.notionRenderer.setDependencies({ config: this.config });
+    
     log(`✅ Configuración cargada desde [${configSource}]:`, this.config.getTotalPageCount(), 'páginas');
   }
 
@@ -4458,6 +4463,93 @@ export class ExtensionController {
 
     // Attach event handlers para imágenes (incluyendo cover)
     this._attachImageHandlers(notionContent);
+    
+    // Procesar bases de datos encontradas (crear carpetas si hay páginas en el vault)
+    // Solo para GM - los players no crean carpetas
+    if (this.isGM && blocks) {
+      this._processNotionDatabases(blocks);
+    }
+  }
+
+  /**
+   * Procesa los bloques child_database y crea carpetas en el vault
+   * @param {Array} blocks - Bloques de Notion
+   * @private
+   */
+  async _processNotionDatabases(blocks) {
+    if (!blocks || blocks.length === 0) return;
+    
+    // Buscar bloques child_database
+    const databaseBlocks = blocks.filter(b => b.type === 'child_database');
+    
+    if (databaseBlocks.length === 0) return;
+    
+    log('📊 Encontradas', databaseBlocks.length, 'bases de datos en la página');
+    
+    for (const dbBlock of databaseBlocks) {
+      try {
+        const databaseId = dbBlock.id;
+        const databaseTitle = dbBlock.child_database?.title || 'Database';
+        
+        // Obtener páginas de la base de datos
+        const dbPages = await this.notionService.fetchDatabasePages(databaseId);
+        
+        if (!dbPages || dbPages.length === 0) {
+          log('📊 Base de datos vacía:', databaseTitle);
+          continue;
+        }
+        
+        // Buscar páginas que estén en el vault
+        const matchingPages = [];
+        for (const dbPage of dbPages) {
+          const vaultPage = this.config?.findPageByNotionId(dbPage.id);
+          if (vaultPage) {
+            matchingPages.push(vaultPage);
+          }
+        }
+        
+        log('📊 Base de datos:', databaseTitle, '- Páginas en vault:', matchingPages.length, 'de', dbPages.length);
+        
+        // Solo crear carpeta si hay páginas matching
+        if (matchingPages.length === 0) {
+          continue;
+        }
+        
+        // Verificar si ya existe una carpeta con este nombre
+        let existingCategory = this.config?.findCategoryByName(databaseTitle);
+        
+        if (existingCategory) {
+          // Actualizar carpeta existente con las páginas matching
+          // (solo añadir las que no estén ya)
+          for (const page of matchingPages) {
+            const alreadyInCategory = existingCategory.pages?.some(p => p.id === page.id);
+            if (!alreadyInCategory) {
+              existingCategory.pages = existingCategory.pages || [];
+              existingCategory.pages.push(page);
+            }
+          }
+          log('📊 Carpeta actualizada:', databaseTitle);
+        } else {
+          // Crear nueva carpeta con las páginas matching
+          const newCategory = new Category(databaseTitle, {
+            pages: matchingPages
+          });
+          
+          // Añadir al config
+          this.config.addCategory(newCategory);
+          log('📊 Nueva carpeta creada:', databaseTitle, 'con', matchingPages.length, 'páginas');
+        }
+        
+        // Guardar config actualizado
+        await this.saveConfig(this.config);
+        
+        // Re-renderizar la lista de páginas para mostrar la nueva carpeta
+        await this.render();
+        
+      } catch (error) {
+        logError('Error procesando base de datos:', error);
+      }
+    }
   }
 
   /**
@@ -5082,6 +5174,230 @@ export class ExtensionController {
         this._shareImageToPlayers(url, caption);
       });
     });
+    
+    // También adjuntar handlers para mentions
+    this._attachMentionHandlers(targetContainer);
+  }
+
+  /**
+   * Attach event handlers para mentions de página (@Page)
+   * @private
+   */
+  _attachMentionHandlers(container = null) {
+    const targetContainer = container || document.getElementById('notion-content');
+    if (!targetContainer) return;
+
+    const mentions = targetContainer.querySelectorAll('.notion-mention--link');
+    
+    mentions.forEach(mention => {
+      if (mention.dataset.listenerAdded) return;
+      mention.dataset.listenerAdded = 'true';
+      
+      // Click handler
+      mention.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const pageId = mention.dataset.mentionPageId;
+        const pageName = mention.dataset.mentionPageName;
+        const pageUrl = mention.dataset.mentionPageUrl;
+        
+        if (pageId && pageUrl) {
+          await this._openMentionedPage(pageId, pageName, pageUrl, mention);
+        }
+      });
+      
+      // Keyboard handler (Enter/Space for accessibility)
+      mention.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const pageId = mention.dataset.mentionPageId;
+          const pageName = mention.dataset.mentionPageName;
+          const pageUrl = mention.dataset.mentionPageUrl;
+          
+          if (pageId && pageUrl) {
+            await this._openMentionedPage(pageId, pageName, pageUrl, mention);
+          }
+        }
+      });
+    });
+  }
+
+  /**
+   * Abre una página mencionada en un modal
+   * @private
+   */
+  async _openMentionedPage(pageId, pageName, pageUrl, mentionElement) {
+    // Mostrar estado loading en el mention
+    const originalContent = mentionElement.innerHTML;
+    mentionElement.classList.add('notion-mention--loading');
+    
+    try {
+      // Buscar la página en el vault
+      const page = this.config?.findPageByNotionId(pageId);
+      
+      if (!page) {
+        log('⚠️ Página no encontrada en vault:', pageId);
+        mentionElement.classList.remove('notion-mention--loading');
+        return;
+      }
+      
+      // Abrir el modal con la página
+      await this._showMentionPageModal(page, pageName);
+      
+    } catch (error) {
+      logError('Error al abrir página mencionada:', error);
+    } finally {
+      mentionElement.classList.remove('notion-mention--loading');
+    }
+  }
+
+  /**
+   * Muestra un modal con el contenido de una página mencionada
+   * @private
+   */
+  async _showMentionPageModal(page, displayName) {
+    // Crear overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'mention-modal-overlay';
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', `Page: ${displayName}`);
+    
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.className = 'mention-modal';
+    
+    // Header del modal
+    const header = document.createElement('div');
+    header.className = 'mention-modal__header';
+    
+    const title = document.createElement('h2');
+    title.className = 'mention-modal__title';
+    title.textContent = displayName;
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'mention-modal__close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close modal');
+    closeBtn.title = 'Close (Escape)';
+    
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    
+    // Contenido del modal - inicialmente con loading state
+    const content = document.createElement('div');
+    content.className = 'mention-modal__content';
+    content.innerHTML = `
+      <div class="empty-state mention-modal__loading">
+        <div class="empty-state-icon">⏳</div>
+        <p class="empty-state-text">Loading page...</p>
+        <p class="empty-state-hint">Please wait while we load the content</p>
+      </div>
+    `;
+    
+    modal.appendChild(header);
+    modal.appendChild(content);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    
+    // Funciones de cierre
+    const closeModal = () => {
+      overlay.classList.add('mention-modal-overlay--closing');
+      modal.classList.add('mention-modal--closing');
+      setTimeout(() => {
+        overlay.remove();
+      }, 200);
+    };
+    
+    // Event listeners para cerrar
+    closeBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeModal();
+    });
+    
+    // Escape para cerrar
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+        document.removeEventListener('keydown', handleEscape);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    
+    // Focus trap
+    closeBtn.focus();
+    
+    // Animación de entrada
+    requestAnimationFrame(() => {
+      overlay.classList.add('mention-modal-overlay--visible');
+      modal.classList.add('mention-modal--visible');
+    });
+    
+    try {
+      // Cargar contenido de la página
+      const notionPageId = page.getNotionPageId();
+      
+      if (!notionPageId) {
+        content.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <p class="empty-state-text">Cannot load page</p>
+            <p class="empty-state-hint">Invalid page ID</p>
+          </div>
+        `;
+        return;
+      }
+      
+      // Configurar renderer para modo modal (mentions no clickeables)
+      this.notionRenderer.setRenderingOptions({ isInModal: true });
+      
+      // Obtener bloques y renderizar
+      const blocks = await this.notionService.fetchBlocks(notionPageId, true);
+      
+      if (!blocks || blocks.length === 0) {
+        content.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📄</div>
+            <p class="empty-state-text">Empty page</p>
+            <p class="empty-state-hint">This page has no content</p>
+          </div>
+        `;
+        return;
+      }
+      
+      const html = await this.notionRenderer.renderBlocks(blocks);
+      
+      // Mostrar contenido
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${html}</div>`;
+      
+      // Adjuntar handlers de imágenes PERO NO de mentions (evita navegación infinita)
+      const images = content.querySelectorAll('.notion-image-clickable');
+      images.forEach(img => {
+        if (img.dataset.listenerAdded) return;
+        img.dataset.listenerAdded = 'true';
+        img.addEventListener('click', () => {
+          const url = img.dataset.imageUrl;
+          const caption = img.dataset.imageCaption;
+          this._showImageModal(url, caption);
+        });
+      });
+      
+    } catch (error) {
+      logError('Error cargando página en modal:', error);
+      content.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p class="empty-state-text">Error loading page</p>
+          <p class="empty-state-hint">${error.message || 'Unknown error'}</p>
+        </div>
+      `;
+    } finally {
+      // Restaurar modo normal del renderer
+      this.notionRenderer.setRenderingOptions({ isInModal: false });
+    }
   }
 
   /**

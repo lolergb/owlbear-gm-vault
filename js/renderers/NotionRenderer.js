@@ -13,14 +13,33 @@ export class NotionRenderer {
   constructor() {
     // Referencia al NotionService para obtener bloques hijos
     this.notionService = null;
+    // Referencia al Config para verificar si páginas están en el vault
+    this.config = null;
+    // Callback para verificar visibilidad de página (para players)
+    this.isPageVisibleCallback = null;
+    // Flag para indicar si estamos renderizando dentro de un modal (mentions no clickeables)
+    this.isRenderingInModal = false;
+    // Flag para indicar si el usuario es GM
+    this.isGM = true;
   }
 
   /**
    * Inyecta dependencias
    * @param {Object} deps - Dependencias
    */
-  setDependencies({ notionService }) {
+  setDependencies({ notionService, config, isPageVisibleCallback, isGM }) {
     if (notionService) this.notionService = notionService;
+    if (config !== undefined) this.config = config;
+    if (isPageVisibleCallback !== undefined) this.isPageVisibleCallback = isPageVisibleCallback;
+    if (isGM !== undefined) this.isGM = isGM;
+  }
+
+  /**
+   * Configura el modo de renderizado
+   * @param {Object} options - Opciones de renderizado
+   */
+  setRenderingOptions({ isInModal = false }) {
+    this.isRenderingInModal = isInModal;
   }
 
   /**
@@ -32,6 +51,11 @@ export class NotionRenderer {
     if (!richTextArray || richTextArray.length === 0) return '';
     
     return richTextArray.map(text => {
+      // Detectar mentions de página
+      if (text.type === 'mention' && text.mention?.type === 'page') {
+        return this._renderPageMention(text);
+      }
+      
       let content = text.plain_text || '';
       
       // Convertir saltos de línea a <br>
@@ -51,6 +75,55 @@ export class NotionRenderer {
       
       return content;
     }).join('');
+  }
+
+  /**
+   * Renderiza un mention de página
+   * @private
+   * @param {Object} text - Objeto rich_text de tipo mention
+   * @returns {string} - HTML del mention
+   */
+  _renderPageMention(text) {
+    const mentionedPageId = text.mention?.page?.id;
+    const displayName = text.plain_text || 'Page';
+    
+    // Si estamos dentro de un modal, los mentions NO son clickeables (evita navegación infinita)
+    if (this.isRenderingInModal) {
+      return `<span class="notion-mention notion-mention--disabled" aria-disabled="true">${displayName}</span>`;
+    }
+    
+    // Si no hay config, renderizar como texto plano
+    if (!this.config) {
+      return `<span class="notion-mention notion-mention--plain">${displayName}</span>`;
+    }
+    
+    // Buscar si la página está en el vault
+    const pageInVault = this.config.findPageByNotionId(mentionedPageId);
+    
+    // Si la página no está en el vault, renderizar como texto plano (caso edge)
+    if (!pageInVault) {
+      return `<span class="notion-mention notion-mention--plain">${displayName}</span>`;
+    }
+    
+    // Para players: verificar si la página es visible
+    if (!this.isGM && this.isPageVisibleCallback) {
+      const isVisible = this.isPageVisibleCallback(pageInVault);
+      if (!isVisible) {
+        // Página no visible para player: texto plano sin indicación
+        return `<span class="notion-mention notion-mention--plain">${displayName}</span>`;
+      }
+    }
+    
+    // Página en vault y accesible: renderizar como enlace clickeable
+    return `<span 
+      class="notion-mention notion-mention--link" 
+      data-mention-page-id="${mentionedPageId}"
+      data-mention-page-name="${displayName.replace(/"/g, '&quot;')}"
+      data-mention-page-url="${pageInVault.url || ''}"
+      role="button"
+      tabindex="0"
+      aria-label="Open ${displayName}"
+    >${displayName}</span>`;
   }
 
   /**
@@ -131,6 +204,11 @@ export class NotionRenderer {
       
       case 'link_preview':
         return this._renderLinkPreview(block);
+      
+      case 'synced_block':
+        // Synced blocks se procesan de forma asíncrona en renderBlocks
+        // Placeholder para el procesamiento síncrono
+        return `<div class="notion-synced-block" data-synced-block-id="${block.id}"></div>`;
       
       default:
         logWarn('Tipo de bloque no soportado:', type);
@@ -480,6 +558,12 @@ export class NotionRenderer {
         continue;
       }
 
+      // Manejar synced_block (renderizado transparente)
+      if (type === 'synced_block') {
+        html += await this._renderSyncedBlock(block, typesArray, headingLevelOffset);
+        continue;
+      }
+
       // Manejar tablas
       if (type === 'table') {
         try {
@@ -517,9 +601,10 @@ export class NotionRenderer {
   _matchesFilter(block, typesArray) {
     if (!typesArray) return true;
     
-    // Los toggles, column_list, callouts, y bloques con hijos siempre se procesan 
+    // Los toggles, column_list, callouts, synced_block y bloques con hijos siempre se procesan 
     // para buscar contenido filtrado dentro de ellos
-    if (block.type === 'toggle' || block.type === 'column_list' || block.type === 'callout' || block.has_children) {
+    if (block.type === 'toggle' || block.type === 'column_list' || block.type === 'callout' || 
+        block.type === 'synced_block' || block.has_children) {
       return true;
     }
     
@@ -666,6 +751,55 @@ export class NotionRenderer {
     `;
 
     return { html, siblingColumnsCount };
+  }
+
+  /**
+   * Renderiza un synced_block de forma transparente
+   * El usuario no ve diferencia entre bloque original y copia
+   * @private
+   * @param {Object} block - Bloque synced_block
+   * @param {Array} typesArray - Filtro de tipos
+   * @param {number} headingLevelOffset - Offset de headings
+   * @returns {Promise<string>}
+   */
+  async _renderSyncedBlock(block, typesArray, headingLevelOffset) {
+    try {
+      if (!this.notionService) {
+        logWarn('NotionService no disponible para synced_block');
+        return '';
+      }
+
+      const syncedBlock = block.synced_block;
+      
+      // Si es original (synced_from es null) - los hijos están en el bloque mismo
+      // Si es copia (synced_from tiene block_id) - cargar hijos del bloque original
+      let blockIdToFetch;
+      
+      if (syncedBlock?.synced_from?.block_id) {
+        // Es una copia - cargar desde el bloque original
+        blockIdToFetch = syncedBlock.synced_from.block_id;
+        log('📌 Synced block (copia) - cargando desde original:', blockIdToFetch);
+      } else {
+        // Es el original - cargar sus propios hijos
+        blockIdToFetch = block.id;
+        log('📌 Synced block (original) - cargando hijos de:', blockIdToFetch);
+      }
+
+      // Obtener los bloques hijos
+      const children = await this.notionService.fetchChildBlocks(blockIdToFetch);
+      
+      if (!children || children.length === 0) {
+        return '';
+      }
+
+      // Renderizar los hijos de forma transparente (sin wrapper especial)
+      const content = await this.renderBlocks(children, typesArray, headingLevelOffset);
+      
+      return content;
+    } catch (error) {
+      logWarn('Error al renderizar synced_block:', error);
+      return '';
+    }
   }
 }
 

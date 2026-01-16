@@ -157,6 +157,74 @@ exports.handler = async (event, context) => {
     }
 
     // ============================================
+    // ACCIÓN: Consultar páginas de una base de datos
+    // ============================================
+    if (action === 'database') {
+      const databaseId = event.queryStringParameters.databaseId;
+      
+      if (!databaseId) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'databaseId parameter is required for database action' })
+        };
+      }
+
+      // Consultar la base de datos con paginación
+      let allPages = [];
+      let hasMore = true;
+      let startCursor = null;
+
+      while (hasMore) {
+        const url = `https://api.notion.com/v1/databases/${databaseId}/query`;
+        
+        const queryBody = {
+          page_size: 100
+        };
+        
+        if (startCursor) {
+          queryBody.start_cursor = startCursor;
+        }
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${userToken}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(queryBody)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          return {
+            statusCode: response.status,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ 
+              error: errorData.message || 'Notion API error',
+              code: errorData.code
+            })
+          };
+        }
+
+        const data = await response.json();
+        allPages = allPages.concat(data.results || []);
+        hasMore = data.has_more;
+        startCursor = data.next_cursor;
+      }
+      
+      return {
+        statusCode: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          results: allPages,
+          total: allPages.length
+        })
+      };
+    }
+
+    // ============================================
     // ACCIONES EXISTENTES: page, blocks
     // ============================================
   if (!pageId) {

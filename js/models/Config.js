@@ -118,6 +118,17 @@ export class Config {
   }
 
   /**
+   * Busca una página por su Notion Page ID
+   * @param {string} notionPageId - ID de Notion (formato UUID con guiones)
+   * @returns {Page|null}
+   */
+  findPageByNotionId(notionPageId) {
+    if (!notionPageId) return null;
+    const allPages = this.getAllPages();
+    return allPages.find(p => p.getNotionPageId() === notionPageId) || null;
+  }
+
+  /**
    * Busca una categoría por nombre
    * @param {string} name - Nombre a buscar
    * @returns {Category|null}
