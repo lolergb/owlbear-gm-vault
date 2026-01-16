@@ -645,6 +645,232 @@ function hasUserToken() {
   return getUserToken() !== null;
 }
 
+// ============================================
+// IMPORTACIÓN DESDE NOTION
+// ============================================
+
+/**
+ * Obtiene la URL base del proxy de Notion
+ */
+function getNotionProxyUrl() {
+  // En desarrollo local, usar localhost
+  // En producción, usar la URL de Netlify
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocalhost) {
+    return '/.netlify/functions/notion-api';
+  }
+  // En producción (Netlify)
+  return '/.netlify/functions/notion-api';
+}
+
+/**
+ * Busca todas las páginas disponibles para la integración de Notion
+ */
+async function searchNotionPages() {
+  const token = getUserToken();
+  if (!token) {
+    throw new Error('No Notion token configured. Please configure your token first.');
+  }
+
+  const proxyUrl = getNotionProxyUrl();
+  const response = await fetch(`${proxyUrl}?type=search&token=${encodeURIComponent(token)}`);
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Search failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.results || [];
+}
+
+/**
+ * Obtiene los bloques hijos de una página de Notion
+ */
+async function getNotionPageChildren(pageId) {
+  const token = getUserToken();
+  if (!token) {
+    throw new Error('No Notion token configured');
+  }
+
+  const proxyUrl = getNotionProxyUrl();
+  const response = await fetch(`${proxyUrl}?type=children&pageId=${pageId}&token=${encodeURIComponent(token)}`);
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Failed to get children: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.results || [];
+}
+
+/**
+ * Obtiene información de una página de Notion
+ */
+async function getNotionPageInfo(pageId) {
+  const token = getUserToken();
+  if (!token) {
+    throw new Error('No Notion token configured');
+  }
+
+  const proxyUrl = getNotionProxyUrl();
+  const response = await fetch(`${proxyUrl}?type=page&pageId=${pageId}&token=${encodeURIComponent(token)}`);
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Failed to get page: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Extrae el título de una página de Notion desde sus propiedades
+ */
+function extractNotionPageTitle(page) {
+  // Intentar obtener el título desde las propiedades
+  if (page.properties) {
+    // El título suele estar en 'title' o 'Name'
+    const titleProp = page.properties.title || page.properties.Title || page.properties.Name || page.properties.name;
+    if (titleProp && titleProp.title && titleProp.title.length > 0) {
+      return titleProp.title.map(t => t.plain_text).join('');
+    }
+  }
+  
+  // Fallback: usar el ID
+  return page.id.substring(0, 8);
+}
+
+/**
+ * Construye la URL de Notion para una página
+ */
+function buildNotionPageUrl(pageId) {
+  return `https://www.notion.so/${pageId}`;
+}
+
+/**
+ * Escanea recursivamente una página de Notion y construye la estructura del vault
+ * @param {string} pageId - ID de la página raíz
+ * @param {function} onProgress - Callback para mostrar progreso
+ * @returns {Promise<Object>} - Estructura del vault
+ */
+async function scanNotionPageRecursive(pageId, onProgress) {
+  const scannedPages = new Set();
+  
+  async function scanPage(id, depth = 0) {
+    if (scannedPages.has(id)) {
+      return null; // Evitar ciclos
+    }
+    scannedPages.add(id);
+    
+    if (onProgress) {
+      onProgress(`Scanning... (${scannedPages.size} pages)`);
+    }
+    
+    // Obtener información de la página
+    const pageInfo = await getNotionPageInfo(id);
+    const title = extractNotionPageTitle(pageInfo);
+    
+    // Obtener hijos
+    const children = await getNotionPageChildren(id);
+    
+    // Filtrar solo las subpáginas (child_page blocks)
+    const childPages = children.filter(block => block.type === 'child_page');
+    
+    if (childPages.length === 0) {
+      // Es una página hoja (sin subpáginas) → es una "page" en el vault
+      // Usar la URL que devuelve la API de Notion (incluye el título en la URL)
+      const pageUrl = pageInfo.url || `https://www.notion.so/${id}`;
+      return {
+        type: 'page',
+        name: title,
+        url: pageUrl,
+        id: id
+      };
+    } else {
+      // Tiene subpáginas → es una "category" en el vault
+      const category = {
+        type: 'category',
+        name: title,
+        pages: [],
+        categories: []
+      };
+      
+      // Escanear subpáginas recursivamente
+      for (const childPage of childPages) {
+        const childId = childPage.id.replace(/-/g, '');
+        const childResult = await scanPage(childId, depth + 1);
+        
+        if (childResult) {
+          if (childResult.type === 'page') {
+            category.pages.push({
+              name: childResult.name,
+              url: childResult.url
+            });
+          } else if (childResult.type === 'category') {
+            category.categories.push(childResult);
+          }
+        }
+      }
+      
+      return category;
+    }
+  }
+  
+  const rootResult = await scanPage(pageId);
+  
+  if (!rootResult) {
+    throw new Error('Failed to scan root page');
+  }
+  
+  // Construir el JSON final del vault
+  if (rootResult.type === 'page') {
+    // Si la raíz es una página sin hijos, crear una categoría con ella
+    return {
+      categories: [{
+        name: rootResult.name,
+        pages: [{
+          name: rootResult.name,
+          url: rootResult.url
+        }]
+      }]
+    };
+  } else {
+    // Limpiar la estructura (remover campos internos)
+    function cleanCategory(cat) {
+      const cleaned = { name: cat.name };
+      if (cat.pages && cat.pages.length > 0) {
+        cleaned.pages = cat.pages;
+      }
+      if (cat.categories && cat.categories.length > 0) {
+        cleaned.categories = cat.categories.map(c => cleanCategory(c));
+      }
+      return cleaned;
+    }
+    
+    return {
+      categories: [cleanCategory(rootResult)]
+    };
+  }
+}
+
+/**
+ * Importa la estructura de páginas desde Notion
+ */
+async function importFromNotion(pageId, onProgress) {
+  if (!pageId) {
+    throw new Error('No page ID provided');
+  }
+  
+  const vault = await scanNotionPageRecursive(pageId, onProgress);
+  return vault;
+}
+
+// ============================================
+// FIN IMPORTACIÓN DESDE NOTION
+// ============================================
+
 // Función para mostrar un ID de room más amigable (solo primeros caracteres)
 function getFriendlyRoomId(roomId) {
   if (!roomId || roomId === 'default') {
@@ -3348,15 +3574,234 @@ window.refreshImage = async function(button) {
   }
 };
 
+// Función para aplicar estilos de Notion a HTML genérico
+function applyNotionStyles(container) {
+  if (!container) return;
+  
+  // Asegurarse de que el contenedor tenga la clase notion-content
+  if (!container.classList.contains('notion-content')) {
+    container.classList.add('notion-content');
+  }
+  
+  // Normalizar elementos HTML comunes a clases de Notion
+  const elements = container.querySelectorAll('*');
+  
+  elements.forEach(el => {
+    // Normalizar párrafos
+    if (el.tagName === 'P' && !el.classList.contains('notion-paragraph')) {
+      el.classList.add('notion-paragraph');
+    }
+    
+    // Normalizar listas
+    if (el.tagName === 'UL' && !el.classList.contains('notion-bulleted-list')) {
+      el.classList.add('notion-bulleted-list');
+    }
+    if (el.tagName === 'OL' && !el.classList.contains('notion-numbered-list')) {
+      el.classList.add('notion-numbered-list');
+    }
+    if (el.tagName === 'LI') {
+      if (el.parentElement?.tagName === 'UL' && !el.classList.contains('notion-bulleted-list-item')) {
+        el.classList.add('notion-bulleted-list-item');
+      }
+      if (el.parentElement?.tagName === 'OL' && !el.classList.contains('notion-numbered-list-item')) {
+        el.classList.add('notion-numbered-list-item');
+      }
+    }
+    
+    // Normalizar código
+    if (el.tagName === 'CODE' && !el.classList.contains('notion-text-code')) {
+      // Si está dentro de un pre, es un bloque de código
+      if (el.parentElement?.tagName === 'PRE') {
+        if (!el.parentElement.classList.contains('notion-code')) {
+          el.parentElement.classList.add('notion-code');
+        }
+      } else {
+        // Es código inline
+        el.classList.add('notion-text-code');
+      }
+    }
+    
+    // Normalizar enlaces
+    if (el.tagName === 'A' && !el.classList.contains('notion-text-link')) {
+      el.classList.add('notion-text-link');
+    }
+    
+    // Normalizar texto en negrita
+    if ((el.tagName === 'STRONG' || el.tagName === 'B') && !el.classList.contains('notion-text-bold')) {
+      el.classList.add('notion-text-bold');
+    }
+    
+    // Normalizar texto en cursiva
+    if ((el.tagName === 'EM' || el.tagName === 'I') && !el.classList.contains('notion-text-italic')) {
+      el.classList.add('notion-text-italic');
+    }
+    
+    // Normalizar texto subrayado
+    if (el.tagName === 'U' && !el.classList.contains('notion-text-underline')) {
+      el.classList.add('notion-text-underline');
+    }
+    
+    // Normalizar texto tachado
+    if ((el.tagName === 'S' || el.tagName === 'DEL') && !el.classList.contains('notion-text-strikethrough')) {
+      el.classList.add('notion-text-strikethrough');
+    }
+    
+    // Normalizar blockquotes
+    if (el.tagName === 'BLOCKQUOTE' && !el.classList.contains('notion-quote')) {
+      el.classList.add('notion-quote');
+    }
+    
+    // Normalizar tablas
+    if (el.tagName === 'TABLE' && !el.classList.contains('notion-table')) {
+      el.classList.add('notion-table');
+    }
+    
+    // Normalizar separadores
+    if ((el.tagName === 'HR' || el.classList.contains('hr')) && !el.classList.contains('notion-divider')) {
+      el.classList.add('notion-divider');
+    }
+  });
+  
+  log('✅ Estilos de Notion aplicados al contenido HTML');
+}
+
 // Agregar event listeners a las imágenes después de renderizar
 async function attachImageClickHandlers() {
-  // Manejar imágenes normales y cover
+  // Primero, procesar imágenes normales que aún no tienen la funcionalidad de Notion
+  const notionContent = document.querySelector('#notion-content');
+  if (!notionContent) {
+    log('⚠️ #notion-content no encontrado, no se pueden procesar imágenes');
+    return;
+  }
+  
+  // Buscar todas las imágenes que NO son de Notion (sin clase notion-image-clickable)
+  const regularImages = notionContent.querySelectorAll('img:not(.notion-image-clickable):not(.notion-cover-image)');
+  log('🔍 Imágenes normales encontradas:', regularImages.length);
+  
+  regularImages.forEach((img, index) => {
+    // Si la imagen ya está dentro de un contenedor notion-image, no hacer nada
+    if (img.closest('.notion-image')) {
+      return;
+    }
+    
+    // Obtener URL y caption de la imagen
+    let imageUrl = img.src || img.getAttribute('src');
+    const caption = img.alt || img.getAttribute('alt') || '';
+    
+    // Asegurarse de que la URL sea absoluta
+    if (imageUrl && !imageUrl.match(/^https?:\/\//i) && !imageUrl.match(/^data:/i)) {
+      try {
+        // Si es una ruta relativa, intentar resolverla
+        if (imageUrl.startsWith('/')) {
+          // Ruta absoluta desde el origen
+          imageUrl = new URL(imageUrl, window.location.origin).toString();
+        } else {
+          // Ruta relativa, usar la URL actual como base
+          const currentUrl = window.location.href;
+          const baseUrl = currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+          imageUrl = new URL(imageUrl, baseUrl).toString();
+        }
+      } catch (e) {
+        console.warn('No se pudo resolver URL de imagen:', imageUrl, e);
+      }
+    }
+    
+    // Crear contenedor similar al de Notion
+    const imageWrapper = document.createElement('div');
+    imageWrapper.className = 'notion-image';
+    
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'notion-image-container';
+    
+    // Añadir loading spinner
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'image-loading';
+    loadingDiv.innerHTML = '<div class="loading-spinner"></div>';
+    imageContainer.appendChild(loadingDiv);
+    
+    // Clonar la imagen y añadir atributos necesarios
+    const newImg = img.cloneNode(true);
+    // Asegurarse de que el src esté establecido correctamente (puede perderse al clonar)
+    if (imageUrl && newImg.src !== imageUrl) {
+      newImg.src = imageUrl;
+    }
+    newImg.classList.add('notion-image-clickable');
+    newImg.setAttribute('data-image-url', imageUrl);
+    newImg.setAttribute('data-image-caption', caption);
+    newImg.setAttribute('data-image-id', `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+    
+    // Si la imagen ya está cargada, añadir la clase loaded inmediatamente
+    if (img.complete && img.naturalHeight !== 0) {
+      newImg.classList.add('loaded');
+      // Remover el loading spinner inmediatamente
+      setTimeout(() => {
+        const loading = imageContainer.querySelector('.image-loading');
+        if (loading) loading.remove();
+      }, 0);
+    } else {
+      // Añadir handler de carga solo si aún no está cargada
+      newImg.addEventListener('load', function() {
+        this.classList.add('loaded');
+        const loading = this.parentElement.querySelector('.image-loading');
+        if (loading) loading.remove();
+      });
+    }
+    
+    imageContainer.appendChild(newImg);
+    
+    // Crear botón de compartir
+    const shareButton = document.createElement('button');
+    shareButton.className = 'notion-image-share-button share-button';
+    shareButton.setAttribute('data-image-url', imageUrl);
+    shareButton.setAttribute('data-image-caption', caption);
+    shareButton.setAttribute('title', 'Show to players');
+    shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Share" />';
+    imageContainer.appendChild(shareButton);
+    
+    imageWrapper.appendChild(imageContainer);
+    
+    // Añadir caption si existe
+    if (caption) {
+      const captionDiv = document.createElement('div');
+      captionDiv.className = 'notion-image-caption';
+      captionDiv.textContent = caption;
+      imageWrapper.appendChild(captionDiv);
+    }
+    
+    // Reemplazar la imagen original con el nuevo contenedor
+    try {
+      img.parentNode.replaceChild(imageWrapper, img);
+      log(`✅ Imagen ${index + 1} convertida a formato Notion:`, imageUrl.substring(0, 50));
+    } catch (e) {
+      console.error('Error al reemplazar imagen:', e, img);
+    }
+  });
+  
+  log('✅ Procesadas', regularImages.length, 'imágenes normales');
+  
+  // Manejar imágenes normales y cover (tanto las de Notion como las que acabamos de convertir)
   const images = document.querySelectorAll('.notion-image-clickable, .notion-cover-image');
-  images.forEach(img => {
+  log('🔍 Imágenes con clase notion-image-clickable encontradas:', images.length);
+  
+  images.forEach((img, index) => {
+    // Verificar que la imagen no esté dentro de un iframe
+    const isInIframe = img.ownerDocument !== document;
+    if (isInIframe) {
+      log('⚠️ Imagen dentro de iframe detectada, usando postMessage');
+      // Si está en iframe, necesitaríamos usar postMessage (no implementado aún)
+      return;
+    }
+    
+    // Asegurarse de que la imagen sea clickeable (pointer-events)
+    img.style.cursor = 'pointer';
+    
     // Click handler para abrir modal
-    img.addEventListener('click', () => {
-      const imageUrl = img.getAttribute('data-image-url');
-      const caption = img.getAttribute('data-image-caption') || '';
+    img.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const imageUrl = img.getAttribute('data-image-url') || img.src;
+      const caption = img.getAttribute('data-image-caption') || img.alt || '';
+      log('🖼️ Click en imagen:', imageUrl.substring(0, 50));
       showImageModal(imageUrl, caption);
     });
     
@@ -4873,9 +5318,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           },
         ];
         
-        // Agregar opción de recargar si es Notion
+        // Agregar opción de recargar si es Notion o localhost
         const isNotionPage = isNotionUrl(page.url);
-        if (isNotionPage) {
+        const isLocalhost = isLocalhostUrl(page.url);
+        if (isNotionPage || isLocalhost) {
           menuItems.push({
             icon: 'img/icon-reload.svg',
             text: 'Reload content',
@@ -4884,20 +5330,26 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
               const blockTypes = page.blockTypes || null;
               trackPageReloaded(page.name);
               
-              // Limpiar caché de esta página ANTES de recargar
-              const pageId = extractNotionPageId(page.url);
-              if (pageId) {
-                const cacheKey = CACHE_PREFIX + pageId;
-                localStorage.removeItem(cacheKey);
-                log('🗑️ Caché limpiado para recarga:', pageId);
+              // Limpiar caché de esta página ANTES de recargar (solo para Notion)
+              if (isNotionPage) {
+                const pageId = extractNotionPageId(page.url);
+                if (pageId) {
+                  const cacheKey = CACHE_PREFIX + pageId;
+                  localStorage.removeItem(cacheKey);
+                  log('🗑️ Caché limpiado para recarga:', pageId);
+                }
               }
               
               // Recargar el contenido si estamos viendo esta página
               const notionContainer = document.getElementById("notion-container");
               const pageTitle = document.getElementById("page-title");
               if (notionContainer && !notionContainer.classList.contains('hidden') && pageTitle && pageTitle.textContent === page.name) {
-                await loadNotionContent(page.url, notionContainer, true, blockTypes);
-              } else {
+                if (isNotionPage) {
+                  await loadNotionContent(page.url, notionContainer, true, blockTypes);
+                } else if (isLocalhost) {
+                  await loadLocalhostContent(page.url, notionContainer);
+                }
+              } else if (isNotionPage) {
                 // Si no estamos viendo la página, solo recargar la lista
                 const pageList = document.getElementById("page-list");
                 if (pageList) {
@@ -6430,6 +6882,11 @@ function getLinkType(url) {
     const hostname = urlObj.hostname.toLowerCase();
     const pathname = urlObj.pathname.toLowerCase();
     
+    // Detectar localhost (servidor local de Obsidian plugin u otros)
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.trycloudflare.com')) {
+      return { type: 'localhost', icon: 'icon-link.svg' };
+    }
+    
     // Detectar tipos de links
     if (hostname.includes('notion.so') || hostname.includes('notion.site')) {
       return { type: 'notion', icon: 'icon-notion.svg' };
@@ -7348,6 +7805,29 @@ function isDemoHtmlFile(url) {
   return url.includes('/content-demo/') && url.endsWith('.html');
 }
 
+// Función para detectar si es una URL de localhost (servidor local de Obsidian plugin u otros)
+function isLocalhostUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const urlObj = new URL(url);
+    // Detectar localhost directo
+    if (urlObj.hostname === 'localhost' || urlObj.hostname === '127.0.0.1') {
+      return true;
+    }
+    // Detectar URLs de cloudflared (túneles HTTPS para localhost)
+    if (urlObj.hostname.endsWith('.trycloudflare.com')) {
+      return true;
+    }
+    // Detectar URLs que vienen del plugin de Obsidian (patrón /pages/)
+    if (urlObj.pathname.startsWith('/pages/')) {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Función para obtener la URL base de la app (para resolver URLs relativas correctamente)
 function getAppBaseUrl() {
   // Usar el origen de la ventana actual, o la URL de Netlify como fallback
@@ -7441,6 +7921,89 @@ async function loadDemoHtmlContent(url, container) {
   }
 }
 
+// Función para cargar contenido HTML desde localhost (servidor local de Obsidian plugin u otros)
+async function loadLocalhostContent(url, container) {
+  const contentDiv = container.querySelector('#notion-content');
+  
+  if (!contentDiv) {
+    console.error('No se encontró el contenedor de contenido');
+    return;
+  }
+  
+  // Usar la función centralizada para gestionar visibilidad
+  setNotionDisplayMode(container, 'content');
+  
+  // Mostrar loading
+  contentDiv.innerHTML = `
+    <div class="empty-state notion-loading">
+      <div class="empty-state-icon">⏳</div>
+      <p class="empty-state-text">Loading content from local server...</p>
+    </div>
+  `;
+  
+  try {
+    log('🌐 Cargando contenido desde localhost:', url);
+    
+    // Obtener el HTML del servidor local
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Error loading from localhost: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Intentar extraer el contenido del div #notion-content (compatibilidad con formato GM Vault)
+    const notionContent = doc.querySelector('#notion-content');
+    
+    if (notionContent) {
+      // Si tiene estructura GM Vault, usar solo el contenido
+      contentDiv.innerHTML = notionContent.innerHTML;
+    } else {
+      // Si no tiene estructura GM Vault, usar el body completo
+      const bodyContent = doc.body;
+      if (bodyContent) {
+        contentDiv.innerHTML = bodyContent.innerHTML;
+      } else {
+        contentDiv.innerHTML = html;
+      }
+    }
+    
+    // Copiar estilos del plugin de Obsidian si existen (preservar estilos originales)
+    const styles = doc.querySelectorAll('style');
+    styles.forEach(style => {
+      const styleElement = document.createElement('style');
+      styleElement.textContent = style.textContent;
+      styleElement.setAttribute('data-source', 'obsidian-plugin');
+      document.head.appendChild(styleElement);
+    });
+    
+    // Aplicar clases de Notion al contenido cargado (complementa, no reemplaza)
+    // Esto permite que los estilos de Notion se apliquen mientras preservamos los del plugin
+    applyNotionStyles(contentDiv);
+    
+    // Esperar un momento para que el DOM se actualice antes de procesar imágenes
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Agregar event listeners a las imágenes para abrirlas en modal
+    await attachImageClickHandlers();
+    
+    log('✅ Contenido de localhost cargado correctamente');
+  } catch (error) {
+    console.error('Error al cargar contenido de localhost:', error);
+    contentDiv.innerHTML = `
+      <div class="empty-state notion-loading">
+        <div class="empty-state-icon">❌</div>
+        <p class="empty-state-text">Error loading content from local server: ${error.message}</p>
+        <p class="empty-state-hint" style="font-size: 12px; margin-top: 8px; opacity: 0.7;">
+          Make sure the local server is running at ${url}
+        </p>
+      </div>
+    `;
+  }
+}
+
 // Función centralizada para ocultar todos los botones de página del header
 function hidePageHeaderButtons() {
   const refreshButton = document.getElementById("refresh-page-button");
@@ -7467,6 +8030,8 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
   let pageType = 'unknown';
   if (isDemoHtmlFile(url)) {
     pageType = 'demo';
+  } else if (isLocalhostUrl(url)) {
+    pageType = 'localhost';
   } else if (isNotionUrl(url)) {
     pageType = 'notion';
   } else {
@@ -7495,7 +8060,13 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
     pageTitle.textContent = name;
     
     // Detectar si es un archivo HTML de demo local
-    log('🔍 Verificando URL:', url, '| isDemoHtmlFile:', isDemoHtmlFile(url), '| isNotionUrl:', isNotionUrl(url));
+    const isLocalhost = isLocalhostUrl(url);
+    log('🔍 Verificando URL:', url);
+    log('   - isDemoHtmlFile:', isDemoHtmlFile(url));
+    log('   - isNotionUrl:', isNotionUrl(url));
+    log('   - isLocalhostUrl:', isLocalhost);
+    log('   - hostname:', new URL(url).hostname);
+    
     if (isDemoHtmlFile(url)) {
       // Es un archivo HTML de demo → cargar directamente
       log('📄 Archivo HTML de demo detectado, cargando contenido local');
@@ -7507,6 +8078,17 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
       }
       
       await loadDemoHtmlContent(url, notionContainer);
+    } else if (isLocalhostUrl(url)) {
+      // Es una URL de localhost (servidor local de Obsidian plugin u otros) → cargar directamente
+      log('🏠 URL de localhost detectada, cargando contenido del servidor local');
+      
+      // Ocultar botón de recargar si existe
+      let refreshButton = document.getElementById("refresh-page-button");
+      if (refreshButton) {
+        refreshButton.classList.add("hidden");
+      }
+      
+      await loadLocalhostContent(url, notionContainer);
     } else if (isNotionUrl(url)) {
       // Es una URL de Notion → usar la API
       log('📝 URL de Notion detectada, usando API');
@@ -7771,8 +8353,9 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
           
           const pageCategoryPath = freshPageInfo.pageCategoryPath;
           
-          // Verificar si es una página de Notion para mostrar opción de recargar
+          // Verificar si es una página de Notion o localhost para mostrar opción de recargar
           const isNotionPage = isNotionUrl(currentUrl);
+          const isLocalhost = isLocalhostUrl(currentUrl);
           
           // Menú contextual simplificado para header (sin move up/down ni duplicate)
           const menuItems = [
@@ -7785,8 +8368,8 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
             },
           ];
           
-          // Agregar opción de recargar si es Notion
-          if (isNotionPage) {
+          // Agregar opción de recargar si es Notion o localhost
+          if (isNotionPage || isLocalhost) {
             menuItems.push({ separator: true });
             menuItems.push({
               icon: 'img/icon-reload.svg',
@@ -7797,18 +8380,24 @@ async function loadPageContent(url, name, selector = null, blockTypes = null) {
                 const pageName = currentName;
                 trackPageReloaded(pageName);
                 
-                // Limpiar caché de esta página ANTES de recargar
-                const pageId = extractNotionPageId(currentUrl);
-                if (pageId) {
-                  const cacheKey = CACHE_PREFIX + pageId;
-                  localStorage.removeItem(cacheKey);
-                  log('🗑️ Caché limpiado para recarga:', pageId);
+                // Limpiar caché de esta página ANTES de recargar (solo para Notion)
+                if (isNotionPage) {
+                  const pageId = extractNotionPageId(currentUrl);
+                  if (pageId) {
+                    const cacheKey = CACHE_PREFIX + pageId;
+                    localStorage.removeItem(cacheKey);
+                    log('🗑️ Caché limpiado para recarga:', pageId);
+                  }
                 }
                 
                 // Recargar el contenido
                 const notionContainer = document.getElementById("notion-container");
                 if (notionContainer) {
-                  await loadNotionContent(currentUrl, notionContainer, true, blockTypes);
+                  if (isNotionPage) {
+                    await loadNotionContent(currentUrl, notionContainer, true, blockTypes);
+                  } else if (isLocalhost) {
+                    await loadLocalhostContent(currentUrl, notionContainer);
+                  }
                 }
               }
             });
@@ -8232,17 +8821,20 @@ async function showSettings() {
   // Ocultar/mostrar secciones según rol
   const allForms = document.querySelectorAll('#settings-container .form');
   const notionTokenForm = allForms[0]; // Primera sección: Notion Token
-  const exportVaultForm = allForms[1]; // Segunda sección: Export vault
-  const feedbackForm = allForms[2]; // Tercera sección: Feedback
+  const notionImportForm = allForms[1]; // Segunda sección: Import from Notion
+  const exportVaultForm = allForms[2]; // Tercera sección: Export vault
+  const feedbackForm = allForms[3]; // Cuarta sección: Feedback
   
   if (!isGM) {
     // Player: solo mostrar feedback
     if (notionTokenForm) notionTokenForm.style.display = 'none';
+    if (notionImportForm) notionImportForm.style.display = 'none';
     if (exportVaultForm) exportVaultForm.style.display = 'none';
     if (feedbackForm) feedbackForm.style.display = '';
   } else if (isCoGMGlobal) {
-    // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
+    // Co-GM: ocultar Notion Token e Import, mostrar Export vault (con vault status) y Feedback
     if (notionTokenForm) notionTokenForm.style.display = 'none';
+    if (notionImportForm) notionImportForm.style.display = 'none';
     if (exportVaultForm) exportVaultForm.style.display = '';
     if (feedbackForm) feedbackForm.style.display = '';
   } else {
@@ -8335,10 +8927,16 @@ async function showSettings() {
   const viewJsonBtn = document.getElementById('view-json-btn');
   const loadJsonBtn = document.getElementById('load-json-btn');
   const downloadJsonBtn = document.getElementById('download-json-btn');
+  const loadJsonUrlBtn = document.getElementById('load-json-url-btn');
+  const loadJsonUrlInput = document.getElementById('load-json-url-input');
   
-  // Ocultar botón "Load vault" para Co-GM (solo lectura)
+  // Ocultar botones de cargar vault para Co-GM (solo lectura)
   if (loadJsonBtn && isCoGMGlobal) {
     loadJsonBtn.style.display = 'none';
+  }
+  if (loadJsonUrlBtn && isCoGMGlobal) {
+    loadJsonUrlBtn.style.display = 'none';
+    if (loadJsonUrlInput) loadJsonUrlInput.style.display = 'none';
   }
   
   // Mostrar botón "Ver JSON" solo si es tu cuenta (DEBUG_MODE activado)
@@ -8465,6 +9063,163 @@ async function showSettings() {
   
   // El back-button ya tiene un listener que maneja el cierre de settings-container
   // No necesitamos agregar otro listener aquí
+  
+  // ============================================
+  // NOTION IMPORT FUNCTIONALITY
+  // ============================================
+  const importNotionBtn = document.getElementById('import-notion-btn');
+  const notionImportStatus = document.getElementById('notion-import-status');
+  const notionPageSelector = document.getElementById('notion-page-selector');
+  const notionPageSelect = document.getElementById('notion-page-select');
+  const notionImportSelectedBtn = document.getElementById('notion-import-selected-btn');
+  const notionCancelBtn = document.getElementById('notion-cancel-btn');
+  const notionUrlFallback = document.getElementById('notion-url-fallback');
+  const notionUrlInput = document.getElementById('notion-url-input');
+  const notionImportUrlBtn = document.getElementById('notion-import-url-btn');
+  
+  // Función para mostrar estado
+  function showImportStatus(message, isError = false) {
+    if (notionImportStatus) {
+      notionImportStatus.textContent = message;
+      notionImportStatus.style.display = 'block';
+      notionImportStatus.style.color = isError ? '#ff6b6b' : '#888';
+    }
+  }
+  
+  // Función para ocultar todo y resetear
+  function resetImportUI() {
+    if (notionImportStatus) notionImportStatus.style.display = 'none';
+    if (notionPageSelector) notionPageSelector.style.display = 'none';
+    if (notionUrlFallback) notionUrlFallback.style.display = 'none';
+    if (notionPageSelect) notionPageSelect.innerHTML = '<option value="">-- Select a page --</option>';
+    if (notionUrlInput) notionUrlInput.value = '';
+  }
+  
+  // Función para importar y guardar el vault
+  async function performImport(pageId) {
+    try {
+      showImportStatus('Importing from Notion...');
+      
+      const vault = await importFromNotion(pageId, (progress) => {
+        showImportStatus(progress);
+      });
+      
+      // Guardar el vault
+      const savedOk = await savePagesJSON(vault, roomId);
+      
+      if (savedOk) {
+        showImportStatus('✅ Import complete! Reloading...');
+        
+        // Recargar la lista de páginas
+        setTimeout(() => {
+          resetImportUI();
+          closeSettings();
+          // Recargar la página para mostrar el nuevo contenido
+          location.reload();
+        }, 1500);
+      } else {
+        showImportStatus('❌ Error saving vault', true);
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      showImportStatus(`❌ ${error.message}`, true);
+    }
+  }
+  
+  // Botón principal de importar desde Notion
+  if (importNotionBtn && !importNotionBtn.dataset.listenerAdded) {
+    importNotionBtn.dataset.listenerAdded = 'true';
+    importNotionBtn.addEventListener('click', async () => {
+      // Verificar que hay token
+      if (!hasUserToken()) {
+        showImportStatus('❌ Please configure your Notion token first', true);
+        return;
+      }
+      
+      try {
+        showImportStatus('Searching for available pages...');
+        resetImportUI();
+        if (notionImportStatus) notionImportStatus.style.display = 'block';
+        
+        // Buscar páginas disponibles
+        const pages = await searchNotionPages();
+        
+        if (pages.length === 0) {
+          showImportStatus('No pages found. Make sure you have shared pages with your integration.', true);
+          // Mostrar fallback de URL
+          if (notionUrlFallback) notionUrlFallback.style.display = 'block';
+          return;
+        }
+        
+        // Llenar el selector con las páginas encontradas
+        if (notionPageSelect) {
+          notionPageSelect.innerHTML = '<option value="">-- Select a page --</option>';
+          pages.forEach(page => {
+            const title = extractNotionPageTitle(page);
+            const option = document.createElement('option');
+            option.value = page.id.replace(/-/g, '');
+            option.textContent = title;
+            notionPageSelect.appendChild(option);
+          });
+        }
+        
+        showImportStatus(`Found ${pages.length} pages. Select a root page to import:`);
+        if (notionPageSelector) notionPageSelector.style.display = 'block';
+        if (notionUrlFallback) notionUrlFallback.style.display = 'block';
+        
+      } catch (error) {
+        console.error('Search error:', error);
+        showImportStatus(`❌ ${error.message}`, true);
+        // Mostrar fallback de URL en caso de error
+        if (notionUrlFallback) notionUrlFallback.style.display = 'block';
+      }
+    });
+  }
+  
+  // Botón de importar página seleccionada
+  if (notionImportSelectedBtn && !notionImportSelectedBtn.dataset.listenerAdded) {
+    notionImportSelectedBtn.dataset.listenerAdded = 'true';
+    notionImportSelectedBtn.addEventListener('click', async () => {
+      const selectedPageId = notionPageSelect ? notionPageSelect.value : '';
+      if (!selectedPageId) {
+        showImportStatus('Please select a page first', true);
+        return;
+      }
+      await performImport(selectedPageId);
+    });
+  }
+  
+  // Botón de cancelar
+  if (notionCancelBtn && !notionCancelBtn.dataset.listenerAdded) {
+    notionCancelBtn.dataset.listenerAdded = 'true';
+    notionCancelBtn.addEventListener('click', () => {
+      resetImportUI();
+    });
+  }
+  
+  // Botón de importar desde URL
+  if (notionImportUrlBtn && !notionImportUrlBtn.dataset.listenerAdded) {
+    notionImportUrlBtn.dataset.listenerAdded = 'true';
+    notionImportUrlBtn.addEventListener('click', async () => {
+      const url = notionUrlInput ? notionUrlInput.value.trim() : '';
+      if (!url) {
+        showImportStatus('Please enter a Notion page URL', true);
+        return;
+      }
+      
+      const pageId = extractNotionPageId(url);
+      if (!pageId) {
+        showImportStatus('Invalid Notion URL. Please paste a valid page URL.', true);
+        return;
+      }
+      
+      await performImport(pageId);
+    });
+  }
+  
+  // ============================================
+  // FIN NOTION IMPORT FUNCTIONALITY
+  // ============================================
   
   // Ver JSON - evitar múltiples listeners
   if (viewJsonBtn && !viewJsonBtn.dataset.listenerAdded) {
@@ -8677,6 +9432,127 @@ async function showSettings() {
       } catch (e) {
         console.error('Error al cargar JSON:', e);
         alert('❌ Error loading JSON: ' + e.message);
+      }
+    });
+  }
+  
+  // Cargar JSON desde URL
+  if (loadJsonUrlBtn && loadJsonUrlInput && !loadJsonUrlBtn.dataset.listenerAdded) {
+    loadJsonUrlBtn.dataset.listenerAdded = 'true';
+    
+    // Función compartida para cargar JSON (usada tanto por botón como por Enter)
+    const loadJSONFromURL = async (url) => {
+      if (!url || !url.trim()) {
+        alert('❌ Please enter a valid URL');
+        return;
+      }
+      
+      try {
+        // Añadir indicador de carga
+        loadJsonUrlBtn.disabled = true;
+        loadJsonUrlBtn.textContent = 'Loading...';
+        
+        // Hacer fetch a la URL
+        const response = await fetch(url.trim());
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const parsed = await response.json();
+        
+        // Validar estructura básica
+        if (!parsed.categories || !Array.isArray(parsed.categories)) {
+          throw new Error('JSON must have a "categories" array');
+        }
+        
+        // Obtener roomId
+        let currentRoomId = null;
+        try {
+          if (typeof OBR !== 'undefined' && OBR.room && OBR.room.id) {
+            currentRoomId = OBR.room.id;
+            log('🔍 roomId obtenido de OBR.room.id:', currentRoomId);
+          }
+          if (!currentRoomId && typeof OBR !== 'undefined' && OBR.room && OBR.room.getId) {
+            currentRoomId = await OBR.room.getId();
+            log('🔍 roomId obtenido de OBR.room.getId():', currentRoomId);
+          }
+        } catch (e) {
+          console.warn('No se pudo obtener roomId de OBR:', e);
+        }
+        
+        if (!currentRoomId && roomId) {
+          currentRoomId = roomId;
+          log('🔍 roomId obtenido del scope:', currentRoomId);
+        }
+        
+        // Limpiar el cache antes de guardar
+        pagesConfigCache = null;
+        
+        // Borrar default si tenemos un roomId válido
+        if (currentRoomId) {
+          const defaultStorageKey = 'notion-pages-json-default';
+          try {
+            localStorage.removeItem(defaultStorageKey);
+            log('🗑️ Default eliminado del localStorage (nuevo vault cargado desde URL para roomId:', currentRoomId, ')');
+          } catch (e) {
+            console.error('❌ Error al borrar default:', e);
+          }
+        } else {
+          console.warn('⚠️ No hay roomId, el vault se guardará como default');
+        }
+        
+        // Guardar la nueva configuración
+        const saveSuccess = await savePagesJSON(parsed, currentRoomId);
+        if (saveSuccess) {
+          // Count items for tracking
+          const countItems = (config) => {
+            let count = 0;
+            const countRecursive = (cats) => {
+              if (!cats) return;
+              cats.forEach(cat => {
+                if (cat.pages) count += cat.pages.length;
+                if (cat.categories) countRecursive(cat.categories);
+              });
+            };
+            if (config.categories) countRecursive(config.categories);
+            return count;
+          };
+          trackJSONImported(countItems(parsed));
+          
+          alert('✅ Vault loaded successfully from URL. Configuration has been updated.');
+          closeSettings();
+          
+          // Actualizar la vista principal
+          const pageList = document.getElementById("page-list");
+          if (pageList) {
+            await renderPagesByCategories(parsed, pageList, currentRoomId);
+          } else {
+            window.location.reload();
+          }
+        } else {
+          alert('❌ Error saving vault. Check the console for details.');
+        }
+      } catch (e) {
+        console.error('Error al cargar vault desde URL:', e);
+        alert('❌ Error loading vault from URL: ' + e.message);
+      } finally {
+        // Restaurar botón
+        loadJsonUrlBtn.disabled = false;
+        loadJsonUrlBtn.textContent = 'Load from URL';
+      }
+    };
+    
+    // Click handler para el botón
+    loadJsonUrlBtn.addEventListener('click', async () => {
+      const url = loadJsonUrlInput.value.trim();
+      await loadJSONFromURL(url);
+    });
+    
+    // Enter key handler para el input
+    loadJsonUrlInput.addEventListener('keypress', async (e) => {
+      if (e.key === 'Enter') {
+        const url = loadJsonUrlInput.value.trim();
+        await loadJSONFromURL(url);
       }
     });
   }
