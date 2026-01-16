@@ -382,7 +382,7 @@ export class NotionService {
       
       log('📂 Bloques de página encontrados:', pageBlocks.length);
       
-      // Procesar bloques en orden (child_page y link_to_page mezclados)
+      // Procesar bloques en orden (child_page, link_to_page y child_database mezclados)
       const results = [];
       
       for (const block of pageBlocks) {
@@ -402,7 +402,22 @@ export class NotionService {
           if (linkInfo.type === 'page_id') {
             linkedPageId = linkInfo.page_id;
           } else if (linkInfo.type === 'database_id') {
-            // Las bases de datos no las soportamos por ahora
+            // link_to_page a una base de datos - obtener sus páginas
+            const databaseId = linkInfo.database_id;
+            try {
+              const dbPages = await this.fetchDatabasePages(databaseId);
+              for (const dbPage of dbPages) {
+                results.push({
+                  id: dbPage.id,
+                  title: dbPage.title,
+                  url: dbPage.url,
+                  type: 'database_page',
+                  databaseId: databaseId
+                });
+              }
+            } catch (e) {
+              logWarn('No se pudo obtener páginas de base de datos enlazada:', databaseId, e);
+            }
             continue;
           }
 
@@ -420,6 +435,30 @@ export class NotionService {
             });
           } catch (e) {
             logWarn('No se pudo obtener info de página enlazada:', linkedPageId, e);
+          }
+        } else if (block.type === 'child_database') {
+          // Base de datos inline - obtener todas sus páginas
+          const databaseId = block.id;
+          const databaseTitle = block.child_database?.title || 'Database';
+          
+          log('📊 Procesando base de datos:', databaseTitle, databaseId);
+          
+          try {
+            const dbPages = await this.fetchDatabasePages(databaseId);
+            log('📊 Páginas encontradas en DB:', dbPages.length);
+            
+            for (const dbPage of dbPages) {
+              results.push({
+                id: dbPage.id,
+                title: dbPage.title,
+                url: dbPage.url,
+                type: 'database_page',
+                databaseId: databaseId,
+                databaseTitle: databaseTitle
+              });
+            }
+          } catch (e) {
+            logWarn('No se pudo obtener páginas de base de datos:', databaseId, e);
           }
         }
       }
@@ -592,6 +631,9 @@ export class NotionService {
 
         // Si hay hijas, crear una categoría con items[]
         const items = [];
+        
+        // Agrupar páginas de bases de datos por databaseId
+        const databasePages = new Map(); // databaseId -> { title, pages: [] }
 
         // Verificar si la página principal tiene contenido real
         const mainPageHasContent = await this.hasRealContent(id);
@@ -606,9 +648,38 @@ export class NotionService {
 
         // Procesar cada página hija (en orden de Notion)
         for (const child of childPages) {
-          const result = await processPage(child.id, child.title, depth + 1);
-          if (result) {
-            items.push(result);
+          // Si es una página de base de datos, agruparla
+          if (child.type === 'database_page' && child.databaseId) {
+            if (!databasePages.has(child.databaseId)) {
+              databasePages.set(child.databaseId, {
+                title: child.databaseTitle || 'Database',
+                pages: []
+              });
+            }
+            databasePages.get(child.databaseId).pages.push({
+              type: 'page',
+              name: child.title,
+              url: child.url
+            });
+            stats.pagesImported++;
+          } else {
+            // Página normal - procesar recursivamente
+            const result = await processPage(child.id, child.title, depth + 1);
+            if (result) {
+              items.push(result);
+            }
+          }
+        }
+        
+        // Añadir carpetas de bases de datos
+        for (const [dbId, dbData] of databasePages) {
+          if (dbData.pages.length > 0) {
+            items.push({
+              type: 'category',
+              name: dbData.title,
+              items: dbData.pages
+            });
+            log(`📊 Carpeta de DB creada: ${dbData.title} con ${dbData.pages.length} páginas`);
           }
         }
 

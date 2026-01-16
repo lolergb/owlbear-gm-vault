@@ -140,9 +140,9 @@ exports.handler = async (event, context) => {
         startCursor = data.next_cursor;
       }
 
-      // Filtrar child_page y link_to_page blocks manteniendo el orden original
+      // Filtrar child_page, link_to_page y child_database blocks manteniendo el orden original
       const pageBlocks = allBlocks.filter(block => 
-        block.type === 'child_page' || block.type === 'link_to_page'
+        block.type === 'child_page' || block.type === 'link_to_page' || block.type === 'child_database'
       );
       
       return {
