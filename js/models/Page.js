@@ -8,6 +8,19 @@
 import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js';
 
 /**
+ * Genera un ID único para páginas
+ * @returns {string}
+ */
+function generatePageId() {
+  // Usar crypto.randomUUID si está disponible, sino fallback
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `page_${crypto.randomUUID().slice(0, 8)}`;
+  }
+  // Fallback para entornos sin crypto.randomUUID
+  return `page_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * Clase que representa una página de contenido
  */
 export class Page {
@@ -15,6 +28,7 @@ export class Page {
    * @param {string} name - Nombre de la página
    * @param {string} url - URL de la página (puede ser null si hay htmlContent)
    * @param {Object} options - Opciones adicionales
+   * @param {string} [options.id] - ID único (se genera automáticamente si no se proporciona)
    * @param {boolean} [options.visibleToPlayers=false] - Si está visible para jugadores
    * @param {string[]} [options.blockTypes] - Tipos de bloques a filtrar (Notion)
    * @param {Object} [options.icon] - Icono de la página
@@ -22,6 +36,7 @@ export class Page {
    * @param {string} [options.htmlContent] - HTML pre-renderizado (local-first, sin URL)
    */
   constructor(name, url, options = {}) {
+    this.id = options.id || generatePageId();
     this.name = name;
     this.url = url;
     this.visibleToPlayers = options.visibleToPlayers || false;
@@ -126,10 +141,12 @@ export class Page {
 
   /**
    * Crea una copia de la página
+   * @param {boolean} keepId - Si true, mantiene el mismo ID; si false, genera uno nuevo
    * @returns {Page}
    */
-  clone() {
+  clone(keepId = false) {
     return new Page(this.name, this.url, {
+      id: keepId ? this.id : undefined, // undefined genera nuevo ID
       visibleToPlayers: this.visibleToPlayers,
       blockTypes: this.blockTypes ? [...this.blockTypes] : null,
       icon: this.icon ? { ...this.icon } : null,
@@ -144,6 +161,7 @@ export class Page {
    */
   toJSON() {
     const json = {
+      id: this.id,
       name: this.name
     };
 
@@ -178,11 +196,13 @@ export class Page {
 
   /**
    * Crea una Page desde un objeto JSON plano
+   * Si no tiene ID (config legacy), se genera uno automáticamente
    * @param {Object} json - Objeto JSON
    * @returns {Page}
    */
   static fromJSON(json) {
     return new Page(json.name, json.url || null, {
+      id: json.id, // Si no existe, el constructor genera uno nuevo
       visibleToPlayers: json.visibleToPlayers,
       blockTypes: json.blockTypes,
       icon: json.icon,

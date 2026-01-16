@@ -8,18 +8,33 @@
 import { Page } from './Page.js';
 
 /**
+ * Genera un ID único para categorías
+ * @returns {string}
+ */
+function generateCategoryId() {
+  // Usar crypto.randomUUID si está disponible, sino fallback
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `cat_${crypto.randomUUID().slice(0, 8)}`;
+  }
+  // Fallback para entornos sin crypto.randomUUID
+  return `cat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * Clase que representa una categoría de contenido
  */
 export class Category {
   /**
    * @param {string} name - Nombre de la categoría
    * @param {Object} options - Opciones adicionales
+   * @param {string} [options.id] - ID único (se genera automáticamente si no se proporciona)
    * @param {Page[]} [options.pages=[]] - Páginas en esta categoría
    * @param {Category[]} [options.categories=[]] - Subcategorías
    * @param {boolean} [options.collapsed=false] - Si está colapsada en la UI
    * @param {Array} [options.order=null] - Orden combinado de categorías y páginas
    */
   constructor(name, options = {}) {
+    this.id = options.id || generateCategoryId();
     this.name = name;
     this.pages = options.pages || [];
     this.categories = options.categories || [];
@@ -113,24 +128,26 @@ export class Category {
   }
 
   /**
-   * Crea una copia de la categoría
+   * Crea una copia de la categoría (genera nuevo ID)
+   * @param {boolean} keepId - Si true, mantiene el mismo ID; si false, genera uno nuevo
    * @returns {Category}
    */
-  clone() {
+  clone(keepId = false) {
     return new Category(this.name, {
+      id: keepId ? this.id : undefined, // undefined genera nuevo ID
       pages: this.pages.map(p => {
         // Si p tiene método clone, usarlo; sino, convertir a Page y clonar
         if (p && typeof p.clone === 'function') {
-          return p.clone();
+          return p.clone(keepId);
         }
-        return Page.fromJSON(p).clone();
+        return Page.fromJSON(p).clone(keepId);
       }),
       categories: this.categories.map(c => {
         // Si c tiene método clone, usarlo; sino, convertir a Category y clonar
         if (c && typeof c.clone === 'function') {
-          return c.clone();
+          return c.clone(keepId);
         }
-        return Category.fromJSON(c).clone();
+        return Category.fromJSON(c).clone(keepId);
       }),
       collapsed: this.collapsed,
       order: this.order ? JSON.parse(JSON.stringify(this.order)) : null
@@ -143,6 +160,7 @@ export class Category {
    */
   toJSON() {
     const json = {
+      id: this.id,
       name: this.name
     };
 
@@ -167,6 +185,7 @@ export class Category {
 
   /**
    * Crea una Category desde un objeto JSON plano
+   * Si no tiene ID (config legacy), se genera uno automáticamente
    * @param {Object} json - Objeto JSON
    * @returns {Category}
    */
@@ -180,6 +199,7 @@ export class Category {
     );
 
     return new Category(json.name, {
+      id: json.id, // Si no existe, el constructor genera uno nuevo
       pages,
       categories,
       collapsed: json.collapsed,

@@ -3053,7 +3053,7 @@ export class ExtensionController {
    * Combina categorías existentes con nuevas (merge)
    * Trabaja con formato items[] 
    * - Preserva páginas/subcategorías añadidas manualmente por el usuario
-   * - Actualiza las que coinciden por nombre o URL
+   * - Busca primero por ID, luego por nombre/URL
    * - Añade las nuevas que no existen
    * @private
    */
@@ -3062,8 +3062,14 @@ export class ExtensionController {
     const result = JSON.parse(JSON.stringify(existingCategories || []));
     
     for (const newCat of newCategories) {
-      // Buscar si existe una categoría con el mismo nombre
-      const existingIndex = result.findIndex(c => c.name === newCat.name);
+      // Buscar por ID primero, luego por nombre
+      let existingIndex = -1;
+      if (newCat.id) {
+        existingIndex = result.findIndex(c => c.id === newCat.id);
+      }
+      if (existingIndex < 0) {
+        existingIndex = result.findIndex(c => c.name === newCat.name);
+      }
       
       if (existingIndex >= 0) {
         // Merge: combinar items preservando los existentes
@@ -3074,10 +3080,18 @@ export class ExtensionController {
           
           for (const newItem of newCat.items) {
             if (newItem.type === 'category') {
-              // Subcategoría: hacer merge recursivo
-              const existingSubcatIndex = existingCat.items.findIndex(i => 
-                i.type === 'category' && i.name === newItem.name
-              );
+              // Subcategoría: buscar por ID primero, luego por nombre
+              let existingSubcatIndex = -1;
+              if (newItem.id) {
+                existingSubcatIndex = existingCat.items.findIndex(i => 
+                  i.type === 'category' && i.id === newItem.id
+                );
+              }
+              if (existingSubcatIndex < 0) {
+                existingSubcatIndex = existingCat.items.findIndex(i => 
+                  i.type === 'category' && i.name === newItem.name
+                );
+              }
               
               if (existingSubcatIndex >= 0) {
                 // Merge recursivo de subcategoría
@@ -3091,18 +3105,28 @@ export class ExtensionController {
                 existingCat.items.push(JSON.parse(JSON.stringify(newItem)));
               }
             } else {
-              // Página: buscar por nombre O por URL
-              const existingItemIndex = existingCat.items.findIndex(i => 
-                i.type === 'page' && (i.name === newItem.name || i.url === newItem.url)
-              );
+              // Página: buscar por ID primero, luego por nombre/URL
+              let existingItemIndex = -1;
+              if (newItem.id) {
+                existingItemIndex = existingCat.items.findIndex(i => 
+                  i.type === 'page' && i.id === newItem.id
+                );
+              }
+              if (existingItemIndex < 0) {
+                existingItemIndex = existingCat.items.findIndex(i => 
+                  i.type === 'page' && (i.name === newItem.name || i.url === newItem.url)
+                );
+              }
               
               if (existingItemIndex >= 0) {
-                // Actualizar página existente (preservar propiedades del usuario como visibility)
+                // Actualizar página existente (preservar propiedades del usuario)
                 existingCat.items[existingItemIndex] = { 
                   ...existingCat.items[existingItemIndex], 
                   ...newItem,
-                  // Preservar visibility si el usuario la cambió
-                  visibility: existingCat.items[existingItemIndex].visibility
+                  // Preservar ID existente y visibility
+                  id: existingCat.items[existingItemIndex].id,
+                  visibility: existingCat.items[existingItemIndex].visibility,
+                  visibleToPlayers: existingCat.items[existingItemIndex].visibleToPlayers
                 };
               } else {
                 // Añadir nueva página

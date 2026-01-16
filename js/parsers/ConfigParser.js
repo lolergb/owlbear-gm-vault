@@ -463,6 +463,10 @@ export class ConfigParser {
       items
     };
 
+    if (category.id) {
+      result.id = category.id;
+    }
+
     if (category.collapsed) {
       result.collapsed = true;
     }
@@ -480,6 +484,7 @@ export class ConfigParser {
       name: page.name
     };
 
+    if (page.id) item.id = page.id;
     if (page.url) item.url = page.url;
     if (page.htmlContent) item.htmlContent = page.htmlContent;
     if (page.visibleToPlayers) item.visibleToPlayers = true;
@@ -550,6 +555,11 @@ export class ConfigParser {
       order
     };
 
+    // Preservar ID si existe
+    if (category.id) {
+      result.id = category.id;
+    }
+
     if (category.collapsed) {
       result.collapsed = true;
     }
@@ -566,6 +576,8 @@ export class ConfigParser {
       name: item.name
     };
 
+    // Preservar ID si existe
+    if (item.id) page.id = item.id;
     if (item.url) page.url = item.url;
     if (item.htmlContent) page.htmlContent = item.htmlContent;
     if (item.visibleToPlayers) page.visibleToPlayers = true;
