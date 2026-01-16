@@ -2795,9 +2795,10 @@ export class ExtensionController {
       const formActions = form.querySelector('.form__actions');
       const progressEl = document.getElementById('import-progress');
 
-      // Contar páginas actuales en el vault
+      // Contar páginas actuales en el vault (convertir a JSON si es instancia)
       const currentConfig = this.config || { categories: [] };
-      const currentPagesCount = this._countPagesInConfig(currentConfig);
+      const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
+      const currentPagesCount = this._countPagesInConfig(configForCount);
 
       // Ocultar elementos del formulario de selección
       formFields.forEach(field => field.style.display = 'none');
@@ -2921,8 +2922,11 @@ export class ExtensionController {
           if (importedCategories.length > 0) {
             let finalCategories;
             
-            // Convertir config existente a formato items[] para compatibilidad
-            const existingInItemsFormat = this.configParser.toItemsFormat(currentConfig);
+            // Obtener config ACTUAL y convertir a JSON plano, luego a formato items[]
+            const currentConfigNow = this.config || { categories: [] };
+            // Convertir de instancia Config a JSON plano si es necesario
+            const configJson = currentConfigNow.toJSON ? currentConfigNow.toJSON() : currentConfigNow;
+            const existingInItemsFormat = this.configParser.toItemsFormat(configJson);
             const existingCategories = existingInItemsFormat.categories || [];
 
             switch (importMode) {
@@ -3004,27 +3008,41 @@ export class ExtensionController {
 
   /**
    * Cuenta el número total de páginas en una configuración
+   * Soporta tanto formato legacy (pages/categories) como nuevo (items)
    * @private
    */
   _countPagesInConfig(config) {
     let count = 0;
-    const countItems = (items) => {
-      if (!items) return;
-      for (const item of items) {
-        if (item.type === 'page' || item.url) {
-          count++;
+    
+    const countInCategory = (cat) => {
+      if (!cat) return;
+      
+      // Formato items[] (nuevo)
+      if (cat.items) {
+        for (const item of cat.items) {
+          if (item.type === 'page' || item.url) {
+            count++;
+          }
+          if (item.type === 'category') {
+            countInCategory(item);
+          }
         }
-        if (item.type === 'category' && item.items) {
-          countItems(item.items);
+      }
+      
+      // Formato legacy (pages/categories)
+      if (cat.pages) {
+        count += cat.pages.length;
+      }
+      if (cat.categories) {
+        for (const subcat of cat.categories) {
+          countInCategory(subcat);
         }
       }
     };
     
     if (config.categories) {
       for (const cat of config.categories) {
-        if (cat.items) {
-          countItems(cat.items);
-        }
+        countInCategory(cat);
       }
     }
     
