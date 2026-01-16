@@ -34,75 +34,87 @@ export class NotionService {
   }
 
   /**
-   * Filtra páginas de una base de datos por los mentions encontrados en el contenido
-   * @param {Array} dbPages - Páginas de la base de datos
-   * @param {Set} mentionedPageIds - Set de IDs de páginas mencionadas (normalizados)
-   * @param {string} dbName - Nombre de la DB para logging
-   * @returns {Array} - Páginas filtradas o todas si no hay coincidencias
+   * Extrae labels (tags) de las propiedades de una página de base de datos
+   * Busca en propiedades de tipo: select, multi_select, status
+   * @param {Object} page - Página de Notion con propiedades
+   * @returns {Array<string>} - Array de labels encontrados
    */
-  _filterPagesByMentions(dbPages, mentionedPageIds, dbName = 'DB') {
-    if (mentionedPageIds.size === 0) {
-      return dbPages;
-    }
+  _extractLabelsFromPage(page) {
+    const labels = [];
     
-    const filteredPages = dbPages.filter(dbPage => {
-      const normalizedId = this._normalizeId(dbPage.id);
-      return mentionedPageIds.has(normalizedId) || mentionedPageIds.has(dbPage.id);
-    });
+    if (!page?.properties) return labels;
     
-    if (filteredPages.length > 0) {
-      log(`🔍 ${dbName} filtrado por mentions: ${filteredPages.length} de ${dbPages.length} páginas`);
-      return filteredPages;
-    }
-    
-    // Si no hay coincidencias, importar todas (comportamiento por defecto)
-    log(`📊 ${dbName}: no hay coincidencias con mentions, importando todas las páginas`);
-    return dbPages;
-  }
-
-  /**
-   * Importa páginas mencionadas individualmente cuando la DB no es accesible
-   * Esto permite importar contenido incluso si la DB no está compartida con la integración
-   * @param {Array} mentions - Array de mentions {pageId, text}
-   * @param {string} databaseId - ID de la DB que falló (para logging)
-   * @param {Error} originalError - Error original
-   * @returns {Promise<Array>} - Páginas importadas
-   */
-  async _importMentionsAsFallback(mentions, databaseId, originalError) {
-    if (!mentions || mentions.length === 0) {
-      log(`📊 DB ${databaseId} no accesible y sin mentions para fallback`);
-      return [];
-    }
-    
-    log(`🔄 Fallback: intentando importar ${mentions.length} mentions individualmente`);
-    const importedPages = [];
-    
-    for (const mention of mentions) {
-      try {
-        const pageInfo = await this._getMentionedPageInfo(mention.pageId);
-        
-        if (pageInfo) {
-          importedPages.push({
-            id: pageInfo.id,
-            title: pageInfo.title,
-            url: pageInfo.url,
-            type: 'database_page',
-            databaseId: databaseId
-          });
-          log(`  ✅ Importado via fallback: "${pageInfo.title}"`);
+    for (const [propName, propValue] of Object.entries(page.properties)) {
+      // Select (un solo valor)
+      if (propValue.type === 'select' && propValue.select?.name) {
+        labels.push(propValue.select.name);
+      }
+      // Multi-select (múltiples valores)
+      else if (propValue.type === 'multi_select' && propValue.multi_select) {
+        for (const option of propValue.multi_select) {
+          if (option.name) {
+            labels.push(option.name);
+          }
         }
-      } catch (e) {
-        // Silenciar errores individuales - ya logueamos en _getMentionedPageInfo
+      }
+      // Status
+      else if (propValue.type === 'status' && propValue.status?.name) {
+        labels.push(propValue.status.name);
       }
     }
     
-    if (importedPages.length > 0) {
-      log(`🔄 Fallback exitoso: ${importedPages.length} páginas importadas de ${mentions.length} mentions`);
-    } else {
-      log(`📊 Base de datos omitida: no está compartida con tu integración de Notion`);
-    }
+    return labels;
+  }
+
+  /**
+   * Verifica si un label coincide con un nombre de categoría (matching flexible)
+   * Ejemplos: "NPC" coincide con "NPCs de mi juego", "Villain" con "Villains"
+   * @param {string} label - Label de la página
+   * @param {string} categoryName - Nombre de la categoría
+   * @returns {boolean} - true si hay coincidencia
+   */
+  _labelMatchesCategory(label, categoryName) {
+    if (!label || !categoryName) return false;
     
-    return importedPages;
+    const normalizedLabel = label.toLowerCase().trim();
+    const normalizedCategory = categoryName.toLowerCase().trim();
+    
+    // Match exacto
+    if (normalizedLabel === normalizedCategory) return true;
+    
+    // El label está contenido en el nombre de la categoría
+    // "npc" está en "npcs de mi juego"
+    if (normalizedCategory.includes(normalizedLabel)) return true;
+    
+    // La categoría empieza con el label + variaciones plurales
+    // "npc" coincide con "npcs"
+    if (normalizedCategory.startsWith(normalizedLabel)) return true;
+    
+    // El label es plural y la categoría es singular o viceversa
+    // "npcs" coincide con "npc", "villains" con "villain"
+    const labelWithoutS = normalizedLabel.endsWith('s') ? normalizedLabel.slice(0, -1) : normalizedLabel;
+    const categoryWithoutS = normalizedCategory.endsWith('s') ? normalizedCategory.slice(0, -1) : normalizedCategory;
+    
+    if (labelWithoutS === categoryWithoutS) return true;
+    if (normalizedCategory.includes(labelWithoutS)) return true;
+    if (normalizedCategory.startsWith(labelWithoutS)) return true;
+    
+    return false;
+  }
+
+  /**
+   * Encuentra la mejor categoría para un label dado las categorías existentes
+   * @param {string} label - Label a buscar
+   * @param {Array<string>} categoryNames - Nombres de categorías existentes
+   * @returns {string|null} - Nombre de la categoría coincidente o null
+   */
+  _findMatchingCategory(label, categoryNames) {
+    for (const categoryName of categoryNames) {
+      if (this._labelMatchesCategory(label, categoryName)) {
+        return categoryName;
+      }
+    }
+    return null;
   }
 
   /**
@@ -466,7 +478,14 @@ export class NotionService {
       
       // Extraer mentions del contenido para filtrar bases de datos
       const mentionsInContent = this._extractMentionsFromBlocks(pageBlocks);
-      const mentionedPageIds = new Set(mentionsInContent.map(m => this._normalizeId(m.pageId)));
+      const mentionedPageIds = new Set(mentionsInContent.map(m => {
+        // Normalizar ID para comparación
+        let id = m.pageId;
+        if (!id.includes('-') && id.length === 32) {
+          id = `${id.substring(0, 8)}-${id.substring(8, 12)}-${id.substring(12, 16)}-${id.substring(16, 20)}-${id.substring(20, 32)}`;
+        }
+        return id;
+      }));
       
       if (mentionedPageIds.size > 0) {
         log(`🔍 Mentions encontrados en contenido: ${mentionedPageIds.size} (se usarán para filtrar bases de datos)`);
@@ -498,7 +517,23 @@ export class NotionService {
               const dbPages = await this.fetchDatabasePages(databaseId);
               
               // Filtrar por mentions si hay alguno en el contenido
-              const pagesToAdd = this._filterPagesByMentions(dbPages, mentionedPageIds, 'Linked DB');
+              let pagesToAdd = dbPages;
+              if (mentionedPageIds.size > 0) {
+                const filteredPages = dbPages.filter(dbPage => {
+                  let pageId = dbPage.id;
+                  if (!pageId.includes('-') && pageId.length === 32) {
+                    pageId = `${pageId.substring(0, 8)}-${pageId.substring(8, 12)}-${pageId.substring(12, 16)}-${pageId.substring(16, 20)}-${pageId.substring(20, 32)}`;
+                  }
+                  return mentionedPageIds.has(pageId) || mentionedPageIds.has(dbPage.id);
+                });
+                
+                if (filteredPages.length > 0) {
+                  pagesToAdd = filteredPages;
+                  log(`🔍 Linked DB filtrado por mentions: ${filteredPages.length} de ${dbPages.length} páginas`);
+                } else {
+                  log('📊 Linked DB: no hay coincidencias con mentions, importando todas las páginas');
+                }
+              }
               
               for (const dbPage of pagesToAdd) {
                 results.push({
@@ -506,15 +541,12 @@ export class NotionService {
                   title: dbPage.title,
                   url: dbPage.url,
                   type: 'database_page',
-                  databaseId: databaseId
+                  databaseId: databaseId,
+                  labels: dbPage.labels || [] // Incluir labels para agrupación
                 });
               }
             } catch (e) {
-              // Fallback: si la DB no es accesible, intentar importar mentions individuales
-              const fallbackPages = await this._importMentionsAsFallback(mentionsInContent, databaseId, e);
-              for (const page of fallbackPages) {
-                results.push(page);
-              }
+              logWarn('No se pudo obtener páginas de base de datos enlazada:', databaseId, e);
             }
             continue;
           }
@@ -546,7 +578,25 @@ export class NotionService {
             log('📊 Páginas encontradas en DB:', dbPages.length);
             
             // Filtrar por mentions si hay alguno en el contenido
-            const pagesToAdd = this._filterPagesByMentions(dbPages, mentionedPageIds, databaseTitle);
+            let pagesToAdd = dbPages;
+            if (mentionedPageIds.size > 0) {
+              // Normalizar IDs de páginas de la DB para comparación
+              const filteredPages = dbPages.filter(dbPage => {
+                let pageId = dbPage.id;
+                if (!pageId.includes('-') && pageId.length === 32) {
+                  pageId = `${pageId.substring(0, 8)}-${pageId.substring(8, 12)}-${pageId.substring(12, 16)}-${pageId.substring(16, 20)}-${pageId.substring(20, 32)}`;
+                }
+                return mentionedPageIds.has(pageId) || mentionedPageIds.has(dbPage.id);
+              });
+              
+              if (filteredPages.length > 0) {
+                pagesToAdd = filteredPages;
+                log(`🔍 Filtrado por mentions: ${filteredPages.length} de ${dbPages.length} páginas`);
+              } else {
+                // Si no hay coincidencias, importar todas (comportamiento por defecto)
+                log('📊 No hay coincidencias con mentions, importando todas las páginas');
+              }
+            }
             
             for (const dbPage of pagesToAdd) {
               results.push({
@@ -555,16 +605,12 @@ export class NotionService {
                 url: dbPage.url,
                 type: 'database_page',
                 databaseId: databaseId,
-                databaseTitle: databaseTitle
+                databaseTitle: databaseTitle,
+                labels: dbPage.labels || [] // Incluir labels para agrupación
               });
             }
           } catch (e) {
-            // Fallback: si la DB no es accesible, intentar importar mentions individuales
-            const fallbackPages = await this._importMentionsAsFallback(mentionsInContent, databaseId, e);
-            for (const page of fallbackPages) {
-              page.databaseTitle = databaseTitle;
-              results.push(page);
-            }
+            logWarn('No se pudo obtener páginas de base de datos:', databaseId, e);
           }
         }
       }
@@ -874,7 +920,10 @@ export class NotionService {
         // Si hay hijas, crear una categoría con items[]
         const items = [];
         
-        // Agrupar páginas de bases de datos por databaseId
+        // Mapa de categorías por nombre para agrupar por labels
+        const categoryMap = new Map(); // categoryName -> { type: 'category', name, items: [] }
+        
+        // Páginas de DB sin categoría asignada (irán a carpeta de la DB)
         const databasePages = new Map(); // databaseId -> { title, pages: [] }
 
         // Verificar si la página principal tiene contenido real
@@ -888,32 +937,70 @@ export class NotionService {
           stats.pagesImported++;
         }
 
-        // Procesar cada página hija (en orden de Notion)
+        // PASO 1: Procesar páginas normales primero para obtener categorías existentes
+        const dbPagesForLater = [];
         for (const child of childPages) {
-          // Si es una página de base de datos, agruparla
           if (child.type === 'database_page' && child.databaseId) {
+            // Guardar páginas de DB para procesarlas después
+            dbPagesForLater.push(child);
+          } else {
+            // Página normal - procesar recursivamente
+            const result = await processPage(child.id, child.title, depth + 1);
+            if (result) {
+              items.push(result);
+              // Si es una categoría, registrarla para matching por labels
+              if (result.type === 'category') {
+                categoryMap.set(result.name, result);
+              }
+            }
+          }
+        }
+        
+        // PASO 2: Procesar páginas de DB con agrupación por labels
+        const existingCategoryNames = Array.from(categoryMap.keys());
+        
+        for (const child of dbPagesForLater) {
+          const pageData = {
+            type: 'page',
+            name: child.title,
+            url: child.url
+          };
+          
+          let assignedToCategory = false;
+          
+          // Buscar si algún label coincide con una categoría existente
+          if (child.labels && child.labels.length > 0) {
+            for (const label of child.labels) {
+              const matchingCategoryName = this._findMatchingCategory(label, existingCategoryNames);
+              
+              if (matchingCategoryName) {
+                // Añadir a la categoría existente
+                const category = categoryMap.get(matchingCategoryName);
+                if (category && category.items) {
+                  category.items.push(pageData);
+                  assignedToCategory = true;
+                  log(`🏷️ "${child.title}" asignado a "${matchingCategoryName}" por label "${label}"`);
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Si no se asignó a ninguna categoría, añadir a la carpeta de la DB
+          if (!assignedToCategory) {
             if (!databasePages.has(child.databaseId)) {
               databasePages.set(child.databaseId, {
                 title: child.databaseTitle || 'Database',
                 pages: []
               });
             }
-            databasePages.get(child.databaseId).pages.push({
-              type: 'page',
-              name: child.title,
-              url: child.url
-            });
-            stats.pagesImported++;
-          } else {
-            // Página normal - procesar recursivamente
-            const result = await processPage(child.id, child.title, depth + 1);
-            if (result) {
-              items.push(result);
-            }
+            databasePages.get(child.databaseId).pages.push(pageData);
           }
+          
+          stats.pagesImported++;
         }
         
-        // Añadir carpetas de bases de datos
+        // PASO 3: Añadir carpetas de bases de datos (solo las que no se asignaron por label)
         for (const [dbId, dbData] of databasePages) {
           if (dbData.pages.length > 0) {
             items.push({
@@ -960,7 +1047,9 @@ export class NotionService {
                   // Extraer ID de la URL
                   const urlMatch = page.url?.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
                   if (urlMatch) {
-                    importedIds.add(this._normalizeId(urlMatch[1]));
+                    const extractedId = urlMatch[1];
+                    const formattedId = `${extractedId.substring(0, 8)}-${extractedId.substring(8, 12)}-${extractedId.substring(12, 16)}-${extractedId.substring(16, 20)}-${extractedId.substring(20, 32)}`;
+                    importedIds.add(formattedId);
                   }
                 }
               }
@@ -968,7 +1057,12 @@ export class NotionService {
               // Procesar mentions que no estén ya importados
               for (const mention of mentions) {
                 const mentionId = mention.pageId;
-                const normalizedId = this._normalizeId(mentionId);
+                
+                // Normalizar ID para comparación
+                let normalizedId = mentionId;
+                if (!mentionId.includes('-') && mentionId.length === 32) {
+                  normalizedId = `${mentionId.substring(0, 8)}-${mentionId.substring(8, 12)}-${mentionId.substring(12, 16)}-${mentionId.substring(16, 20)}-${mentionId.substring(20, 32)}`;
+                }
                 
                 if (importedIds.has(normalizedId) || importedIds.has(mentionId)) {
                   log(`  ✅ Mention "${mention.text}" ya está importado`);
@@ -1234,14 +1328,16 @@ export class NotionService {
       
       log('📊 Páginas encontradas en la base de datos:', pages.length);
       
-      // Mapear a formato simplificado con ID y título
+      // Mapear a formato simplificado con ID, título y labels
       return pages.map(page => {
         const title = this._extractPageTitle(page);
+        const labels = this._extractLabelsFromPage(page);
         
         return {
           id: this._normalizeId(page.id),
           title,
-          url: this._buildNotionUrl(title, page.id)
+          url: this._buildNotionUrl(title, page.id),
+          labels // Array de labels para agrupar por categoría
         };
       });
     } catch (e) {
