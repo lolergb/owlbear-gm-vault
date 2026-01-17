@@ -971,10 +971,12 @@ export class NotionService {
           }
         }
         
-        // PASO 2: Procesar páginas de DB con agrupación por labels
+        // PASO 2: Procesar páginas de DB
+        // Por defecto: si hay categoría que coincide → añadir ahí, si no → crear carpeta con nombre de la DB
         const existingCategoryNames = Array.from(categoryMap.keys());
-        let dbAssigned = 0;
-        let dbFiltered = 0;
+        const databaseFolders = new Map(); // databaseTitle -> pages[]
+        let dbAssignedToCategory = 0;
+        let dbInFolders = 0;
         
         for (const child of dbPagesForLater) {
           const pageData = {
@@ -996,26 +998,42 @@ export class NotionService {
                 if (category && category.items) {
                   category.items.push(pageData);
                   assignedToCategory = true;
-                  dbAssigned++;
+                  dbAssignedToCategory++;
+                  log(`  ✅ "${child.title}" asignado a "${matchingCategoryName}" por label "${label}"`);
                   break;
                 }
               }
             }
           }
           
-          // Si no se asignó a ninguna categoría, NO crear carpeta de DB
+          // Si no se asignó por label, agrupar por título de la DB para crear carpeta
           if (!assignedToCategory) {
-            stats.dbPagesFiltered++;
-            dbFiltered++;
-            continue;
+            const folderName = child.databaseTitle || 'Database';
+            if (!databaseFolders.has(folderName)) {
+              databaseFolders.set(folderName, []);
+            }
+            databaseFolders.get(folderName).push(pageData);
+            dbInFolders++;
           }
           
           stats.pagesImported++;
         }
         
+        // Crear carpetas para páginas de DB que no coincidieron con categorías
+        for (const [folderName, pages] of databaseFolders) {
+          if (pages.length > 0) {
+            items.push({
+              type: 'category',
+              name: folderName,
+              items: pages
+            });
+            log(`📁 Carpeta de DB creada: "${folderName}" con ${pages.length} páginas`);
+          }
+        }
+        
         // Log resumen de procesamiento de DB
         if (dbPagesForLater.length > 0) {
-          log(`📊 DB: ${dbAssigned} asignados por label, ${dbFiltered} filtrados (sin categoría coincidente)`);
+          log(`📊 DB: ${dbAssignedToCategory} asignados por label, ${dbInFolders} en carpetas de DB`);
         }
 
         // ============================================
