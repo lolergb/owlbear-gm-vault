@@ -3602,7 +3602,8 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   contentDiv.innerHTML = `
     <div class="empty-state notion-loading">
       <div class="empty-state-icon">⏳</div>
-      <p class="empty-state-text">Loading content...</p>
+      <p class="empty-state-text">Loading content</p>
+      <p class="empty-state-hint">Fetching data from Notion...</p>
     </div>
   `;
   // No usar estilos inline - la clase show-content ya está añadida por setNotionDisplayMode
@@ -3680,9 +3681,10 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     
     if (!blocks || blocks.length === 0) {
       contentDiv.innerHTML = `
-        <div class="empty-state notion-loading">
+        <div class="empty-state">
           <div class="empty-state-icon">📄</div>
-          <p class="empty-state-text">No content found on this page.</p>
+          <p class="empty-state-text">No content found</p>
+          <p class="empty-state-hint">This page appears to be empty</p>
         </div>
       `;
       return;
@@ -3721,10 +3723,11 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   } catch (error) {
     console.error('Error al cargar contenido de Notion:', error);
     contentDiv.innerHTML = `
-      <div class="notion-error">
-        <strong>Error loading content:</strong><br>
-        ${error.message}<br><br>
-        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary">Open in Notion</button>
+      <div class="empty-state">
+        <div class="empty-state-icon">⚠️</div>
+        <p class="empty-state-text">Error loading content</p>
+        <p class="empty-state-hint">${error.message}</p>
+        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary" style="margin-top: var(--spacing-md);">Open in Notion</button>
       </div>
     `;
   }
@@ -6952,9 +6955,10 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
   const videoId = extractVideoId(url, videoType);
   if (!videoId) {
     contentDiv.innerHTML = `
-      <div class="empty-state notion-loading">
+      <div class="empty-state">
         <div class="empty-state-icon">❌</div>
         <p class="empty-state-text">Could not extract video ID</p>
+        <p class="empty-state-hint">The video URL format is not supported</p>
       </div>
     `;
     return;
@@ -7465,7 +7469,8 @@ async function loadDemoHtmlContent(url, container) {
   contentDiv.innerHTML = `
     <div class="empty-state notion-loading">
       <div class="empty-state-icon">⏳</div>
-      <p class="empty-state-text">Loading content...</p>
+      <p class="empty-state-text">Loading content</p>
+      <p class="empty-state-hint">Fetching demo content...</p>
     </div>
   `;
   // No usar estilos inline - la clase show-content ya está añadida por setNotionDisplayMode
@@ -7508,9 +7513,10 @@ async function loadDemoHtmlContent(url, container) {
   } catch (error) {
     console.error('Error al cargar contenido HTML de demo:', error);
     contentDiv.innerHTML = `
-      <div class="empty-state notion-loading">
+      <div class="empty-state">
         <div class="empty-state-icon">❌</div>
-        <p class="empty-state-text">Error loading demo content: ${error.message}</p>
+        <p class="empty-state-text">Error loading demo content</p>
+        <p class="empty-state-hint">${error.message}</p>
       </div>
     `;
   }

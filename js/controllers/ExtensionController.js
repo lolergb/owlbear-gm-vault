@@ -298,8 +298,9 @@ export class ExtensionController {
     if (notionContent) {
       notionContent.innerHTML = `
         <div class="empty-state notion-loading">
-          <div class="loading-spinner"></div>
-          <p class="empty-state-text">Loading content...</p>
+          <div class="empty-state-icon">⏳</div>
+          <p class="empty-state-text">Loading content</p>
+          <p class="empty-state-hint">Fetching data from Notion...</p>
         </div>
       `;
     }
@@ -327,8 +328,10 @@ export class ExtensionController {
       logError('Error cargando contenido en modal:', e);
       if (notionContent) {
         notionContent.innerHTML = `
-          <div class="error-container">
-            <p class="error-message">Error loading content: ${e.message}</p>
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <p class="empty-state-text">Error loading content</p>
+            <p class="empty-state-hint">${e.message}</p>
           </div>
         `;
       }
@@ -420,8 +423,9 @@ export class ExtensionController {
       notionContent.className = 'notion-container__content notion-content';
       notionContent.innerHTML = `
         <div class="empty-state notion-loading">
-          <div class="loading-spinner"></div>
-          <p class="empty-state-text">Loading content...</p>
+          <div class="empty-state-icon">⏳</div>
+          <p class="empty-state-text">Loading content</p>
+          <p class="empty-state-hint">Fetching data from Notion...</p>
         </div>
       `;
     }
@@ -453,8 +457,10 @@ export class ExtensionController {
       logError('Error al abrir página:', e);
       if (notionContent) {
         notionContent.innerHTML = `
-          <div class="error-container">
-            <p class="error-message">Error loading page: ${e.message}</p>
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <p class="empty-state-text">Error loading page</p>
+            <p class="empty-state-hint">${e.message}</p>
           </div>
         `;
       }
@@ -4936,8 +4942,10 @@ export class ExtensionController {
     } catch (e) {
       logError('Error renderizando HTML embebido:', e);
       notionContent.innerHTML = `
-        <div class="error-container">
-          <p class="error-message">Error loading embedded content: ${e.message}</p>
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p class="empty-state-text">Error loading embedded content</p>
+          <p class="empty-state-hint">${e.message}</p>
         </div>
       `;
     }
@@ -4952,8 +4960,9 @@ export class ExtensionController {
     // Mostrar loading
     notionContent.innerHTML = `
       <div class="empty-state notion-loading">
-        <div class="loading-spinner"></div>
-        <p class="empty-state-text">Loading content...</p>
+        <div class="empty-state-icon">⏳</div>
+        <p class="empty-state-text">Loading content</p>
+        <p class="empty-state-hint">Fetching demo content...</p>
       </div>
     `;
 
@@ -5023,8 +5032,10 @@ export class ExtensionController {
     } catch (e) {
       logError('Error cargando demo HTML:', e);
       notionContent.innerHTML = `
-        <div class="error-container">
-          <p class="error-message">Error loading content: ${e.message}</p>
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <p class="empty-state-text">Error loading content</p>
+          <p class="empty-state-hint">${e.message}</p>
         </div>
       `;
     }
@@ -5048,8 +5059,10 @@ export class ExtensionController {
       const notionContent = document.getElementById('notion-content');
       if (notionContent) {
         notionContent.innerHTML = `
-          <div class="error-container">
-            <p class="error-message">Error: No URL provided</p>
+          <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
+            <p class="empty-state-text">Error loading page</p>
+            <p class="empty-state-hint">No URL was provided</p>
           </div>
         `;
       }

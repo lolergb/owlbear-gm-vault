@@ -97,6 +97,7 @@
     
     /* Alturas mínimas */
     --min-height-image-container: 100px;
+    --max-height-image-container: 200px;
   }
   
 /* ==========================================================================
