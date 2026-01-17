@@ -5495,7 +5495,8 @@ export class ExtensionController {
         const pageName = mention.dataset.mentionPageName;
         const pageUrl = mention.dataset.mentionPageUrl;
         
-        if (pageId && pageUrl) {
+        // Solo necesitamos pageId para abrir la página (pageUrl puede estar vacío)
+        if (pageId) {
           await this._openMentionedPage(pageId, pageName, pageUrl, mention);
         }
       });
@@ -5510,7 +5511,8 @@ export class ExtensionController {
           const pageName = mention.dataset.mentionPageName;
           const pageUrl = mention.dataset.mentionPageUrl;
           
-          if (pageId && pageUrl) {
+          // Solo necesitamos pageId para abrir la página (pageUrl puede estar vacío)
+          if (pageId) {
             await this._openMentionedPage(pageId, pageName, pageUrl, mention);
           }
         }
