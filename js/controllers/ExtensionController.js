@@ -198,7 +198,15 @@ export class ExtensionController {
     window.refreshImage = async function(button) {
       log('🔄 Refrescando página por error de imagen...');
       
-      // Intentar obtener la página actual del controller
+      // Solo el Master GM puede refrescar contenido de Notion (tiene acceso a la API)
+      // Para Co-GM y Players, no intentar refrescar automáticamente
+      if (!controller.isGM || controller.isCoGM) {
+        log('👤 Co-GM/Player: no se puede refrescar contenido automáticamente');
+        // No hacer nada - el botón de retry ya está visible
+        return;
+      }
+      
+      // Intentar obtener la página actual del controller (solo Master GM)
       if (controller.currentPage && controller.currentPage.isNotionPage()) {
         const pageId = controller.currentPage.getNotionPageId();
         if (pageId) {
@@ -4659,7 +4667,7 @@ export class ExtensionController {
                    data-image-caption=""
                    data-block-id="cover-${pageId}"
                    onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-                   onerror="if(!this.dataset.refreshAttempted) { this.dataset.refreshAttempted='true'; setTimeout(() => { if(window.refreshImage) window.refreshImage(); }, 500); } else { this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />
+                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />
               <button class="notion-image-share-button share-button" 
                       data-image-url="${coverUrl}" 
                       data-image-caption=""
@@ -4783,7 +4791,7 @@ export class ExtensionController {
                    data-image-caption=""
                    data-block-id="cover-${pageId}"
                    onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-                   onerror="if(!this.dataset.refreshAttempted) { this.dataset.refreshAttempted='true'; setTimeout(() => { if(window.refreshImage) window.refreshImage(); }, 500); } else { this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />${shareButtonHtml}
+                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />${shareButtonHtml}
             </div>
           </div>
         `;
@@ -5636,15 +5644,90 @@ export class ExtensionController {
       // Configurar renderer para modo modal (mentions no clickeables)
       this.notionRenderer.setRenderingOptions({ isInModal: true });
       
-      // Usar función centralizada que incluye header (cover, título, icono)
-      // Solo GM Master ve botones de share en el modal
-      const result = await this._generateNotionHtmlWithHeader(notionPageId, {
-        includeShareButtons: this.isGM && !this.isCoGM,
-        fallbackTitle: displayName,
-        useCache: true
-      });
+      let htmlContent = null;
       
-      if (!result || !result.html) {
+      // Master GM: usar API de Notion directamente
+      // CoGM y Players: solicitar contenido vía broadcast
+      if (this.isGM && !this.isCoGM) {
+        // Master GM: generar contenido con header completo
+        const result = await this._generateNotionHtmlWithHeader(notionPageId, {
+          includeShareButtons: true,
+          fallbackTitle: displayName,
+          useCache: true
+        });
+        htmlContent = result?.html;
+      } else {
+        // CoGM y Players: solicitar contenido al GM
+        log('👤 Co-GM/Player: solicitando contenido de mention al GM...');
+        
+        // Verificar si el GM está activo
+        const gmAvailable = await this._checkGMAvailability();
+        
+        if (!gmAvailable.isActive) {
+          content.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">👋</div>
+              <p class="empty-state-text">Your GM is not active right now</p>
+              <p class="empty-state-hint">Wait for them to join the session</p>
+              <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                🔄 Retry
+              </button>
+            </div>
+          `;
+          // Añadir handler para retry
+          const retryBtn = content.querySelector('.mention-modal__retry-btn');
+          if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+              closeModal();
+              this._openMentionedPage(notionPageId, displayName, null, null);
+            });
+          }
+          return;
+        }
+        
+        // Intentar obtener del caché local primero
+        const cachedHtml = this.cacheService.getHtmlFromLocalCache(notionPageId);
+        if (cachedHtml) {
+          log('📦 Mention: usando HTML del caché local');
+          htmlContent = cachedHtml;
+        } else {
+          // Solicitar contenido al GM vía broadcast
+          log('📡 Mention: solicitando contenido al GM...');
+          htmlContent = await this.broadcastService.requestContentFromGM(notionPageId);
+          
+          if (htmlContent) {
+            log('✅ Mention: contenido recibido del GM');
+            // Guardar en caché local para próximas visitas
+            this.cacheService.saveHtmlToLocalCache(notionPageId, htmlContent);
+          }
+        }
+        
+        // Si no hay contenido disponible
+        if (!htmlContent) {
+          content.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">⏳</div>
+              <p class="empty-state-text">Content not available</p>
+              <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
+              <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
+              <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                🔄 Retry
+              </button>
+            </div>
+          `;
+          // Añadir handler para retry
+          const retryBtn = content.querySelector('.mention-modal__retry-btn');
+          if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+              closeModal();
+              this._openMentionedPage(notionPageId, displayName, null, null);
+            });
+          }
+          return;
+        }
+      }
+      
+      if (!htmlContent) {
         content.innerHTML = `
           <div class="empty-state">
             <div class="empty-state-icon">📄</div>
@@ -5656,7 +5739,7 @@ export class ExtensionController {
       }
       
       // Mostrar contenido con header completo (cover, título, icono, propiedades, bloques)
-      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${result.html}</div>`;
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlContent}</div>`;
       
       // Adjuntar handlers de imágenes PERO NO de mentions (evita navegación infinita)
       const images = content.querySelectorAll('.notion-image-clickable');

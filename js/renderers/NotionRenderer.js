@@ -545,7 +545,7 @@ export class NotionRenderer {
               data-block-id="${block.id}"
               loading="eager"
               onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-              onerror="if(!this.dataset.refreshAttempted) { this.dataset.refreshAttempted='true'; setTimeout(() => { if(window.refreshImage) window.refreshImage(); }, 500); } else { this.style.display='none'; const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Could not load image</p><p class=\\'empty-state-hint\\'>The URL may have expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }"
+              onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Could not load image</p><p class=\\'empty-state-hint\\'>The URL may have expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }"
             />
             <button class="notion-image-share-button share-button" 
                     data-image-url="${imageUrl}" 
