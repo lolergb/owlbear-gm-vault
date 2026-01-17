@@ -3926,25 +3926,50 @@ export class ExtensionController {
     try {
       const owner = await this.storageService.getVaultOwner();
       
-      log('🔍 Verificando vault owner:', owner);
+      // DEBUG: Log detallado del owner
+      console.log('🔍 [DEBUG] Vault owner actual:', {
+        owner: owner,
+        ownerId: owner?.id,
+        ownerName: owner?.name,
+        lastHeartbeat: owner?.lastHeartbeat,
+        lastHeartbeatDate: owner?.lastHeartbeat ? new Date(owner.lastHeartbeat).toLocaleTimeString() : 'N/A',
+        myPlayerId: this.playerId,
+        myPlayerName: this.playerName
+      });
       
       // Verificar si el owner está inactivo (más de 15 minutos sin heartbeat)
       const timeSinceLastActivity = owner ? (Date.now() - (owner.lastHeartbeat || 0)) : Infinity;
       const isStale = timeSinceLastActivity > OWNER_TIMEOUT;
       const minutesInactive = Math.round(timeSinceLastActivity / 60000);
       
+      console.log('🔍 [DEBUG] Estado del owner:', {
+        timeSinceLastActivity: timeSinceLastActivity,
+        OWNER_TIMEOUT: OWNER_TIMEOUT,
+        isStale: isStale,
+        minutesInactive: minutesInactive
+      });
+      
       // Si no hay owner, owner inválido, o el owner está inactivo → SOY MASTER GM
       if (!owner || !owner.id || isStale) {
-        log('👑 [Master GM] Tomando ownership (owner:', owner?.id ? 'inactivo' : 'no existe', ')');
+        console.log('👑 [Master GM] Tomando ownership porque:', !owner ? 'no hay owner' : !owner.id ? 'owner sin ID' : 'owner inactivo');
         this.isCoGM = false;
         // Establecer ownership inmediatamente
-        await this.storageService.setVaultOwner(this.playerId, this.playerName);
+        const setResult = await this.storageService.setVaultOwner(this.playerId, this.playerName);
+        console.log('👑 [DEBUG] setVaultOwner resultado:', setResult);
         return;
       }
       
       // Verificar si soy el owner actual
       const isMe = owner.id === this.playerId;
-      log('🔍 ¿Soy el owner?', isMe, '| Mi ID:', this.playerId, '| Owner ID:', owner.id);
+      console.log('🔍 [DEBUG] Comparación de IDs:', {
+        ownerIdType: typeof owner.id,
+        myIdType: typeof this.playerId,
+        ownerIdValue: owner.id,
+        myIdValue: this.playerId,
+        isMe: isMe,
+        strictEqual: owner.id === this.playerId,
+        looseEqual: owner.id == this.playerId
+      });
       
       if (isMe) {
         // Soy el owner actual → Master GM
