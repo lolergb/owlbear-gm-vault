@@ -3069,10 +3069,11 @@ export class ExtensionController {
             // Solo mostrar warning si hay páginas saltadas por profundidad (no por filtrado intencional de DB)
             const realSkipped = pagesSkipped - emptyPages; // Solo las saltadas por profundidad
             
-            if (realSkipped > 0 || emptyPages > 0) {
+            if (realSkipped > 0 || emptyPages > 0 || dbPagesFiltered > 0) {
               const skippedInfo = [];
               if (emptyPages > 0) skippedInfo.push(`${emptyPages} empty`);
               if (realSkipped > 0) skippedInfo.push(`${realSkipped} over depth`);
+              if (dbPagesFiltered > 0) skippedInfo.push(`${dbPagesFiltered} from unnamed DBs`);
               
               this.uiRenderer.showWarningToast(
                 'Import completed',
@@ -3081,11 +3082,9 @@ export class ExtensionController {
               );
             } else {
               const pageText = pagesToImport.length === 1 ? pagesToImport[0].title : `${pagesToImport.length} sources`;
-              // Incluir info de páginas filtradas de DB si hay alguna
-              const filterInfo = dbPagesFiltered > 0 ? ` (${dbPagesFiltered} DB entries filtered)` : '';
               this.uiRenderer.showSuccessToast(
                 'Import successful!',
-                `${pagesImported} pages ${modeText} from ${pageText}.${filterInfo}`
+                `${pagesImported} pages ${modeText} from ${pageText}.`
               );
             }
 

@@ -1006,17 +1006,27 @@ export class NotionService {
             }
           }
           
-          // Si no se asignó por label, agrupar por título de la DB para crear carpeta
+          // Si no se asignó por label, intentar crear carpeta con el título de la DB
           if (!assignedToCategory) {
-            const folderName = child.databaseTitle || 'Database';
-            if (!databaseFolders.has(folderName)) {
-              databaseFolders.set(folderName, []);
+            const dbTitle = child.databaseTitle || '';
+            const invalidTitles = ['Untitled', 'Database', ''];
+            
+            // Solo crear carpeta si el título de la DB es válido
+            if (dbTitle && !invalidTitles.includes(dbTitle)) {
+              if (!databaseFolders.has(dbTitle)) {
+                databaseFolders.set(dbTitle, []);
+              }
+              databaseFolders.get(dbTitle).push(pageData);
+              dbInFolders++;
+              stats.pagesImported++;
+            } else {
+              // DB sin título válido: no crear carpeta, mostrar warning
+              stats.dbPagesFiltered++;
+              log(`⚠️ "${child.title}" omitido: la DB "${dbTitle || 'sin título'}" no tiene un nombre válido para crear carpeta`);
             }
-            databaseFolders.get(folderName).push(pageData);
-            dbInFolders++;
+          } else {
+            stats.pagesImported++;
           }
-          
-          stats.pagesImported++;
         }
         
         // Crear carpetas para páginas de DB que no coincidieron con categorías
@@ -1033,7 +1043,8 @@ export class NotionService {
         
         // Log resumen de procesamiento de DB
         if (dbPagesForLater.length > 0) {
-          log(`📊 DB: ${dbAssignedToCategory} asignados por label, ${dbInFolders} en carpetas de DB`);
+          const dbFiltered = stats.dbPagesFiltered;
+          log(`📊 DB: ${dbAssignedToCategory} asignados por label, ${dbInFolders} en carpetas de DB${dbFiltered > 0 ? `, ${dbFiltered} omitidos (DB sin nombre válido)` : ''}`);
         }
 
         // ============================================
