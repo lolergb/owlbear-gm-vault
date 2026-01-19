@@ -754,6 +754,7 @@ export class NotionService {
    * Verifica si una página tiene contenido real
    * Patrón: (título/heading || párrafo con texto) & NO solo bases de datos
    * Una página con solo child_database NO cuenta como contenido propio
+   * Una página con solo título + lista de mentions NO cuenta (es solo navegación)
    * @param {string} pageId - ID de la página
    * @returns {Promise<boolean>} - true si tiene contenido real
    */
@@ -765,9 +766,12 @@ export class NotionService {
         return false;
       }
 
-      let hasTextContent = false;  // Tiene título, párrafo o heading con texto
+      let hasTextContent = false;  // Tiene párrafo con texto real (no solo mentions)
       let hasRichContent = false;  // Tiene imágenes, videos, tablas, etc.
       let onlyHasDatabase = true;  // Solo tiene child_database (sin contenido real)
+      let headingCount = 0;        // Cantidad de headings
+      let listItemsWithOnlyMentions = 0;  // Lista items que solo tienen mentions
+      let listItemsWithRealText = 0;      // Lista items con texto real (no solo mentions)
 
       for (const block of blocks) {
         // Ignorar child_page y link_to_page (son hijas, no contenido propio)
@@ -780,12 +784,15 @@ export class NotionService {
           continue;
         }
 
-        // Párrafos con texto real
+        // Párrafos con texto real (no solo mentions)
         if (block.type === 'paragraph') {
           const text = block.paragraph?.rich_text;
-          if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
-            hasTextContent = true;
-            onlyHasDatabase = false;
+          if (text && text.length > 0) {
+            const hasRealText = this._hasRealTextContent(text);
+            if (hasRealText) {
+              hasTextContent = true;
+              onlyHasDatabase = false;
+            }
           }
           continue;
         }
@@ -795,10 +802,10 @@ export class NotionService {
           const headingData = block[block.type];
           const text = headingData?.rich_text;
           if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
-            hasTextContent = true;
+            headingCount++;
             onlyHasDatabase = false;
           }
-          // Headings con hijos (toggles) también cuentan
+          // Headings con hijos (toggles) también cuentan como contenido real
           if (block.has_children) {
             hasRichContent = true;
             onlyHasDatabase = false;
@@ -806,13 +813,19 @@ export class NotionService {
           continue;
         }
 
-        // Listas con texto
+        // Listas - verificar si tienen texto real o solo mentions
         if (block.type === 'bulleted_list_item' || block.type === 'numbered_list_item' || block.type === 'to_do') {
           const listData = block[block.type];
           const text = listData?.rich_text;
-          if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
-            hasTextContent = true;
-            onlyHasDatabase = false;
+          if (text && text.length > 0) {
+            const hasRealText = this._hasRealTextContent(text);
+            if (hasRealText) {
+              listItemsWithRealText++;
+              onlyHasDatabase = false;
+            } else if (this._hasOnlyMentions(text)) {
+              listItemsWithOnlyMentions++;
+              onlyHasDatabase = false;
+            }
           }
           continue;
         }
@@ -835,12 +848,70 @@ export class NotionService {
         }
       }
 
-      // Tiene contenido si tiene texto O contenido rico, Y no es solo una DB
-      return (hasTextContent || hasRichContent) && !onlyHasDatabase;
+      // Caso especial: si solo tiene título(s) + lista de mentions, NO es contenido real
+      // Esto es típicamente una página de navegación/índice (ej: "NPCs" con lista de links)
+      const isOnlyNavigationContent = 
+        !hasTextContent && 
+        !hasRichContent && 
+        headingCount <= 1 && 
+        listItemsWithRealText === 0 && 
+        listItemsWithOnlyMentions > 0;
+
+      if (isOnlyNavigationContent) {
+        log(`⏭️ Página detectada como solo navegación: ${headingCount} heading(s), ${listItemsWithOnlyMentions} mention(s) en lista`);
+        return false;
+      }
+
+      // Tiene contenido si tiene texto real, contenido rico, o listas con texto real
+      const hasContent = hasTextContent || hasRichContent || listItemsWithRealText > 0;
+      return hasContent && !onlyHasDatabase;
     } catch (e) {
       logWarn('Error verificando contenido de página:', pageId, e);
       return true; // En caso de error, asumimos que tiene contenido
     }
+  }
+
+  /**
+   * Verifica si un rich_text tiene contenido de texto real (no solo mentions)
+   * @private
+   * @param {Array} richText - Array de rich_text de Notion
+   * @returns {boolean} - true si tiene texto real además de mentions
+   */
+  _hasRealTextContent(richText) {
+    if (!richText || richText.length === 0) return false;
+    
+    for (const item of richText) {
+      // Ignorar mentions - no son contenido de texto "real"
+      if (item.type === 'mention') {
+        continue;
+      }
+      // Si hay texto que no es solo espacios en blanco
+      if (item.type === 'text' && item.plain_text?.trim()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Verifica si un rich_text contiene solo mentions (links a páginas)
+   * @private
+   * @param {Array} richText - Array de rich_text de Notion
+   * @returns {boolean} - true si solo tiene mentions
+   */
+  _hasOnlyMentions(richText) {
+    if (!richText || richText.length === 0) return false;
+    
+    let hasMentions = false;
+    for (const item of richText) {
+      if (item.type === 'mention' && item.mention?.type === 'page') {
+        hasMentions = true;
+      } else if (item.type === 'text' && item.plain_text?.trim()) {
+        // Tiene texto real además de mentions
+        return false;
+      }
+    }
+    return hasMentions;
   }
 
   /**
@@ -1100,7 +1171,20 @@ export class NotionService {
         }
         
         // PASO 2: Procesar páginas de DB
-        // Por defecto: si hay categoría que coincide → añadir ahí, si no → crear carpeta con nombre de la DB
+        // 
+        // COMPORTAMIENTO ACTUAL: Los items de una tabla (database) se crean en una carpeta con el nombre de la tabla
+        // 
+        // Lógica de asignación:
+        // 1. Si una página de DB tiene un label que coincide con una categoría existente → se añade a esa categoría
+        // 2. Si no hay coincidencia por label → se crea una carpeta nueva con el nombre de la base de datos (databaseTitle)
+        // 
+        // Ejemplo:
+        //   - Base de datos "NPCs" con items: "Indithir", "Thava", "Gareth"
+        //   - Resultado: Carpeta "NPCs" con páginas "Indithir", "Thava", "Gareth"
+        // 
+        // NOTA: Si en el futuro se quiere cambiar este comportamiento (ej: añadir items directamente sin carpeta),
+        // modificar la lógica en las líneas 1208-1228 y 1231-1241
+        //
         const existingCategoryNames = Array.from(categoryMap.keys());
         const databaseFolders = new Map(); // databaseTitle -> pages[]
         let dbAssignedToCategory = 0;
@@ -1135,6 +1219,7 @@ export class NotionService {
           }
           
           // Si no se asignó por label, intentar crear carpeta con el título de la DB
+          // ESTO ES LO QUE CREA LA CARPETA CON EL NOMBRE DE LA TABLA
           if (!assignedToCategory) {
             const dbTitle = child.databaseTitle || '';
             const invalidTitles = ['Untitled', 'Database', ''];
@@ -1158,6 +1243,7 @@ export class NotionService {
         }
         
         // Crear carpetas para páginas de DB que no coincidieron con categorías
+        // AQUÍ SE CREAN LAS CARPETAS CON EL NOMBRE DE LA TABLA (databaseTitle)
         for (const [folderName, pages] of databaseFolders) {
           if (pages.length > 0) {
             items.push({
