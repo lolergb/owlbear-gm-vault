@@ -2815,25 +2815,21 @@ export class ExtensionController {
           
           try {
             const text = await file.text();
-            const config = JSON.parse(text);
+            const importedConfig = JSON.parse(text);
             
-            if (!config.categories) {
+            if (!importedConfig.categories) {
               throw new Error('Invalid config: missing categories');
             }
             
-            await this.saveConfig(config);
-            // Contar items para analytics
-            let itemCount = 0;
-            const countItems = (cats) => {
-              for (const cat of cats || []) {
-                itemCount += (cat.pages || []).length;
-                if (cat.categories) countItems(cat.categories);
-              }
-            };
-            countItems(config.categories);
-            this.analyticsService.trackJSONImported(itemCount);
-            alert('✅ Vault loaded successfully!');
-            this._goBackToList();
+            // Contar páginas actuales e importadas
+            const currentConfig = this.config || { categories: [] };
+            const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
+            const currentPagesCount = this._countPagesInConfig(configForCount);
+            const importedPagesCount = this._countPagesInConfig(importedConfig);
+            
+            // Mostrar modal con opciones de importación
+            this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, file.name);
+            
           } catch (err) {
             alert('❌ Error loading file: ' + err.message);
           }
@@ -3332,6 +3328,153 @@ export class ExtensionController {
     // Cargar páginas iniciales
     await loadPages();
     searchInput.focus();
+  }
+
+  /**
+   * Muestra el modal con opciones para cargar un archivo JSON
+   * @param {Object} importedConfig - Configuración importada del archivo
+   * @param {number} currentPagesCount - Número de páginas en el vault actual
+   * @param {number} importedPagesCount - Número de páginas en el archivo importado
+   * @param {string} fileName - Nombre del archivo importado
+   * @private
+   */
+  _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName) {
+    // Si el vault actual está vacío, hacer replace directamente sin mostrar opciones
+    if (currentPagesCount === 0) {
+      this._applyJsonImport(importedConfig, 'replace', importedPagesCount);
+      return;
+    }
+
+    // Crear el contenido del modal
+    const modalContent = `
+      <div class="import-options">
+        <p class="import-options__question">
+          Loading <strong>${fileName}</strong> (${importedPagesCount} page${importedPagesCount !== 1 ? 's' : ''})
+        </p>
+        <p class="import-options__question">How would you like to add this?</p>
+        
+        <label class="import-option">
+          <input type="radio" name="json-import-mode" value="append" checked />
+          <div class="import-option__content">
+            <span class="import-option__title">Add to the end</span>
+            <span class="import-option__hint">Your current ${currentPagesCount} page${currentPagesCount !== 1 ? 's' : ''} stay untouched</span>
+          </div>
+        </label>
+        
+        <label class="import-option">
+          <input type="radio" name="json-import-mode" value="merge" />
+          <div class="import-option__content">
+            <span class="import-option__title">Combine with existing</span>
+            <span class="import-option__hint">New pages will be added, duplicates updated</span>
+          </div>
+        </label>
+        
+        <label class="import-option">
+          <input type="radio" name="json-import-mode" value="replace" />
+          <div class="import-option__content">
+            <span class="import-option__title">Replace everything</span>
+            <span class="import-option__hint import-option__hint--warning">⚠️ You'll lose your current ${currentPagesCount} page${currentPagesCount !== 1 ? 's' : ''}</span>
+          </div>
+        </label>
+
+        <div class="form__actions" style="margin-top: var(--spacing-lg);">
+          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Cancel</button>
+          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Import</button>
+        </div>
+      </div>
+    `;
+
+    // Mostrar modal usando modalManager
+    const modal = this.modalManager.showCustom({
+      title: 'Load Vault',
+      content: modalContent,
+      className: 'modal--import-json'
+    });
+
+    // Handlers de botones
+    const cancelBtn = modal.querySelector('#json-import-cancel');
+    const confirmBtn = modal.querySelector('#json-import-confirm');
+
+    cancelBtn.addEventListener('click', () => {
+      this.modalManager.close();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+      const importMode = modal.querySelector('input[name="json-import-mode"]:checked').value;
+      this.modalManager.close();
+      await this._applyJsonImport(importedConfig, importMode, importedPagesCount);
+    });
+  }
+
+  /**
+   * Aplica la importación de JSON según el modo seleccionado
+   * @param {Object} importedConfig - Configuración importada
+   * @param {string} importMode - Modo de importación (append, merge, replace)
+   * @param {number} importedPagesCount - Número de páginas importadas
+   * @private
+   */
+  async _applyJsonImport(importedConfig, importMode, importedPagesCount) {
+    try {
+      // Convertir imported config a formato items[] si está en legacy
+      const importedInItemsFormat = this.configParser.toItemsFormat(importedConfig);
+      const importedCategories = importedInItemsFormat.categories || [];
+      const importedPages = importedConfig.pages || [];
+
+      // Obtener config actual y convertir a formato items[]
+      const currentConfig = this.config || { categories: [], pages: [] };
+      const configJson = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
+      const existingInItemsFormat = this.configParser.toItemsFormat(configJson);
+      const existingCategories = existingInItemsFormat.categories || [];
+      const existingPages = configJson.pages || [];
+
+      let finalCategories;
+      let finalPages;
+
+      switch (importMode) {
+        case 'append':
+          // Añadir al final
+          finalCategories = [...existingCategories, ...importedCategories];
+          finalPages = [...existingPages, ...importedPages];
+          break;
+        
+        case 'merge':
+          // Combinar: añadir nuevas, actualizar duplicadas por nombre
+          finalCategories = this._mergeCategories(existingCategories, importedCategories);
+          finalPages = this._mergeRootPages(existingPages, importedPages);
+          break;
+        
+        case 'replace':
+          // Reemplazar todo
+          finalCategories = importedCategories;
+          finalPages = importedPages;
+          break;
+        
+        default:
+          finalCategories = importedCategories;
+          finalPages = importedPages;
+      }
+
+      await this.saveConfig({ categories: finalCategories, pages: finalPages });
+      
+      // Track analytics
+      this.analyticsService.trackJSONImported(importedPagesCount);
+
+      // Mostrar resultado
+      const modeText = importMode === 'append' ? 'added' : importMode === 'merge' ? 'merged' : 'loaded';
+      this.uiRenderer.showSuccessToast(
+        'Vault updated',
+        `${importedPagesCount} page${importedPagesCount !== 1 ? 's' : ''} ${modeText} successfully.`
+      );
+
+      // Volver a la lista
+      this._goBackToList();
+    } catch (err) {
+      logError('Error applying JSON import:', err);
+      this.uiRenderer.showErrorToast(
+        'Import failed',
+        err.message || 'An error occurred while importing.'
+      );
+    }
   }
 
   /**
