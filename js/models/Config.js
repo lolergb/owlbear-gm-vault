@@ -129,6 +129,17 @@ export class Config {
   }
 
   /**
+   * Busca una página por su ID interno
+   * @param {string} pageId - ID interno de la página (ej: "page_abc123")
+   * @returns {Page|null}
+   */
+  findPageById(pageId) {
+    if (!pageId) return null;
+    const allPages = this.getAllPages();
+    return allPages.find(p => p.id === pageId) || null;
+  }
+
+  /**
    * Busca una categoría por nombre
    * @param {string} name - Nombre a buscar
    * @returns {Category|null}

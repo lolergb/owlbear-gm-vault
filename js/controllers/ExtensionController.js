@@ -5662,7 +5662,11 @@ export class ExtensionController {
     
     try {
       // Buscar la página en el vault
-      const page = this.config?.findPageByNotionId(pageId);
+      // Primero por NotionId (para páginas de Notion), luego por id interno (para páginas locales/Obsidian)
+      let page = this.config?.findPageByNotionId(pageId);
+      if (!page) {
+        page = this.config?.findPageById(pageId);
+      }
       
       if (!page) {
         log('⚠️ Página no encontrada en vault:', pageId);
