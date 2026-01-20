@@ -2827,8 +2827,10 @@ export class ExtensionController {
             const currentPagesCount = this._countPagesInConfig(configForCount);
             const importedPagesCount = this._countPagesInConfig(importedConfig);
             
+            log(`Load JSON: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
+            
             // Mostrar modal con opciones de importación
-            this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, file.name);
+            await this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, file.name);
             
           } catch (err) {
             alert('❌ Error loading file: ' + err.message);
@@ -3338,10 +3340,13 @@ export class ExtensionController {
    * @param {string} fileName - Nombre del archivo importado
    * @private
    */
-  _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName) {
+  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName) {
+    log(`_showLoadJsonOptionsModal: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}, file=${fileName}`);
+    
     // Si el vault actual está vacío, hacer replace directamente sin mostrar opciones
     if (currentPagesCount === 0) {
-      this._applyJsonImport(importedConfig, 'replace', importedPagesCount);
+      log('Vault is empty, applying direct replace');
+      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount);
       return;
     }
 
@@ -3385,15 +3390,18 @@ export class ExtensionController {
     `;
 
     // Mostrar modal usando modalManager
+    log('Showing import options modal');
     const modal = this.modalManager.showCustom({
       title: 'Load Vault',
       content: modalContent,
       className: 'modal--import-json'
     });
+    log('Modal created:', modal);
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
     const confirmBtn = modal.querySelector('#json-import-confirm');
+    log('Cancel button:', cancelBtn, 'Confirm button:', confirmBtn);
 
     cancelBtn.addEventListener('click', () => {
       this.modalManager.close();
