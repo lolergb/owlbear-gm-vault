@@ -417,7 +417,8 @@ export class ExtensionController {
     this.currentPageIndex = pageIndex;
 
     // Track page view
-    const pageType = page.isNotionPage() ? 'notion' : 
+    const pageType = page.hasEmbeddedHtml() ? 'embedded_html' :
+                     page.isNotionPage() ? 'notion' : 
                      page.isImage() ? 'image' : 
                      page.isVideo() ? 'video' : 
                      page.isGoogleDoc() ? 'google_doc' : 'iframe';
@@ -1949,6 +1950,57 @@ export class ExtensionController {
       // Para Google Docs, compartir la URL de embed
       const embedUrl = this._getGoogleDocEmbedUrl(page.url);
       await this._shareGoogleDocToPlayers(embedUrl, page.name);
+    } else if (page.hasEmbeddedHtml() && page.htmlContent) {
+      // Para páginas con htmlContent embebido (local-first, ej: Obsidian)
+      // Funciona igual que Notion: enviar el HTML directamente
+      try {
+        // Verificar si ya tenemos el contenido cargado en la vista actual
+        let notionContent = document.getElementById('notion-content');
+        let htmlContent = '';
+        
+        // Si el contenido no está cargado (compartiendo desde lista), usar el htmlContent directamente
+        if (!notionContent || !notionContent.innerHTML.trim()) {
+          log('📄 Usando htmlContent embebido para compartir...');
+          htmlContent = page.htmlContent;
+        } else {
+          // Clonar el contenido visible y remover botones de compartir
+          const clone = notionContent.cloneNode(true);
+          clone.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
+          htmlContent = clone.innerHTML;
+        }
+        
+        if (!htmlContent.trim()) {
+          this._showFeedback('⚠️ No content to share');
+          return;
+        }
+        
+        // Generar un pageId único para esta página embebida (para caché)
+        const pageId = `embedded-${page.name.toLowerCase().replace(/\s+/g, '-')}`;
+        
+        // Guardar en localStorage para caché persistente (igual que Notion)
+        if (this.isGM && !this.isCoGM) {
+          this.cacheService.saveHtmlToLocalCache(pageId, htmlContent);
+        }
+        
+        // Enviar el HTML renderizado directamente (incluir senderId para filtrar)
+        // Usar el mismo canal que Notion ya que _showNotionHtmlModal maneja HTML genérico
+        const result = await this.broadcastService.sendMessage('com.dmscreen/showNotionContent', {
+          name: page.name,
+          html: htmlContent,
+          pageId: pageId,
+          senderId: this.playerId
+        });
+        
+        // El callback onSizeLimitExceeded ya muestra feedback si hay error de tamaño
+        if (result?.success) {
+          this._showFeedback('📄 Page shared!');
+        } else if (result?.error !== 'size_limit') {
+          this._showFeedback('❌ Error sharing page');
+        }
+      } catch (e) {
+        logError('Error compartiendo página con htmlContent:', e);
+        this._showFeedback('❌ Error sharing page');
+      }
     } else if (page.isNotionPage()) {
       // Para Notion, obtener el HTML renderizado y enviarlo directamente
       // Esto evita que el player necesite un token de Notion
@@ -2167,11 +2219,51 @@ export class ExtensionController {
       return;
     }
     
-    // Las páginas con htmlContent (local-first, ej: Obsidian) no necesitan modal
-    // El contenido ya se muestra embebido en la vista de página
+    // Manejar páginas con htmlContent embebido (local-first, ej: Obsidian)
+    // Funcionan igual que Notion: guardar en sessionStorage (temporal) y localStorage (caché)
     if (!page.url && page.htmlContent) {
-      log('Página con htmlContent embebido, no requiere modal externo');
-      return;
+      if (!this.OBR || !this.OBR.modal) {
+        log('OBR modal no disponible, mostrando contenido embebido localmente');
+        return;
+      }
+
+      try {
+        // Generar un contentKey único para esta sesión (sessionStorage - temporal)
+        const contentKey = `htmlContent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Guardar el HTML en sessionStorage para el modal (temporal, se limpia después de usar)
+        sessionStorage.setItem(contentKey, page.htmlContent);
+        
+        // Guardar en localStorage para caché persistente (igual que Notion)
+        // Generar un pageId único para esta página embebida
+        const pageId = `embedded-${page.name.toLowerCase().replace(/\s+/g, '-')}`;
+        if (this.isGM && !this.isCoGM) {
+          this.cacheService.saveHtmlToLocalCache(pageId, page.htmlContent);
+        }
+        
+        const currentPath = window.location.pathname;
+        const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+        const baseUrl = window.location.origin + baseDir;
+
+        const modalUrl = new URL('index.html', baseUrl);
+        modalUrl.searchParams.set('modal', 'true');
+        modalUrl.searchParams.set('htmlContent', 'true');
+        modalUrl.searchParams.set('contentKey', contentKey);
+        modalUrl.searchParams.set('name', encodeURIComponent(page.name || 'Page'));
+
+        await this.OBR.modal.open({
+          id: 'gm-vault-page-modal',
+          url: modalUrl.toString(),
+          height: 800,
+          width: 1200
+        });
+        
+        log('✅ Modal abierto con htmlContent embebido');
+        return;
+      } catch (e) {
+        logError('Error abriendo modal con htmlContent:', e);
+        return;
+      }
     }
     
     // Validar que tenga URL para abrir en modal
