@@ -1,22 +1,4 @@
 {
-  "order": [
-    {
-      "type": "category",
-      "index": 0
-    },
-    {
-      "type": "category",
-      "index": 1
-    },
-    {
-      "type": "category",
-      "index": 2
-    },
-    {
-      "type": "category",
-      "index": 3
-    }
-  ],
   "categories": [
     {
       "name": "⭐ Start Here",
@@ -24,7 +6,7 @@
         {
           "type": "page",
           "name": "Quick Start",
-          "url": "https://owlbear-gm-vault.netlify.app/content-demo/quick-start.html"
+          "url": "https://www.notion.so/Quick-Start-2d8d4856c90e80f1b4e4ecff59e61dd5"
         },
         {
           "type": "page",
@@ -49,7 +31,7 @@
         {
           "type": "page",
           "name": "Template",
-          "url": "https://owlbear-gm-vault.netlify.app/content-demo/session-notes.html"
+          "url": "https://www.notion.so/Session-Notes-Template-2d8d4856c90e806eb8fffd6f055eaf3b"
         }
       ]
     },
@@ -63,7 +45,7 @@
             {
               "type": "page",
               "name": "Scene — The Watched Crossroads",
-              "url": "https://owlbear-gm-vault.netlify.app/content-demo/scene-the-watched-crossroads.html"
+              "url": "https://www.notion.so/Scene-The-Watched-Crossroads-2d8d4856c90e804185b4cf910d4817c1"
             }
           ]
         },
@@ -74,7 +56,7 @@
             {
               "type": "page",
               "name": "Maera",
-              "url": "https://owlbear-gm-vault.netlify.app/content-demo/maera-manos-secas.html"
+              "url": "https://www.notion.so/Maera-Manos-Secas-2d8d4856c90e8030b014dbbb7bf5306d"
             }
           ]
         }
