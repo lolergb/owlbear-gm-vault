@@ -6842,7 +6842,9 @@ export class ExtensionController {
           const subcategory = category.categories[item.index];
           collectPagesOrdered(subcategory, currentPath, level + 1);
         } else if (item.type === 'page' && category.pages && category.pages[item.index]) {
-          const page = category.pages[item.index];
+          const pageData = category.pages[item.index];
+          // Asegurar que es una instancia de Page para tener acceso al id
+          const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
           allPages.push({
             id: page.id,
             name: page.name,
@@ -6906,6 +6908,7 @@ export class ExtensionController {
         }
         
         // Actualizar metadatos de todos los tokens
+        log(`🔗 Vinculando página a token - ID: ${selectedPage.id}, Name: ${selectedPage.name}`);
         await this.OBR.scene.items.updateItems(items, (updateItems) => {
           updateItems.forEach(item => {
             item.metadata[`${METADATA_KEY}/pageUrl`] = selectedPage.url;
@@ -6913,6 +6916,9 @@ export class ExtensionController {
             item.metadata[`${METADATA_KEY}/pageIcon`] = selectedPage.icon;
             if (selectedPage.id) {
               item.metadata[`${METADATA_KEY}/pageId`] = selectedPage.id;
+              log(`✅ pageId guardado en token: ${selectedPage.id}`);
+            } else {
+              log(`⚠️ selectedPage no tiene id:`, selectedPage);
             }
           });
         });
