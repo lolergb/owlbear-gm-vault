@@ -1812,8 +1812,11 @@ export class ExtensionController {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('modal') === 'true') return;
 
+    // Asegurar que tenemos una instancia de Page
+    const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
+    
     // Guardar referencia a la página actual para share
-    this.currentPageForShare = page;
+    this.currentPageForShare = pageInstance;
 
     // Botón Open Modal (para todos)
     let openModalBtn = document.getElementById('page-open-modal-button-header');
@@ -1826,16 +1829,16 @@ export class ExtensionController {
       header.appendChild(openModalBtn);
     }
     openModalBtn.classList.remove('hidden');
-    openModalBtn.dataset.currentUrl = page.url;
-    openModalBtn.dataset.currentName = page.name;
+    openModalBtn.dataset.currentUrl = pageInstance.url || '';
+    openModalBtn.dataset.currentName = pageInstance.name;
     
     // Remover listener anterior y agregar nuevo
     const newOpenModalBtn = openModalBtn.cloneNode(true);
     openModalBtn.parentNode.replaceChild(newOpenModalBtn, openModalBtn);
-    newOpenModalBtn.addEventListener('click', () => this._openPageInModal(page));
+    newOpenModalBtn.addEventListener('click', () => this._openPageInModal(pageInstance));
 
     // Botón de Share (para todos: GM, coGM y Player) - NO para imágenes
-    if (!page.isImage()) {
+    if (!pageInstance.isImage()) {
       let shareBtn = document.getElementById('page-share-button-header');
       if (!shareBtn) {
         shareBtn = document.createElement('button');
@@ -1850,7 +1853,7 @@ export class ExtensionController {
       // Remover listener anterior y agregar nuevo
       const newShareBtn = shareBtn.cloneNode(true);
       shareBtn.parentNode.replaceChild(newShareBtn, shareBtn);
-      newShareBtn.addEventListener('click', () => this._shareCurrentPageToPlayers(page));
+      newShareBtn.addEventListener('click', () => this._shareCurrentPageToPlayers(pageInstance));
     }
 
     // Botones solo para Master GM (no Co-GM)
@@ -1934,7 +1937,8 @@ export class ExtensionController {
     log('🔗 Compartiendo página:', pageData.name);
 
     // Asegurar que tenemos una instancia de Page con los métodos necesarios
-    const page = pageData instanceof Page ? pageData : new Page(pageData.name, pageData.url, pageData);
+    // Si ya es instancia de Page, usarla; sino convertir desde JSON preservando todas las propiedades
+    const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
 
     if (page.isVideo()) {
       // Para videos, construir la URL de embed
@@ -2219,9 +2223,12 @@ export class ExtensionController {
       return;
     }
     
+    // Asegurar que tenemos una instancia de Page
+    const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
+    
     // Manejar páginas con htmlContent embebido (local-first, ej: Obsidian)
     // Funcionan igual que Notion: guardar en sessionStorage (temporal) y localStorage (caché)
-    if (!page.url && page.htmlContent) {
+    if (pageInstance.hasEmbeddedHtml() && pageInstance.htmlContent) {
       if (!this.OBR || !this.OBR.modal) {
         log('OBR modal no disponible, mostrando contenido embebido localmente');
         return;
@@ -2232,13 +2239,13 @@ export class ExtensionController {
         const contentKey = `htmlContent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
         // Guardar el HTML en sessionStorage para el modal (temporal, se limpia después de usar)
-        sessionStorage.setItem(contentKey, page.htmlContent);
+        sessionStorage.setItem(contentKey, pageInstance.htmlContent);
         
         // Guardar en localStorage para caché persistente (igual que Notion)
         // Generar un pageId único para esta página embebida
-        const pageId = `embedded-${page.name.toLowerCase().replace(/\s+/g, '-')}`;
+        const pageId = `embedded-${pageInstance.name.toLowerCase().replace(/\s+/g, '-')}`;
         if (this.isGM && !this.isCoGM) {
-          this.cacheService.saveHtmlToLocalCache(pageId, page.htmlContent);
+          this.cacheService.saveHtmlToLocalCache(pageId, pageInstance.htmlContent);
         }
         
         const currentPath = window.location.pathname;
@@ -2249,7 +2256,7 @@ export class ExtensionController {
         modalUrl.searchParams.set('modal', 'true');
         modalUrl.searchParams.set('htmlContent', 'true');
         modalUrl.searchParams.set('contentKey', contentKey);
-        modalUrl.searchParams.set('name', encodeURIComponent(page.name || 'Page'));
+        modalUrl.searchParams.set('name', encodeURIComponent(pageInstance.name || 'Page'));
 
         await this.OBR.modal.open({
           id: 'gm-vault-page-modal',
@@ -2267,13 +2274,13 @@ export class ExtensionController {
     }
     
     // Validar que tenga URL para abrir en modal
-    if (!page.url) {
+    if (!pageInstance.url) {
       logError('Error: página sin URL para abrir modal');
       return;
     }
 
     if (!this.OBR || !this.OBR.modal) {
-      window.open(page.url, '_blank');
+      window.open(pageInstance.url, '_blank');
       return;
     }
 
@@ -2284,12 +2291,12 @@ export class ExtensionController {
 
       const modalUrl = new URL('index.html', baseUrl);
       modalUrl.searchParams.set('modal', 'true');
-      modalUrl.searchParams.set('url', encodeURIComponent(page.url || ''));
-      modalUrl.searchParams.set('name', encodeURIComponent(page.name || 'Page'));
+      modalUrl.searchParams.set('url', encodeURIComponent(pageInstance.url || ''));
+      modalUrl.searchParams.set('name', encodeURIComponent(pageInstance.name || 'Page'));
 
       // Añadir blockTypes si existe
-      if (page.blockTypes && Array.isArray(page.blockTypes) && page.blockTypes.length > 0) {
-        modalUrl.searchParams.set('blockTypes', encodeURIComponent(JSON.stringify(page.blockTypes)));
+      if (pageInstance.blockTypes && Array.isArray(pageInstance.blockTypes) && pageInstance.blockTypes.length > 0) {
+        modalUrl.searchParams.set('blockTypes', encodeURIComponent(JSON.stringify(pageInstance.blockTypes)));
       }
 
       await this.OBR.modal.open({
@@ -6960,7 +6967,7 @@ export class ExtensionController {
     // Si tenemos pageId, buscar directamente por ID (más confiable)
     if (pageId && this.config) {
       foundPage = this.config.findPageById(pageId);
-      log(`🔍 Buscando página por ID: ${pageId}`, foundPage ? '✅ Encontrada' : '❌ No encontrada');
+      log(`🔍 Buscando página por ID: ${pageId} - ${foundPage ? '✅ Encontrada' : '❌ No encontrada'}`);
     }
     
     // Si no encontramos por ID, buscar por URL o nombre
