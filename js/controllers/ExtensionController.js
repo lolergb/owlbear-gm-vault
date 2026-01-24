@@ -3197,9 +3197,9 @@ export class ExtensionController {
         throw authError;
       }
 
-      // Listar carpetas
-      this._showFeedback('📁 Obteniendo lista de carpetas...');
-      const folders = await this.googleDriveService.listFolders();
+      // Listar carpetas de nivel superior
+      this._showFeedback('📁 Obteniendo lista de carpetas de nivel superior...');
+      const folders = await this.googleDriveService.listTopLevelFolders();
       
       if (!folders || folders.length === 0) {
         this._showFeedback('❌ No se encontraron carpetas en tu Google Drive');
@@ -3207,16 +3207,24 @@ export class ExtensionController {
         return;
       }
 
-      // Mostrar modal para seleccionar carpeta
+      // Mostrar modal para seleccionar carpeta o usar todas
       const folderId = await this._showFolderSelectorModal(folders);
       if (!folderId) {
         this._showFeedback('❌ Selección de carpeta cancelada');
         return;
       }
 
-      // Generar vault desde la carpeta
+      // Generar vault desde la carpeta seleccionada
       this._showFeedback('🔄 Analizando estructura de carpetas y archivos...');
-      const driveConfig = await this.googleDriveService.generateVaultFromFolder(folderId);
+      let driveConfig;
+      
+      if (folderId === 'all') {
+        // Generar vault desde todas las carpetas de nivel superior
+        driveConfig = await this.googleDriveService.generateVaultFromAllFolders();
+      } else {
+        // Generar vault desde una carpeta específica
+        driveConfig = await this.googleDriveService.generateVaultFromFolder(folderId);
+      }
       
       this._showFeedback('✅ Vault generado correctamente');
 
@@ -3271,7 +3279,7 @@ export class ExtensionController {
   /**
    * Muestra modal para seleccionar una carpeta de Google Drive
    * @param {Array} folders - Array de carpetas {id, name}
-   * @returns {Promise<string|null>} - ID de la carpeta seleccionada o null si se cancela
+   * @returns {Promise<string|null>} - ID de la carpeta seleccionada, 'all' para todas, o null si se cancela
    * @private
    */
   async _showFolderSelectorModal(folders) {
@@ -3287,9 +3295,13 @@ export class ExtensionController {
       const modalContent = `
         <div class="form">
           <p class="settings__description" style="margin-bottom: 16px;">
-            Selecciona la carpeta de Google Drive que contiene tu vault:
+            Selecciona una carpeta específica o todas las carpetas de nivel superior:
           </p>
           <div class="folder-selector" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 8px;">
+            <button type="button" class="folder-item folder-item--all" data-folder-id="all" style="background: #e3f2fd; border-color: #2196f3;">
+              <span class="folder-icon">📚</span>
+              <span class="folder-name"><strong>Todas las carpetas de nivel superior</strong></span>
+            </button>
             ${foldersList || '<p style="text-align: center; color: #999; padding: 20px;">No hay carpetas disponibles</p>'}
           </div>
           <div class="form__actions" style="margin-top: 16px;">
@@ -3318,6 +3330,9 @@ export class ExtensionController {
           .folder-item:active {
             background: #e3f2fd;
           }
+          .folder-item--all:hover {
+            background: #bbdefb;
+          }
           .folder-icon {
             font-size: 20px;
           }
@@ -3330,7 +3345,7 @@ export class ExtensionController {
       `;
 
       const modal = this.modalManager.showCustom({
-        title: '📁 Seleccionar carpeta de Google Drive',
+        title: '📁 Seleccionar carpeta(s) de Google Drive',
         content: modalContent
       });
 
@@ -3342,15 +3357,15 @@ export class ExtensionController {
         resolve(null);
       });
 
-          folderItems.forEach(item => {
-            item.addEventListener('click', () => {
-              const folderId = item.dataset.folderId;
-              this.modalManager.close();
-              resolve(folderId);
-            });
-          });
+      folderItems.forEach(item => {
+        item.addEventListener('click', () => {
+          const folderId = item.dataset.folderId;
+          this.modalManager.close();
+          resolve(folderId);
         });
-      }
+      });
+    });
+  }
 
   /**
    * Pide al usuario que ingrese su Client ID de Google OAuth
