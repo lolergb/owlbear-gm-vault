@@ -6697,21 +6697,21 @@ export class ExtensionController {
   }
 
   // ============================================
-  // Item Context Menus - Vincular páginas a items (tokens, props, maps, etc.)
+  // Token Context Menus - Vincular páginas a tokens
   // ============================================
 
   /**
-   * Configura los menús contextuales para items de OBR (todos los tipos)
+   * Configura los menús contextuales para tokens de OBR
    * @private
    */
   async _setupTokenContextMenus() {
     try {
-      log('🎯 Configurando menús contextuales para items...');
+      log('🎯 Configurando menús contextuales para tokens...');
       
       // Obtener la URL base para los iconos
       const baseUrl = window.location.origin;
       
-      // Menú: Vincular página (solo GM) - Disponible para todos los tipos de items
+      // Menú: Vincular página (solo GM)
       await this.OBR.contextMenu.create({
         id: `${METADATA_KEY}/link-page`,
         icons: [
@@ -6719,6 +6719,7 @@ export class ExtensionController {
             icon: `${baseUrl}/img/icon-page.svg`,
             label: 'Link page',
             filter: {
+              every: [{ key: 'layer', value: 'CHARACTER' }],
               roles: ['GM']
             }
           }
@@ -6727,7 +6728,7 @@ export class ExtensionController {
           const items = context.items;
           if (!items || items.length === 0) return;
           
-          // Obtener los IDs de todos los items seleccionados
+          // Obtener los IDs de todos los tokens seleccionados
           const itemIds = items.map(item => item.id);
           
           // Abrir el panel de la extensión
@@ -6741,7 +6742,7 @@ export class ExtensionController {
         }
       });
       
-      // Menú: Ver página vinculada (todos, si tiene página) - Disponible para todos los tipos de items
+      // Menú: Ver página vinculada (todos, si tiene página)
       await this.OBR.contextMenu.create({
         id: `${METADATA_KEY}/view-page`,
         icons: [
@@ -6750,6 +6751,7 @@ export class ExtensionController {
             label: 'View linked page',
             filter: {
               every: [
+                { key: 'layer', value: 'CHARACTER' },
                 { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
               ]
             }
@@ -6778,7 +6780,7 @@ export class ExtensionController {
         }
       });
       
-      // Menú: Desvincular página (solo GM) - Disponible para todos los tipos de items
+      // Menú: Desvincular página (solo GM)
       await this.OBR.contextMenu.create({
         id: `${METADATA_KEY}/unlink-page`,
         icons: [
@@ -6787,6 +6789,7 @@ export class ExtensionController {
             label: 'Unlink page',
             filter: {
               every: [
+                { key: 'layer', value: 'CHARACTER' },
                 { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
               ],
               roles: ['GM']
@@ -6797,7 +6800,7 @@ export class ExtensionController {
           const items = context.items;
           if (!items || items.length === 0) return;
           
-          // Desvincular todos los items seleccionados
+          // Desvincular todos los tokens seleccionados
           await this.OBR.scene.items.updateItems(items, (updateItems) => {
             updateItems.forEach(item => {
               delete item.metadata[`${METADATA_KEY}/pageUrl`];
@@ -6808,12 +6811,12 @@ export class ExtensionController {
           });
           
           const count = items.length;
-          log(`🗑️ Página desvinculada de ${count} item(s)`);
-          this._showFeedback(count === 1 ? '🔗 Page unlinked' : `🔗 Page unlinked from ${count} items`);
+          log(`🗑️ Página desvinculada de ${count} token(s)`);
+          this._showFeedback(count === 1 ? '🔗 Page unlinked' : `🔗 Page unlinked from ${count} tokens`);
         }
       });
       
-      log('✅ Menús contextuales para items configurados');
+      log('✅ Menús contextuales para tokens configurados');
       
     } catch (error) {
       logError('❌ Error al configurar menús contextuales:', error);
@@ -6821,12 +6824,12 @@ export class ExtensionController {
   }
 
   /**
-   * Muestra el selector de páginas para vincular a items
-   * @param {string[]} itemIds - IDs de los items seleccionados
+   * Muestra el selector de páginas para vincular a tokens
+   * @param {string[]} itemIds - IDs de los tokens seleccionados
    * @private
    */
   async _showPageSelectorForToken(itemIds) {
-    const itemIdsArray = Array.isArray(itemIds) ? itemIds : [itemIds];
+    const tokenIds = Array.isArray(itemIds) ? itemIds : [itemIds];
     
     // Verificar que tengamos configuración
     if (!this.config || !this.config.categories) {
@@ -6884,9 +6887,9 @@ export class ExtensionController {
     }));
     
     // Determinar el título del modal
-    const modalTitle = itemIdsArray.length === 1 
-      ? 'Link page to item' 
-      : `Link page to ${itemIdsArray.length} items`;
+    const modalTitle = tokenIds.length === 1 
+      ? 'Link page to token' 
+      : `Link page to ${tokenIds.length} tokens`;
     
     // Mostrar modal de selección
     this._showModalForm(modalTitle, [
@@ -6907,14 +6910,14 @@ export class ExtensionController {
       
       try {
         // Obtener todos los items seleccionados
-        const items = await this.OBR.scene.items.getItems(itemIdsArray);
+        const items = await this.OBR.scene.items.getItems(tokenIds);
         if (items.length === 0) {
-          alert('Error: items not found');
+          alert('Error: tokens not found');
           return;
         }
         
-        // Actualizar metadatos de todos los items
-        log(`🔗 Vinculando página a item - ID: ${selectedPage.id}, Name: ${selectedPage.name}`);
+        // Actualizar metadatos de todos los tokens
+        log(`🔗 Vinculando página a token - ID: ${selectedPage.id}, Name: ${selectedPage.name}`);
         await this.OBR.scene.items.updateItems(items, (updateItems) => {
           updateItems.forEach(item => {
             item.metadata[`${METADATA_KEY}/pageUrl`] = selectedPage.url;
@@ -6922,7 +6925,7 @@ export class ExtensionController {
             item.metadata[`${METADATA_KEY}/pageIcon`] = selectedPage.icon;
             if (selectedPage.id) {
               item.metadata[`${METADATA_KEY}/pageId`] = selectedPage.id;
-              log(`✅ pageId guardado en item: ${selectedPage.id}`);
+              log(`✅ pageId guardado en token: ${selectedPage.id}`);
             } else {
               log(`⚠️ selectedPage no tiene id:`, selectedPage);
             }
@@ -6930,17 +6933,17 @@ export class ExtensionController {
         });
         
         // Registrar y mostrar mensaje de confirmación
-        const itemCount = items.length;
-        log(`✅ Página "${selectedPage.name}" vinculada a ${itemCount} item(s)`);
+        const tokenCount = items.length;
+        log(`✅ Página "${selectedPage.name}" vinculada a ${tokenCount} token(s)`);
         
-        // Trackear para cada item
-        itemIdsArray.forEach(itemId => {
+        // Trackear para cada token
+        tokenIds.forEach(itemId => {
           this.analyticsService.trackPageLinkedToToken(selectedPage.name, itemId);
         });
         
-        const successMessage = itemCount === 1
-          ? `✅ Page "${selectedPage.name}" linked to item`
-          : `✅ Page "${selectedPage.name}" linked to ${itemCount} items`;
+        const successMessage = tokenCount === 1
+          ? `✅ Page "${selectedPage.name}" linked to token`
+          : `✅ Page "${selectedPage.name}" linked to ${tokenCount} tokens`;
         this._showFeedback(successMessage);
         
       } catch (error) {
