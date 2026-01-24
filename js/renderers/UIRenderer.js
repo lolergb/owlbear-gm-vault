@@ -483,7 +483,7 @@ export class UIRenderer {
         actionsContainer.appendChild(contextMenuButton);
         
         // Botón de copiar link (solo GM, si la página tiene URL)
-        if (page.url) {
+        if (page && page.url) {
           const copyLinkButton = document.createElement('button');
           copyLinkButton.className = 'page-copy-link-button';
           copyLinkButton.innerHTML = '<img src="img/icon-link.svg" alt="Copy link">';
