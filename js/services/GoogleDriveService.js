@@ -147,20 +147,42 @@ export class GoogleDriveService {
       
       // Verificar que gapi.auth2 esté disponible
       if (!window.gapi || !window.gapi.auth2) {
-        throw new Error('Google Auth2 no está disponible. Asegúrate de que las credenciales estén configuradas.');
+        throw new Error('Google Auth2 no está disponible. Verifica que las credenciales estén configuradas correctamente.');
       }
       
       const authInstance = window.gapi.auth2.getAuthInstance();
       if (!authInstance) {
-        throw new Error('No se pudo obtener la instancia de autenticación. Verifica las credenciales.');
+        throw new Error('No se pudo conectar con Google. Verifica que el Client ID sea correcto y que el origen esté autorizado.');
       }
       
-      const user = await authInstance.signIn();
+      // Verificar si ya está autenticado
+      const isSignedIn = authInstance.isSignedIn.get();
+      if (isSignedIn) {
+        const user = authInstance.currentUser.get();
+        this.accessToken = user.getAuthResponse().access_token;
+        log('✅ Ya autenticado con Google Drive');
+        return this.accessToken;
+      }
+      
+      // Iniciar sesión
+      const user = await authInstance.signIn({
+        prompt: 'select_account' // Permite elegir cuenta
+      });
       this.accessToken = user.getAuthResponse().access_token;
       log('✅ Autenticado con Google Drive');
       return this.accessToken;
     } catch (error) {
       logError('Error en autenticación:', error);
+      
+      // Mejorar mensajes de error para el usuario
+      if (error.error === 'popup_closed_by_user') {
+        throw new Error('Autenticación cancelada. Por favor, intenta de nuevo.');
+      } else if (error.error === 'access_denied') {
+        throw new Error('Acceso denegado. Asegúrate de dar permisos a la aplicación.');
+      } else if (error.message && error.message.includes('Credenciales')) {
+        throw new Error('Error en las credenciales. Verifica el Client ID en la configuración.');
+      }
+      
       throw error;
     }
   }
@@ -187,13 +209,19 @@ export class GoogleDriveService {
           .setOAuthToken(this.accessToken)
           .setDeveloperKey(this.apiKey)
           .setCallback((data) => {
-            if (data[window.google.picker.Response.ACTION] === window.google.picker.Action.PICKED) {
+            const action = data[window.google.picker.Response.ACTION];
+            
+            if (action === window.google.picker.Action.PICKED) {
               const folder = data[window.google.picker.Response.DOCUMENTS][0];
               this.selectedFolderId = folder.id;
               log(`✅ Carpeta seleccionada: ${folder.name} (${folder.id})`);
               resolve(folder.id);
-            } else if (data[window.google.picker.Response.ACTION] === window.google.picker.Action.CANCEL) {
+            } else if (action === window.google.picker.Action.CANCEL) {
+              log('⚠️ Selección de carpeta cancelada por el usuario');
               reject(new Error('Selección cancelada'));
+            } else {
+              log('⚠️ Acción desconocida en Google Picker:', action);
+              reject(new Error('Error al seleccionar carpeta'));
             }
           })
           .addView(window.google.picker.ViewId.FOLDERS)

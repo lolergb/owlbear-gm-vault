@@ -2733,9 +2733,16 @@ export class ExtensionController {
       }
 
       // Controlar visibilidad del botón de Google Drive (solo si hay OWNER_TOKEN)
+      // Ocultar por defecto hasta verificar
+      if (importDriveBtn) {
+        importDriveBtn.style.display = 'none';
+      }
+      
       if (importDriveBtn && ENABLE_GOOGLE_DRIVE) {
         // Verificar OWNER_TOKEN de forma asíncrona
-        this.notionService._getDefaultToken().then(hasOwnerToken => {
+        this.notionService._getDefaultToken().then(token => {
+          // Convertir token a booleano: si existe y no está vacío, es true
+          const hasOwnerToken = !!(token && typeof token === 'string' && token.trim().length > 0);
           importDriveBtn.style.display = hasOwnerToken ? '' : 'none';
           log('⚙️ Import Google Drive button:', hasOwnerToken ? 'visible (OWNER_TOKEN found)' : 'hidden (no OWNER_TOKEN)');
         }).catch(() => {
@@ -2743,7 +2750,7 @@ export class ExtensionController {
           log('⚙️ Import Google Drive button: hidden (error checking OWNER_TOKEN)');
         });
       } else if (importDriveBtn) {
-        // Si la flag está deshabilitada, ocultar el botón
+        // Si la flag está deshabilitada, asegurar que esté oculto
         importDriveBtn.style.display = 'none';
       }
     }
@@ -3124,8 +3131,21 @@ export class ExtensionController {
     const importDriveBtn = document.getElementById('import-drive-btn');
     if (importDriveBtn && !importDriveBtn.dataset.listenerAdded) {
       importDriveBtn.dataset.listenerAdded = 'true';
-      importDriveBtn.addEventListener('click', () => {
-        this._importFromGoogleDrive();
+      importDriveBtn.addEventListener('click', async () => {
+        // Verificar OWNER_TOKEN antes de ejecutar (doble verificación de seguridad)
+        try {
+          const token = await this.notionService._getDefaultToken();
+          const hasOwnerToken = !!(token && typeof token === 'string' && token.trim().length > 0);
+          if (!hasOwnerToken) {
+            this._showFeedback('❌ Esta funcionalidad solo está disponible para el GM (OWNER_TOKEN requerido)');
+            log('⚠️ Intento de acceso a Google Drive sin OWNER_TOKEN');
+            return;
+          }
+          this._importFromGoogleDrive();
+        } catch (error) {
+          logError('Error verificando OWNER_TOKEN:', error);
+          this._showFeedback('❌ Error verificando permisos. Esta funcionalidad solo está disponible para el GM.');
+        }
       });
     }
   }
@@ -3136,6 +3156,15 @@ export class ExtensionController {
    */
   async _importFromGoogleDrive() {
     try {
+      // Verificar OWNER_TOKEN antes de continuar (doble verificación de seguridad)
+      const token = await this.notionService._getDefaultToken();
+      const hasOwnerToken = !!(token && typeof token === 'string' && token.trim().length > 0);
+      if (!hasOwnerToken) {
+        logError('⚠️ Intento de acceso a Google Drive sin OWNER_TOKEN');
+        this._showFeedback('❌ Esta funcionalidad solo está disponible para el GM (OWNER_TOKEN requerido)');
+        return;
+      }
+
       // Verificar que las credenciales estén configuradas
       if (!this.googleDriveService.apiKey || !this.googleDriveService.clientId) {
         // Mostrar modal para configurar credenciales
@@ -3156,16 +3185,35 @@ export class ExtensionController {
       await this.googleDriveService.loadGoogleAPIs();
 
       // Autenticar
-      this._showFeedback('🔐 Autenticando con Google...');
-      await this.googleDriveService.authenticate();
+      this._showFeedback('🔐 Abriendo ventana de autenticación de Google...');
+      try {
+        await this.googleDriveService.authenticate();
+      } catch (authError) {
+        if (authError.message.includes('cancelada')) {
+          this._showFeedback('❌ Autenticación cancelada');
+          return;
+        }
+        throw authError;
+      }
 
       // Seleccionar carpeta
-      this._showFeedback('📁 Selecciona la carpeta "GM vault" en Google Drive...');
-      const folderId = await this.googleDriveService.selectFolder();
+      this._showFeedback('📁 Selecciona la carpeta "GM vault" en la ventana que se abrirá...');
+      let folderId;
+      try {
+        folderId = await this.googleDriveService.selectFolder();
+      } catch (selectError) {
+        if (selectError.message.includes('cancelada')) {
+          this._showFeedback('❌ Selección de carpeta cancelada');
+          return;
+        }
+        throw selectError;
+      }
 
       // Generar vault desde la carpeta
-      this._showFeedback('🔄 Generando vault desde Google Drive...');
+      this._showFeedback('🔄 Analizando estructura de carpetas y archivos...');
       const driveConfig = await this.googleDriveService.generateVaultFromFolder(folderId);
+      
+      this._showFeedback('✅ Vault generado correctamente');
 
       // El formato de driveConfig ya es compatible con el formato legacy del vault
       // { categories: [...], pages: [...] }
@@ -3187,11 +3235,30 @@ export class ExtensionController {
 
     } catch (error) {
       logError('Error importando desde Google Drive:', error);
+      
+      let userMessage = '❌ Error desconocido';
+      
       if (error.message === 'Selección cancelada') {
-        this._showFeedback('❌ Importación cancelada');
+        userMessage = '❌ Importación cancelada';
+      } else if (error.message.includes('Credenciales')) {
+        userMessage = '❌ Error en las credenciales. Verifica que el API Key y Client ID sean correctos.';
+      } else if (error.message.includes('no está disponible')) {
+        userMessage = '❌ Google Drive no está disponible. Verifica tu conexión a internet.';
+      } else if (error.message.includes('autenticación') || error.message.includes('Auth')) {
+        userMessage = '❌ Error de autenticación. Intenta cerrar sesión y volver a iniciar.';
+      } else if (error.message.includes('inicializado')) {
+        userMessage = '❌ Error al conectar con Google. Verifica tus credenciales en la configuración.';
       } else {
-        this._showFeedback(`❌ Error: ${error.message}`);
-        alert(`Error importando desde Google Drive: ${error.message}`);
+        userMessage = `❌ Error: ${error.message}`;
+      }
+      
+      this._showFeedback(userMessage);
+      
+      // Mostrar alerta solo para errores críticos
+      if (!error.message.includes('cancelada')) {
+        setTimeout(() => {
+          alert(`${userMessage}\n\nSi el problema persiste, verifica:\n• Que las APIs estén habilitadas en Google Cloud Console\n• Que el origen esté autorizado\n• Que las credenciales sean correctas`);
+        }, 500);
       }
     }
   }
@@ -3205,34 +3272,43 @@ export class ExtensionController {
     return new Promise((resolve) => {
       const modalContent = `
         <div class="form">
-          <p class="settings__description">
-            Para usar Google Drive, necesitas configurar tus credenciales de Google API.
-            <br><br>
-            <strong>Pasos:</strong><br>
-            1. Ve a <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a><br>
-            2. Crea un proyecto o selecciona uno existente<br>
-            3. Habilita Google Drive API y Google Picker API<br>
-            4. Crea credenciales OAuth 2.0 (tipo: Aplicación web)<br>
-            5. Añade tu dominio a los orígenes autorizados<br>
-            6. Copia el API Key y Client ID aquí
-          </p>
-          <div class="form__field">
-            <label class="form__label" for="google-api-key">Google API Key</label>
-            <input type="text" id="google-api-key" class="input input--mono" placeholder="AIza..." />
+          <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0 0 12px 0; font-weight: 600; color: #333;">📋 Guía rápida (5 minutos)</p>
+            <ol style="margin: 0; padding-left: 20px; color: #666; line-height: 1.8;">
+              <li>Abre <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #1976d2;">Google Cloud Console → Credenciales</a></li>
+              <li>Haz clic en <strong>"+ CREAR CREDENCIALES"</strong> → <strong>"ID de cliente de OAuth"</strong></li>
+              <li>Selecciona <strong>"Aplicación web"</strong> y dale un nombre</li>
+              <li>En <strong>"Orígenes autorizados"</strong>, añade: <code style="background: #fff; padding: 2px 6px; border-radius: 4px;">${window.location.origin}</code></li>
+              <li>Copia el <strong>ID de cliente</strong> (xxxxx.apps.googleusercontent.com) y pégalo abajo</li>
+              <li>Para la API Key, ve a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #1976d2;">Credenciales</a> y crea una <strong>"Clave de API"</strong></li>
+            </ol>
+            <p style="margin: 12px 0 0 0; font-size: 12px; color: #999;">
+              💡 <strong>Importante:</strong> También necesitas habilitar <strong>Google Drive API</strong> y <strong>Google Picker API</strong> en la <a href="https://console.cloud.google.com/apis/library" target="_blank" style="color: #1976d2;">Biblioteca de APIs</a>
+            </p>
           </div>
           <div class="form__field">
-            <label class="form__label" for="google-client-id">Google Client ID</label>
-            <input type="text" id="google-client-id" class="input input--mono" placeholder="xxxxx.apps.googleusercontent.com" />
+            <label class="form__label" for="google-api-key">
+              🔑 API Key de Google
+              <span style="font-size: 12px; color: #999; font-weight: normal;">(empieza con "AIza...")</span>
+            </label>
+            <input type="text" id="google-api-key" class="input input--mono" placeholder="AIzaSyC..." style="font-family: monospace;" />
+          </div>
+          <div class="form__field">
+            <label class="form__label" for="google-client-id">
+              🆔 Client ID de OAuth
+              <span style="font-size: 12px; color: #999; font-weight: normal;">(termina en .apps.googleusercontent.com)</span>
+            </label>
+            <input type="text" id="google-client-id" class="input input--mono" placeholder="123456789-xxxxx.apps.googleusercontent.com" style="font-family: monospace;" />
           </div>
           <div class="form__actions">
-            <button type="button" id="google-credentials-cancel" class="btn btn--ghost btn--flex">Cancel</button>
-            <button type="button" id="google-credentials-save" class="btn btn--primary btn--flex">Save</button>
+            <button type="button" id="google-credentials-cancel" class="btn btn--ghost btn--flex">Cancelar</button>
+            <button type="button" id="google-credentials-save" class="btn btn--primary btn--flex">Guardar y continuar</button>
           </div>
         </div>
       `;
 
       const modal = this.modalManager.showCustom({
-        title: 'Configure Google Drive Credentials',
+        title: '⚙️ Configurar Google Drive',
         content: modalContent
       });
 
@@ -3240,6 +3316,12 @@ export class ExtensionController {
       const saveBtn = modal.querySelector('#google-credentials-save');
       const apiKeyInput = modal.querySelector('#google-api-key');
       const clientIdInput = modal.querySelector('#google-client-id');
+
+      // Cargar valores guardados si existen
+      const savedApiKey = localStorage.getItem('google_drive_api_key');
+      const savedClientId = localStorage.getItem('google_drive_client_id');
+      if (savedApiKey) apiKeyInput.value = savedApiKey;
+      if (savedClientId) clientIdInput.value = savedClientId;
 
       cancelBtn.addEventListener('click', () => {
         this.modalManager.close();
@@ -3251,7 +3333,18 @@ export class ExtensionController {
         const clientId = clientIdInput.value.trim();
 
         if (!apiKey || !clientId) {
-          alert('Por favor, completa ambos campos');
+          this._showFeedback('❌ Por favor, completa ambos campos');
+          return;
+        }
+
+        // Validación básica
+        if (!apiKey.startsWith('AIza')) {
+          this._showFeedback('⚠️ El API Key parece incorrecto (debe empezar con "AIza")');
+          return;
+        }
+
+        if (!clientId.includes('.apps.googleusercontent.com')) {
+          this._showFeedback('⚠️ El Client ID parece incorrecto (debe terminar en .apps.googleusercontent.com)');
           return;
         }
 
@@ -3260,6 +3353,7 @@ export class ExtensionController {
         localStorage.setItem('google_drive_client_id', clientId);
 
         this.modalManager.close();
+        this._showFeedback('✅ Credenciales guardadas');
         resolve({ apiKey, clientId });
       });
     });
