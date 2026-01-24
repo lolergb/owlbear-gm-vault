@@ -3161,41 +3161,55 @@ export class ExtensionController {
         return;
       }
 
-      // Obtener credenciales del servidor (más simple para el usuario)
-      this._showFeedback('🔄 Obteniendo credenciales...');
-      const serverCredentials = await this.googleDriveService.getCredentialsFromServer();
+      // Verificar si ya tiene credenciales guardadas
+      let apiKey = localStorage.getItem('google_drive_api_key');
+      let clientId = localStorage.getItem('google_drive_client_id');
       
-      if (!serverCredentials) {
-        // Si no hay credenciales en el servidor, mostrar modal para configurarlas manualmente
-        // (esto solo debería pasar si el servidor no está configurado)
-        this._showFeedback('⚠️ Credenciales no configuradas en el servidor');
+      // Si no tiene credenciales, intentar obtenerlas del servidor primero
+      if (!apiKey || !clientId) {
+        this._showFeedback('🔄 Obteniendo credenciales...');
+        const serverCredentials = await this.googleDriveService.getCredentialsFromServer();
+        if (serverCredentials) {
+          apiKey = serverCredentials.apiKey;
+          clientId = serverCredentials.clientId;
+          // Guardar en localStorage para futuras sesiones
+          localStorage.setItem('google_drive_api_key', apiKey);
+          localStorage.setItem('google_drive_client_id', clientId);
+        }
+      }
+      
+      // Si aún no hay credenciales, mostrar modal simple para configurarlas
+      if (!apiKey || !clientId) {
         const credentials = await this._showGoogleDriveCredentialsModal();
         if (!credentials) {
           return; // Usuario canceló
         }
-        this.googleDriveService.setCredentials(credentials.apiKey, credentials.clientId);
-      } else {
-        // Usar credenciales del servidor
-        this.googleDriveService.setCredentials(serverCredentials.apiKey, serverCredentials.clientId);
+        apiKey = credentials.apiKey;
+        clientId = credentials.clientId;
+        // Guardar en localStorage
+        localStorage.setItem('google_drive_api_key', apiKey);
+        localStorage.setItem('google_drive_client_id', clientId);
       }
+      
+      // Configurar credenciales
+      this.googleDriveService.setCredentials(apiKey, clientId);
       
       // Reinicializar el servicio para cargar las APIs
       this.googleDriveService.pickerApiLoaded = false;
       this.googleDriveService.gapiLoaded = false;
 
-      // Mostrar mensaje de carga
-      this._showFeedback('🔄 Conectando con Google Drive...');
-
       // Cargar APIs de Google
+      this._showFeedback('🔄 Cargando Google Drive...');
       await this.googleDriveService.loadGoogleAPIs();
 
-      // Autenticar
-      this._showFeedback('🔐 Abriendo ventana de autenticación de Google...');
+      // Autenticar con Google
+      this._showFeedback('🔐 Iniciando sesión con Google...');
       try {
         await this.googleDriveService.authenticate();
+        this._showFeedback('✅ Sesión iniciada correctamente');
       } catch (authError) {
         if (authError.message.includes('cancelada')) {
-          this._showFeedback('❌ Autenticación cancelada');
+          this._showFeedback('❌ Inicio de sesión cancelado');
           return;
         }
         throw authError;
@@ -3206,6 +3220,7 @@ export class ExtensionController {
       let folderId;
       try {
         folderId = await this.googleDriveService.selectFolder();
+        this._showFeedback('✅ Carpeta seleccionada');
       } catch (selectError) {
         if (selectError.message.includes('cancelada')) {
           this._showFeedback('❌ Selección de carpeta cancelada');
@@ -3269,8 +3284,8 @@ export class ExtensionController {
   }
 
   /**
-   * Muestra modal para configurar credenciales de Google Drive manualmente
-   * (Solo se usa si las credenciales no están en el servidor)
+   * Muestra modal para configurar credenciales de Google Drive
+   * Solo se muestra la primera vez (o si el usuario quiere cambiarlas)
    * @returns {Promise<Object|null>} - {apiKey, clientId} o null si se cancela
    * @private
    */
@@ -3278,24 +3293,26 @@ export class ExtensionController {
     return new Promise((resolve) => {
       const modalContent = `
         <div class="form">
-          <div style="background: #fff3cd; padding: 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-            <p style="margin: 0; color: #856404; font-weight: 600;">⚠️ Configuración manual requerida</p>
-            <p style="margin: 8px 0 0 0; font-size: 13px; color: #856404;">
-              Las credenciales no están configuradas en el servidor. Contacta al administrador o configura manualmente.
+          <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
+            <p style="margin: 0 0 8px 0; font-weight: 600; color: #1565c0;">ℹ️ Configuración inicial (solo una vez)</p>
+            <p style="margin: 0; font-size: 13px; color: #1565c0; line-height: 1.6;">
+              Para usar Google Drive, necesitas crear credenciales en Google Cloud Console. 
+              Solo necesitas hacerlo una vez y se guardarán automáticamente.
             </p>
           </div>
           <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-            <p style="margin: 0 0 12px 0; font-weight: 600; color: #333;">📋 Guía rápida (5 minutos)</p>
+            <p style="margin: 0 0 12px 0; font-weight: 600; color: #333;">📋 Pasos rápidos (5 minutos)</p>
             <ol style="margin: 0; padding-left: 20px; color: #666; line-height: 1.8; font-size: 13px;">
-              <li>Abre <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #1976d2;">Google Cloud Console → Credenciales</a></li>
+              <li>Abre <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #1976d2; font-weight: 600;">Google Cloud Console → Credenciales</a></li>
               <li>Haz clic en <strong>"+ CREAR CREDENCIALES"</strong> → <strong>"ID de cliente de OAuth"</strong></li>
-              <li>Selecciona <strong>"Aplicación web"</strong> y dale un nombre</li>
-              <li>En <strong>"Orígenes autorizados"</strong>, añade: <code style="background: #fff; padding: 2px 6px; border-radius: 4px;">${window.location.origin}</code></li>
+              <li>Selecciona <strong>"Aplicación web"</strong> y dale un nombre (ej: "GM Vault")</li>
+              <li>En <strong>"Orígenes autorizados"</strong>, añade: <code style="background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 12px;">${window.location.origin}</code></li>
               <li>Copia el <strong>ID de cliente</strong> (xxxxx.apps.googleusercontent.com) y pégalo abajo</li>
-              <li>Para la API Key, ve a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #1976d2;">Credenciales</a> y crea una <strong>"Clave de API"</strong></li>
+              <li>Para la API Key, haz clic en <strong>"+ CREAR CREDENCIALES"</strong> → <strong>"Clave de API"</strong></li>
+              <li>Habilita <strong>Google Drive API</strong> y <strong>Google Picker API</strong> en la <a href="https://console.cloud.google.com/apis/library" target="_blank" style="color: #1976d2;">Biblioteca de APIs</a></li>
             </ol>
             <p style="margin: 12px 0 0 0; font-size: 12px; color: #999;">
-              💡 <strong>Importante:</strong> También necesitas habilitar <strong>Google Drive API</strong> y <strong>Google Picker API</strong> en la <a href="https://console.cloud.google.com/apis/library" target="_blank" style="color: #1976d2;">Biblioteca de APIs</a>
+              💡 <strong>Tip:</strong> Puedes usar un proyecto existente o crear uno nuevo. Todo es gratuito.
             </p>
           </div>
           <div class="form__field">
@@ -3320,7 +3337,7 @@ export class ExtensionController {
       `;
 
       const modal = this.modalManager.showCustom({
-        title: '⚙️ Configurar Google Drive (Manual)',
+        title: '⚙️ Configurar Google Drive (solo una vez)',
         content: modalContent
       });
 
@@ -3360,12 +3377,7 @@ export class ExtensionController {
           return;
         }
 
-        // Guardar en localStorage para futuras sesiones
-        localStorage.setItem('google_drive_api_key', apiKey);
-        localStorage.setItem('google_drive_client_id', clientId);
-
         this.modalManager.close();
-        this._showFeedback('✅ Credenciales guardadas');
         resolve({ apiKey, clientId });
       });
     });
