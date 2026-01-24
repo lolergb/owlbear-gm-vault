@@ -6,7 +6,7 @@
 
 import { log, logError, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
 import { filterVisiblePages } from '../utils/helpers.js';
-import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
+import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY, ENABLE_GOOGLE_DRIVE } from '../utils/constants.js';
 
 // Models
 import { Page } from '../models/Page.js';
@@ -19,6 +19,7 @@ import { NotionService } from '../services/NotionService.js';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js';
 import { getImageCacheService } from '../services/ImageCacheService.js';
+import { GoogleDriveService } from '../services/GoogleDriveService.js';
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js';
@@ -57,6 +58,7 @@ export class ExtensionController {
     this.broadcastService = new BroadcastService();
     this.analyticsService = new AnalyticsService();
     this.imageCacheService = getImageCacheService();
+    this.googleDriveService = new GoogleDriveService();
 
     // Renderers
     this.notionRenderer = new NotionRenderer();
@@ -1670,6 +1672,15 @@ export class ExtensionController {
       notionService: this.notionService
     });
 
+    // Google Drive Service
+    this.googleDriveService.setOBR(this.OBR);
+    // Cargar credenciales guardadas de localStorage
+    const googleApiKey = localStorage.getItem('google_drive_api_key') || '';
+    const googleClientId = localStorage.getItem('google_drive_client_id') || '';
+    if (googleApiKey && googleClientId) {
+      this.googleDriveService.setCredentials(googleApiKey, googleClientId);
+    }
+
     // Image Cache Service - inicializar en background
     this.imageCacheService.init().then(() => {
       // Precargar iconos de la app
@@ -2702,6 +2713,7 @@ export class ExtensionController {
       
       // Mostrar botón Import from Notion solo si hay token guardado
       const importNotionBtn = document.getElementById('import-notion-btn');
+      const importDriveBtn = document.getElementById('import-drive-btn');
       const saveTokenBtn = document.getElementById('save-token');
       if (importNotionBtn) {
         const hasToken = !!this.storageService.getUserToken();
@@ -2718,6 +2730,21 @@ export class ExtensionController {
             saveTokenBtn.classList.add('btn--primary');
           }
         }
+      }
+
+      // Controlar visibilidad del botón de Google Drive (solo si hay OWNER_TOKEN)
+      if (importDriveBtn && ENABLE_GOOGLE_DRIVE) {
+        // Verificar OWNER_TOKEN de forma asíncrona
+        this.notionService._getDefaultToken().then(hasOwnerToken => {
+          importDriveBtn.style.display = hasOwnerToken ? '' : 'none';
+          log('⚙️ Import Google Drive button:', hasOwnerToken ? 'visible (OWNER_TOKEN found)' : 'hidden (no OWNER_TOKEN)');
+        }).catch(() => {
+          importDriveBtn.style.display = 'none';
+          log('⚙️ Import Google Drive button: hidden (error checking OWNER_TOKEN)');
+        });
+      } else if (importDriveBtn) {
+        // Si la flag está deshabilitada, ocultar el botón
+        importDriveBtn.style.display = 'none';
       }
     }
 
@@ -3092,6 +3119,150 @@ export class ExtensionController {
         this._showNotionPagesSelector();
       });
     }
+
+    // Botón de importar desde Google Drive
+    const importDriveBtn = document.getElementById('import-drive-btn');
+    if (importDriveBtn && !importDriveBtn.dataset.listenerAdded) {
+      importDriveBtn.dataset.listenerAdded = 'true';
+      importDriveBtn.addEventListener('click', () => {
+        this._importFromGoogleDrive();
+      });
+    }
+  }
+
+  /**
+   * Importa el vault desde Google Drive
+   * @private
+   */
+  async _importFromGoogleDrive() {
+    try {
+      // Verificar que las credenciales estén configuradas
+      if (!this.googleDriveService.apiKey || !this.googleDriveService.clientId) {
+        // Mostrar modal para configurar credenciales
+        const credentials = await this._showGoogleDriveCredentialsModal();
+        if (!credentials) {
+          return; // Usuario canceló
+        }
+        this.googleDriveService.setCredentials(credentials.apiKey, credentials.clientId);
+        // Reinicializar el servicio para cargar las APIs con las nuevas credenciales
+        this.googleDriveService.pickerApiLoaded = false;
+        this.googleDriveService.gapiLoaded = false;
+      }
+
+      // Mostrar mensaje de carga
+      this._showFeedback('🔄 Conectando con Google Drive...');
+
+      // Cargar APIs de Google
+      await this.googleDriveService.loadGoogleAPIs();
+
+      // Autenticar
+      this._showFeedback('🔐 Autenticando con Google...');
+      await this.googleDriveService.authenticate();
+
+      // Seleccionar carpeta
+      this._showFeedback('📁 Selecciona la carpeta "GM vault" en Google Drive...');
+      const folderId = await this.googleDriveService.selectFolder();
+
+      // Generar vault desde la carpeta
+      this._showFeedback('🔄 Generando vault desde Google Drive...');
+      const driveConfig = await this.googleDriveService.generateVaultFromFolder(folderId);
+
+      // El formato de driveConfig ya es compatible con el formato legacy del vault
+      // { categories: [...], pages: [...] }
+      const importedConfig = {
+        categories: driveConfig.categories || [],
+        pages: driveConfig.pages || []
+      };
+
+      // Contar páginas
+      const currentConfig = this.config || { categories: [] };
+      const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
+      const currentPagesCount = this._countPagesInConfig(configForCount);
+      const importedPagesCount = this._countPagesInConfig(importedConfig);
+
+      log(`Import from Drive: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
+
+      // Mostrar modal de opciones de importación (igual que JSON)
+      await this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, 'Google Drive');
+
+    } catch (error) {
+      logError('Error importando desde Google Drive:', error);
+      if (error.message === 'Selección cancelada') {
+        this._showFeedback('❌ Importación cancelada');
+      } else {
+        this._showFeedback(`❌ Error: ${error.message}`);
+        alert(`Error importando desde Google Drive: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Muestra modal para configurar credenciales de Google Drive
+   * @returns {Promise<Object|null>} - {apiKey, clientId} o null si se cancela
+   * @private
+   */
+  async _showGoogleDriveCredentialsModal() {
+    return new Promise((resolve) => {
+      const modalContent = `
+        <div class="form">
+          <p class="settings__description">
+            Para usar Google Drive, necesitas configurar tus credenciales de Google API.
+            <br><br>
+            <strong>Pasos:</strong><br>
+            1. Ve a <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a><br>
+            2. Crea un proyecto o selecciona uno existente<br>
+            3. Habilita Google Drive API y Google Picker API<br>
+            4. Crea credenciales OAuth 2.0 (tipo: Aplicación web)<br>
+            5. Añade tu dominio a los orígenes autorizados<br>
+            6. Copia el API Key y Client ID aquí
+          </p>
+          <div class="form__field">
+            <label class="form__label" for="google-api-key">Google API Key</label>
+            <input type="text" id="google-api-key" class="input input--mono" placeholder="AIza..." />
+          </div>
+          <div class="form__field">
+            <label class="form__label" for="google-client-id">Google Client ID</label>
+            <input type="text" id="google-client-id" class="input input--mono" placeholder="xxxxx.apps.googleusercontent.com" />
+          </div>
+          <div class="form__actions">
+            <button type="button" id="google-credentials-cancel" class="btn btn--ghost btn--flex">Cancel</button>
+            <button type="button" id="google-credentials-save" class="btn btn--primary btn--flex">Save</button>
+          </div>
+        </div>
+      `;
+
+      const modal = this.modalManager.showCustom({
+        title: 'Configure Google Drive Credentials',
+        content: modalContent
+      });
+
+      const cancelBtn = modal.querySelector('#google-credentials-cancel');
+      const saveBtn = modal.querySelector('#google-credentials-save');
+      const apiKeyInput = modal.querySelector('#google-api-key');
+      const clientIdInput = modal.querySelector('#google-client-id');
+
+      cancelBtn.addEventListener('click', () => {
+        this.modalManager.close();
+        resolve(null);
+      });
+
+      saveBtn.addEventListener('click', () => {
+        const apiKey = apiKeyInput.value.trim();
+        const clientId = clientIdInput.value.trim();
+
+        if (!apiKey || !clientId) {
+          alert('Por favor, completa ambos campos');
+          return;
+        }
+
+        // Guardar en localStorage para futuras sesiones
+        localStorage.setItem('google_drive_api_key', apiKey);
+        localStorage.setItem('google_drive_client_id', clientId);
+
+        this.modalManager.close();
+        resolve({ apiKey, clientId });
+      });
+    });
   }
 
   /**
