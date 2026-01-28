@@ -6360,7 +6360,20 @@ export class ExtensionController {
         // Usar el HTML embebido directamente
         htmlContent = page.htmlContent;
       }
-      // Caso 2: Página de Notion (necesita API o broadcast)
+      // Caso 2: Página con URL externa (Obsidian Tunnel) - cargar en iframe
+      else if (page.url && !page.getNotionPageId()) {
+        log('🔗 Mention: página con URL externa, cargando en iframe:', page.url);
+        content.innerHTML = `
+          <iframe 
+            src="${page.url}" 
+            class="mention-modal__iframe"
+            style="width: 100%; height: 100%; border: none; min-height: 500px;"
+            title="${displayName}"
+          ></iframe>
+        `;
+        return;
+      }
+      // Caso 3: Página de Notion (necesita API o broadcast)
       else {
         const notionPageId = page.getNotionPageId();
         
