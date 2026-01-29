@@ -4382,6 +4382,24 @@ export class ExtensionController {
         return;
       }
       
+      // Compartir imagen desde iframe de Obsidian Tunnel
+      if (event.data && event.data.type === 'shareImage') {
+        const { imageUrl, caption } = event.data;
+        log('🖼️ Solicitud de compartir imagen recibida:', { imageUrl, caption });
+        
+        if (imageUrl && this.isGM) {
+          try {
+            await this._shareImageToPlayers(imageUrl, caption || '');
+            log('✅ Imagen compartida con éxito');
+          } catch (error) {
+            logError('❌ Error al compartir imagen:', error);
+          }
+        } else if (!this.isGM) {
+          logWarn('⚠️ Solo el GM puede compartir imágenes');
+        }
+        return;
+      }
+      
       if (event.data && event.data.type === 'openMentionModal') {
         const { pageId, pageName, pageUrl } = event.data;
         
