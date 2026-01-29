@@ -123,18 +123,18 @@ export class NotionRenderer {
     const displayName = pageInVault.name || apiDisplayName;
     
     // Para players y Co-GMs: verificar si la página es visible
-    // Co-GM también debe respetar la visibilidad (es GM promovido pero solo lectura)
-    if ((!this.isGM || this.isCoGM) && this.isPageVisibleCallback) {
-      const isVisible = this.isPageVisibleCallback(pageInVault);
-      if (!isVisible) {
-        // Página no visible: texto plano sin indicación (pero con data para actualización posterior)
-        return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${mentionedPageId}" data-mention-page-name="${displayName.replace(/"/g, '&quot;')}">${displayName}</span>`;
-      }
-    }
+    // Los mentions son SIEMPRE clickeables para que puedan ver el mensaje de "página no disponible"
+    // La verificación de acceso real se hace en _openMentionedPage
+    const isVisibleForPlayer = (!this.isGM || this.isCoGM) && this.isPageVisibleCallback 
+      ? this.isPageVisibleCallback(pageInVault) 
+      : true;
     
-    // Página en vault y accesible: renderizar como enlace clickeable
+    // Clase adicional para indicar visualmente páginas con acceso restringido
+    const lockedClass = (!this.isGM || this.isCoGM) && !isVisibleForPlayer ? ' notion-mention--locked' : '';
+    
+    // Página en vault: renderizar como enlace clickeable (incluso si no visible, para mostrar mensaje)
     return `<span 
-      class="notion-mention notion-mention--link" 
+      class="notion-mention notion-mention--link${lockedClass}" 
       data-mention-page-id="${mentionedPageId}"
       data-mention-page-name="${displayName.replace(/"/g, '&quot;')}"
       data-mention-page-url="${pageInVault.url || ''}"

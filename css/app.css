@@ -2548,6 +2548,24 @@
   outline-offset: 1px;
 }
 
+/* Locked mention (visible for players/co-GMs but page not shared yet) */
+.notion-mention--locked {
+  background-color: rgba(150, 122, 204, 0.08);
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+}
+
+.notion-mention--locked::after {
+  content: ' 🔒';
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.notion-mention--locked:hover {
+  background-color: rgba(150, 122, 204, 0.15);
+  opacity: 1;
+}
+
 /* Loading state */
 .notion-mention--loading {
   opacity: 0.6;
