@@ -6371,19 +6371,23 @@ export class ExtensionController {
         
         // Cuando el iframe cargue, enviar información sobre el rol del usuario
         iframe.onload = () => {
-          try {
-            // Enviar mensaje al iframe indicando si es Player (no GM)
-            const isPlayer = !this.isGM;
-            iframe.contentWindow.postMessage({
-              type: 'setUserRole',
-              isPlayer: isPlayer,
-              isGM: this.isGM,
-              isCoGM: this.isCoGM
-            }, '*');
-            log('📤 Enviado rol de usuario al iframe:', { isPlayer, isGM: this.isGM, isCoGM: this.isCoGM });
-          } catch (error) {
-            logError('❌ Error enviando rol al iframe:', error);
-          }
+          // Pequeño delay para asegurar que el script del iframe esté listo
+          setTimeout(() => {
+            try {
+              // Enviar mensaje al iframe indicando si es Player (no GM)
+              const isPlayer = !this.isGM;
+              log('📤 Enviando rol de usuario al iframe:', { isPlayer, isGM: this.isGM, isCoGM: this.isCoGM });
+              iframe.contentWindow.postMessage({
+                type: 'setUserRole',
+                isPlayer: isPlayer,
+                isGM: this.isGM,
+                isCoGM: this.isCoGM
+              }, '*');
+              log('✅ Mensaje enviado al iframe');
+            } catch (error) {
+              logError('❌ Error enviando rol al iframe:', error);
+            }
+          }, 100);
         };
         
         content.innerHTML = '';
