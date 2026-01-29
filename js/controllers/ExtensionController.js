@@ -7025,8 +7025,9 @@ export class ExtensionController {
                 page = this.config?.findPageByUrl(pageUrl);
               }
               
-              // Si la página existe pero no es visible para players, mostrar mensaje
-              if (page && !page.visibleToPlayers) {
+              // Para Players/Co-GMs: la página debe existir Y ser visible
+              // Si no existe en el vault o no es visible, denegar acceso
+              if (!page || !page.visibleToPlayers) {
                 await this.OBR.action.open();
                 await new Promise(resolve => setTimeout(resolve, 100));
                 this._showFeedback('🔒 This page is not available');
