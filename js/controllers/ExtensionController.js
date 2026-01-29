@@ -640,8 +640,41 @@ export class ExtensionController {
     if (pageToUpdate) {
       pageToUpdate.visibleToPlayers = newVisibility;
       await this.saveConfig(this.config);
+      
+      // Actualizar tokens vinculados a esta página
+      await this._updateLinkedTokensVisibility(page.id, page.url, newVisibility);
     } else {
       logError('No se encontró la página:', page.name);
+    }
+  }
+  
+  /**
+   * Actualiza la visibilidad en los tokens vinculados a una página
+   * @private
+   */
+  async _updateLinkedTokensVisibility(pageId, pageUrl, newVisibility) {
+    try {
+      // Obtener todos los items de la escena
+      const allItems = await this.OBR.scene.items.getItems();
+      
+      // Filtrar tokens que tienen esta página vinculada
+      const linkedTokens = allItems.filter(item => {
+        const tokenPageId = item.metadata?.[`${METADATA_KEY}/pageId`];
+        const tokenPageUrl = item.metadata?.[`${METADATA_KEY}/pageUrl`];
+        return (pageId && tokenPageId === pageId) || (pageUrl && tokenPageUrl === pageUrl);
+      });
+      
+      if (linkedTokens.length > 0) {
+        // Actualizar el metadata de visibilidad en todos los tokens vinculados
+        await this.OBR.scene.items.updateItems(linkedTokens, (updateItems) => {
+          updateItems.forEach(item => {
+            item.metadata[`${METADATA_KEY}/pageVisible`] = newVisibility;
+          });
+        });
+        log(`👁️ Actualizada visibilidad en ${linkedTokens.length} token(s) vinculados`);
+      }
+    } catch (error) {
+      logError('Error actualizando tokens vinculados:', error);
     }
   }
 
@@ -6992,9 +7025,9 @@ export class ExtensionController {
         }
       });
       
-      // Menú: Ver página vinculada (todos, si tiene página)
+      // Menú: Ver página vinculada (GM - ve todas las páginas vinculadas)
       await this.OBR.contextMenu.create({
-        id: `${METADATA_KEY}/view-page`,
+        id: `${METADATA_KEY}/view-page-gm`,
         icons: [
           {
             icon: `${baseUrl}/img/icon-view-page.svg`,
@@ -7003,7 +7036,8 @@ export class ExtensionController {
               every: [
                 { key: 'layer', value: 'CHARACTER' },
                 { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
-              ]
+              ],
+              roles: ['GM']
             }
           }
         ],
@@ -7015,33 +7049,43 @@ export class ExtensionController {
           const pageName = item.metadata[`${METADATA_KEY}/pageName`] || 'Linked page';
           const pageId = item.metadata[`${METADATA_KEY}/pageId`];
           
-          // Abrir si hay pageUrl o pageId (páginas de Obsidian pueden no tener URL)
           if (pageUrl || pageId) {
-            // Verificar acceso para Players y Co-GMs
-            if (!this.isGM || this.isCoGM) {
-              // Buscar la página en el vault para verificar visibilidad
-              let page = this.config?.findPageById(pageId);
-              if (!page && pageUrl) {
-                page = this.config?.findPageByUrl(pageUrl);
-              }
-              
-              // Para Players/Co-GMs: la página debe existir Y ser visible
-              // Si no existe en el vault o no es visible, denegar acceso
-              if (!page || !page.visibleToPlayers) {
-                await this.OBR.action.open();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                this._showFeedback('🔒 This page is not available');
-                return;
-              }
-            }
-            
-            // Abrir el panel de la extensión
             await this.OBR.action.open();
-            
-            // Pequeña espera para que el panel se abra
             await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Trackear y abrir la página
+            this.analyticsService.trackPageViewedFromToken(pageName);
+            await this._openLinkedPage(pageUrl, pageName, pageId);
+          }
+        }
+      });
+      
+      // Menú: Ver página vinculada (Players - solo si página es visible)
+      await this.OBR.contextMenu.create({
+        id: `${METADATA_KEY}/view-page-player`,
+        icons: [
+          {
+            icon: `${baseUrl}/img/icon-view-page.svg`,
+            label: 'View linked page',
+            filter: {
+              every: [
+                { key: 'layer', value: 'CHARACTER' },
+                { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' },
+                { key: ['metadata', `${METADATA_KEY}/pageVisible`], value: true }
+              ],
+              roles: ['PLAYER']
+            }
+          }
+        ],
+        onClick: async (context) => {
+          const item = context.items[0];
+          if (!item) return;
+          
+          const pageUrl = item.metadata[`${METADATA_KEY}/pageUrl`];
+          const pageName = item.metadata[`${METADATA_KEY}/pageName`] || 'Linked page';
+          const pageId = item.metadata[`${METADATA_KEY}/pageId`];
+          
+          if (pageUrl || pageId) {
+            await this.OBR.action.open();
+            await new Promise(resolve => setTimeout(resolve, 100));
             this.analyticsService.trackPageViewedFromToken(pageName);
             await this._openLinkedPage(pageUrl, pageName, pageId);
           }
@@ -7075,6 +7119,7 @@ export class ExtensionController {
               delete item.metadata[`${METADATA_KEY}/pageName`];
               delete item.metadata[`${METADATA_KEY}/pageIcon`];
               delete item.metadata[`${METADATA_KEY}/pageId`];
+              delete item.metadata[`${METADATA_KEY}/pageVisible`];
             });
           });
           
@@ -7186,14 +7231,20 @@ export class ExtensionController {
         
         // Actualizar metadatos de todos los tokens
         log(`🔗 Vinculando página a token - ID: ${selectedPage.id}, Name: ${selectedPage.name}`);
+        
+        // Buscar la página completa para obtener visibleToPlayers
+        const fullPage = this.config?.findPageById(selectedPage.id);
+        const isVisible = fullPage?.visibleToPlayers || false;
+        
         await this.OBR.scene.items.updateItems(items, (updateItems) => {
           updateItems.forEach(item => {
             item.metadata[`${METADATA_KEY}/pageUrl`] = selectedPage.url;
             item.metadata[`${METADATA_KEY}/pageName`] = selectedPage.name;
             item.metadata[`${METADATA_KEY}/pageIcon`] = selectedPage.icon;
+            item.metadata[`${METADATA_KEY}/pageVisible`] = isVisible;
             if (selectedPage.id) {
               item.metadata[`${METADATA_KEY}/pageId`] = selectedPage.id;
-              log(`✅ pageId guardado en token: ${selectedPage.id}`);
+              log(`✅ pageId guardado en token: ${selectedPage.id}, visible: ${isVisible}`);
             } else {
               log(`⚠️ selectedPage no tiene id:`, selectedPage);
             }
