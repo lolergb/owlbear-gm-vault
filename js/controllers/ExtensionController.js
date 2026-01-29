@@ -176,10 +176,8 @@ export class ExtensionController {
       await this.render();
     }
     
-    // Configurar menús contextuales para tokens (solo si es GM)
-    if (this.isGM) {
-      await this._setupTokenContextMenus();
-    }
+    // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
+    await this._setupTokenContextMenus();
     
     // Exponer función global para refrescar imágenes
     this._setupGlobalRefreshImage();
@@ -6963,7 +6961,7 @@ export class ExtensionController {
       // Obtener la URL base para los iconos
       const baseUrl = window.location.origin;
       
-      // Menú: Vincular página (solo GM)
+      // Menú: Vincular página (GM y Players)
       await this.OBR.contextMenu.create({
         id: `${METADATA_KEY}/link-page`,
         icons: [
@@ -6972,7 +6970,7 @@ export class ExtensionController {
             label: 'Link page',
             filter: {
               every: [{ key: 'layer', value: 'CHARACTER' }],
-              roles: ['GM']
+              roles: ['GM', 'PLAYER']
             }
           }
         ],
@@ -7032,7 +7030,7 @@ export class ExtensionController {
         }
       });
       
-      // Menú: Desvincular página (solo GM)
+      // Menú: Desvincular página (GM y Players)
       await this.OBR.contextMenu.create({
         id: `${METADATA_KEY}/unlink-page`,
         icons: [
@@ -7044,7 +7042,7 @@ export class ExtensionController {
                 { key: 'layer', value: 'CHARACTER' },
                 { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
               ],
-              roles: ['GM']
+              roles: ['GM', 'PLAYER']
             }
           }
         ],
@@ -7106,6 +7104,12 @@ export class ExtensionController {
           const pageData = category.pages[item.index];
           // Asegurar que es una instancia de Page para tener acceso al id
           const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
+          
+          // Para Players y Co-GMs, solo mostrar páginas visibles
+          if ((!this.isGM || this.isCoGM) && !page.visibleToPlayers) {
+            return; // Saltar páginas no visibles para players
+          }
+          
           allPages.push({
             id: page.id,
             name: page.name,
