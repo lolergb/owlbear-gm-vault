@@ -6236,21 +6236,31 @@ export class ExtensionController {
    * @private
    */
   async _openMentionedPage(pageId, pageName, pageUrl, mentionElement) {
-    // Mostrar estado loading en el mention
-    const originalContent = mentionElement.innerHTML;
-    mentionElement.classList.add('notion-mention--loading');
+    // Mostrar estado loading en el mention (si existe el elemento)
+    if (mentionElement) {
+      mentionElement.classList.add('notion-mention--loading');
+    }
     
     try {
       // Buscar la página en el vault
-      // Primero por NotionId (para páginas de Notion), luego por id interno (para páginas locales/Obsidian)
+      // 1. Por NotionId (para páginas de Notion)
+      // 2. Por id interno (para páginas locales/Obsidian)
+      // 3. Por nombre (fallback para mentions de Obsidian)
       let page = this.config?.findPageByNotionId(pageId);
       if (!page) {
         page = this.config?.findPageById(pageId);
       }
+      if (!page && pageName) {
+        // Buscar por nombre (útil para mentions de Obsidian que usan el nombre de la página)
+        page = this.config?.findPageByName(pageName);
+      }
       
       if (!page) {
-        log('⚠️ Página no encontrada en vault:', pageId);
-        mentionElement.classList.remove('notion-mention--loading');
+        log('⚠️ Página no encontrada en vault:', { pageId, pageName });
+        if (mentionElement) {
+          mentionElement.classList.remove('notion-mention--loading');
+        }
+        this._showFeedback('⚠️ Page not found in vault');
         return;
       }
       
@@ -6260,7 +6270,9 @@ export class ExtensionController {
         if (!page.visibleToPlayers) {
           log('🚫 Acceso denegado a página no visible para players:', pageId);
           this._showFeedback('🔒 This page is not available');
-          mentionElement.classList.remove('notion-mention--loading');
+          if (mentionElement) {
+            mentionElement.classList.remove('notion-mention--loading');
+          }
           return;
         }
       }
@@ -6271,7 +6283,9 @@ export class ExtensionController {
     } catch (error) {
       logError('Error al abrir página mencionada:', error);
     } finally {
-      mentionElement.classList.remove('notion-mention--loading');
+      if (mentionElement) {
+        mentionElement.classList.remove('notion-mention--loading');
+      }
     }
   }
 
