@@ -5252,12 +5252,15 @@ export class ExtensionController {
     // Restaurar clases originales
     notionContent.className = 'notion-container__content notion-content';
 
-    // DEBUG: Log para verificar rol
+    // DEBUG: Log para verificar rol y tipo de página
     console.log('🔍 _renderNotionPage DEBUG:', {
       isGM: this.isGM,
       isCoGM: this.isCoGM,
       pageId,
-      pageName: page?.name
+      pageName: page?.name,
+      pageUrl: page?.url,
+      isNotionPage: page?.isNotionPage?.(),
+      hasEmbeddedHtml: page?.hasEmbeddedHtml?.()
     });
 
     const hasUserToken = this.storageService.hasUserToken();
