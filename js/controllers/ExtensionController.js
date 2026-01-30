@@ -6480,7 +6480,10 @@ export class ExtensionController {
       else if (page.url && !page.getNotionPageId()) {
         log('🔗 Mention: página con URL externa, cargando en iframe:', page.url);
         const iframe = document.createElement('iframe');
-        iframe.src = page.url;
+        // Añadir parámetro inModal=true para que el iframe sepa que está en modal desde el inicio
+        const modalUrl = new URL(page.url, window.location.origin);
+        modalUrl.searchParams.set('inModal', 'true');
+        iframe.src = modalUrl.toString();
         iframe.className = 'mention-modal__iframe';
         iframe.style.cssText = 'width: 100%; height: 100%; border: none; min-height: 500px;';
         iframe.title = displayName;
