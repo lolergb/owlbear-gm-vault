@@ -443,9 +443,7 @@ export class UIRenderer {
       }
     });
 
-    actionsContainer.appendChild(shareButton);
-
-    // Botón de abrir en modal (para todos)
+    // Botón de abrir en modal OBR (para todos) - PRIMERO
     const openModalButton = document.createElement('button');
     openModalButton.className = 'page-open-modal-button';
     openModalButton.innerHTML = '<img src="img/open-modal.svg" alt="Open modal">';
@@ -462,6 +460,7 @@ export class UIRenderer {
     });
 
     actionsContainer.appendChild(openModalButton);
+    actionsContainer.appendChild(shareButton);
 
     // Botones adicionales solo para GM completo (no coGM ni Player)
     if (isGM && !this.isCoGM) {

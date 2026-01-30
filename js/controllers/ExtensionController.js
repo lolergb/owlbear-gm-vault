@@ -4346,7 +4346,7 @@ export class ExtensionController {
         this._shareCurrentPageToPlayers(page);
       },
       onPageOpenModal: (page, categoryPath, pageIndex) => {
-        this._showMentionPageModal(page, page.name);
+        this._openPageInModal(page);
       },
       onPageEdit: (page, categoryPath, pageIndex, newData) => {
         this._handlePageEdit(page, categoryPath, pageIndex, newData);
