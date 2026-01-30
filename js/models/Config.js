@@ -7,6 +7,7 @@
 
 import { Category } from './Category.js';
 import { Page } from './Page.js';
+import { formatAsUUID } from '../utils/helpers.js';
 
 /**
  * Clase que representa la configuración completa del vault
@@ -119,13 +120,40 @@ export class Config {
 
   /**
    * Busca una página por su Notion Page ID
-   * @param {string} notionPageId - ID de Notion (formato UUID con guiones)
+   * Normaliza los IDs para comparar correctamente (con o sin guiones)
+   * @param {string} notionPageId - ID de Notion (con o sin guiones)
    * @returns {Page|null}
    */
   findPageByNotionId(notionPageId) {
     if (!notionPageId) return null;
+    
+    // Normalizar el ID de búsqueda (eliminar guiones y convertir a minúsculas)
+    const normalizedSearchId = this._normalizeNotionId(notionPageId);
+    if (!normalizedSearchId) return null;
+    
     const allPages = this.getAllPages();
-    return allPages.find(p => p.getNotionPageId() === notionPageId) || null;
+    return allPages.find(p => {
+      const pageNotionId = p.getNotionPageId();
+      if (!pageNotionId) return false;
+      return this._normalizeNotionId(pageNotionId) === normalizedSearchId;
+    }) || null;
+  }
+
+  /**
+   * Normaliza un ID de Notion para comparación
+   * @private
+   * @param {string} id - ID de Notion
+   * @returns {string|null} - ID normalizado (32 caracteres, minúsculas, sin guiones)
+   */
+  _normalizeNotionId(id) {
+    if (!id || typeof id !== 'string') return null;
+    // Eliminar guiones y convertir a minúsculas
+    const normalized = id.replace(/-/g, '').toLowerCase();
+    // Verificar que sea un ID válido de 32 caracteres
+    if (normalized.length === 32 && /^[a-f0-9]+$/.test(normalized)) {
+      return normalized;
+    }
+    return null;
   }
 
   /**

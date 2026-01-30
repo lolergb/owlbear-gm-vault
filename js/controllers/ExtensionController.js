@@ -6145,7 +6145,9 @@ export class ExtensionController {
       }
 
       // Convertir a mention clickeable
-      const displayName = mention.textContent || mention.dataset.mentionPageName || 'Page';
+      // Priorizar nombre del vault sobre el textContent ya que la API a veces devuelve "Untitled"
+      const apiDisplayName = mention.textContent || mention.dataset.mentionPageName || 'Page';
+      const displayName = pageInVault.name || apiDisplayName;
       const pageUrl = pageInVault.url || '';
       
       mention.className = 'notion-mention notion-mention--link';
@@ -6154,6 +6156,12 @@ export class ExtensionController {
       mention.setAttribute('data-mention-page-url', pageUrl);
       mention.setAttribute('role', 'button');
       mention.setAttribute('tabindex', '0');
+      
+      // Actualizar el texto visible si el nombre del vault es diferente al de la API
+      // (la API a veces devuelve "Untitled" aunque la página tenga título)
+      if (displayName !== apiDisplayName) {
+        mention.textContent = displayName;
+      }
       
       updatedCount++;
     });
