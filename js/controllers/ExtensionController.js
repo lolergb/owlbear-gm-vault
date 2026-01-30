@@ -6491,13 +6491,15 @@ export class ExtensionController {
           setTimeout(() => {
             try {
               // Enviar mensaje al iframe indicando si es Player (no GM)
+              // También indicar que está en un modal (para deshabilitar navegación)
               const isPlayer = !this.isGM;
-              log('📤 Enviando rol de usuario al iframe:', { isPlayer, isGM: this.isGM, isCoGM: this.isCoGM });
+              log('📤 Enviando rol de usuario al iframe (modal):', { isPlayer, isGM: this.isGM, isCoGM: this.isCoGM, isInModal: true });
               iframe.contentWindow.postMessage({
                 type: 'setUserRole',
                 isPlayer: isPlayer,
                 isGM: this.isGM,
-                isCoGM: this.isCoGM
+                isCoGM: this.isCoGM,
+                isInModal: true // Indica que está en un modal, deshabilitar navegación
               }, '*');
               log('✅ Mensaje enviado al iframe');
             } catch (error) {
