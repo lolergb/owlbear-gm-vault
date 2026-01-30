@@ -60,7 +60,7 @@ export class UIRenderer {
    */
   setCallbacks(callbacks) {
     const keys = [
-      'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageEdit', 'onPageDelete', 
+      'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageOpenModal', 'onPageEdit', 'onPageDelete', 
       'onPageMove', 'onPageDuplicate', 'onCategoryEdit', 'onCategoryDelete',
       'onCategoryMove', 'onCategoryDuplicate', 'onAddPage', 'onAddCategory', 'onShowModal'
     ];
@@ -444,6 +444,24 @@ export class UIRenderer {
     });
 
     actionsContainer.appendChild(shareButton);
+
+    // Botón de abrir en modal (para todos)
+    const openModalButton = document.createElement('button');
+    openModalButton.className = 'page-open-modal-button';
+    openModalButton.innerHTML = '<img src="img/open-modal.svg" alt="Open modal">';
+    openModalButton.title = 'Open in modal';
+    
+    openModalButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      console.log('📖 Open modal button clicked for:', page.name, 'onPageOpenModal:', !!this.onPageOpenModal);
+      if (this.onPageOpenModal) {
+        this.onPageOpenModal(page, categoryPath, pageIndex);
+      } else {
+        console.warn('⚠️ onPageOpenModal callback not defined');
+      }
+    });
+
+    actionsContainer.appendChild(openModalButton);
 
     // Botones adicionales solo para GM completo (no coGM ni Player)
     if (isGM && !this.isCoGM) {

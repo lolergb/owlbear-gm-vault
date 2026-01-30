@@ -748,6 +748,7 @@
   
   /* Estilos base para botones de acción */
   .page-share-button,
+  .page-open-modal-button,
   .page-visibility-button,
   .page-context-menu-button {
     width: 32px; /* 24px icono + 8px padding * 2 */
@@ -763,14 +764,16 @@
     padding: var(--spacing-sm); /* 8px padding */
     flex-shrink: 0;
   }
-  
+
   .page-share-button:hover,
+  .page-open-modal-button:hover,
   .page-visibility-button:hover,
   .page-context-menu-button:hover {
     background: var(--color-bg-hover);
   }
   
   .page-share-button img,
+  .page-open-modal-button img,
   .page-visibility-button img,
   .page-context-menu-button img {
     width: var(--icon-size-md); /* 20px */
