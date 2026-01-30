@@ -5083,7 +5083,7 @@ export class ExtensionController {
       } catch (e) {
         // Ignorar errores de conexión
       }
-    }, 3000);
+    }, 15000); // 15 segundos (antes 3s) para comprobar rol / co-GM
   }
 
   /**
@@ -6283,8 +6283,8 @@ export class ExtensionController {
       // Limpiar caché de esta página
       this.cacheService.clearPageCache(notionPageId);
       
-      // Configurar renderer para modo modal (mantener mentions clickeables)
-      // this.notionRenderer.setRenderingOptions({ isInModal: true });
+      // Configurar renderer para modo modal (mentions no clickeables)
+      this.notionRenderer.setRenderingOptions({ isInModal: true });
       
       let htmlContent = null;
       
@@ -6465,8 +6465,8 @@ export class ExtensionController {
     });
     
     try {
-      // Configurar renderer para modo modal (mantener mentions clickeables)
-      // this.notionRenderer.setRenderingOptions({ isInModal: true });
+      // Configurar renderer para modo modal (mentions no clickeables)
+      this.notionRenderer.setRenderingOptions({ isInModal: true });
       
       let htmlContent = null;
       

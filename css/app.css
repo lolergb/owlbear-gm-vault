@@ -2735,8 +2735,13 @@
   margin-bottom: var(--spacing-md);
 }
 
-/* Mentions inside modal - keep them interactive */
-/* (removed: pointer-events: none that blocked clicks) */
+/* Mentions inside modal - disable clicks to prevent infinite navigation */
+.mention-modal__notion-content .notion-mention--link {
+  background-color: rgba(150, 122, 204, 0.1);
+  color: var(--color-text-secondary);
+  cursor: default;
+  pointer-events: none;
+}
 
 /* =============================================
    NOTION DATABASE PROPERTIES
