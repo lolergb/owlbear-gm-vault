@@ -834,8 +834,8 @@ let currentRoomId = null;
 // Variable para almacenar el último rol conocido
 let lastKnownRole = null;
 
-// Intervalo para detectar cambios de rol
-let roleCheckInterval = null;
+// Función para desuscribirse de cambios de rol (usa Player.onChange en vez de polling)
+let roleChangeUnsubscribe = null;
 
 /**
  * Verifica el estado de ownership del vault
@@ -1032,19 +1032,20 @@ function getConfigSize(config) {
 }
 
 /**
- * Inicia la detección periódica de cambios de rol
+ * Inicia la detección de cambios de rol usando Player.onChange
  * Detecta promoción/revocación de GM y recarga la vista automáticamente
  */
 function startRoleChangeDetection() {
-  // Cancelar intervalo previo si existe
-  if (roleCheckInterval) {
-    clearInterval(roleCheckInterval);
+  // Cancelar suscripción previa si existe
+  if (roleChangeUnsubscribe) {
+    roleChangeUnsubscribe();
+    roleChangeUnsubscribe = null;
   }
   
-  // Verificar cada 3 segundos
-  roleCheckInterval = setInterval(async () => {
+  // Usar OBR.player.onChange para detectar cambios de rol (event-driven, sin polling)
+  roleChangeUnsubscribe = OBR.player.onChange((player) => {
     try {
-      const currentRole = await OBR.player.getRole();
+      const currentRole = player.role;
       
       if (lastKnownRole !== null && currentRole !== lastKnownRole) {
         console.log(`🔄 Role change detected: ${lastKnownRole} → ${currentRole}`);
@@ -1055,19 +1056,18 @@ function startRoleChangeDetection() {
       
       lastKnownRole = currentRole;
     } catch (e) {
-      // Ignorar errores de conexión
+      // Ignorar errores
     }
-  }, 3000);
-  
+  });
 }
 
 /**
  * Detiene la detección de cambios de rol
  */
 function stopRoleChangeDetection() {
-  if (roleCheckInterval) {
-    clearInterval(roleCheckInterval);
-    roleCheckInterval = null;
+  if (roleChangeUnsubscribe) {
+    roleChangeUnsubscribe();
+    roleChangeUnsubscribe = null;
   }
 }
 
