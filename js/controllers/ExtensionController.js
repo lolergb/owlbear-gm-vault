@@ -76,7 +76,9 @@ export class ExtensionController {
 
     // Intervals
     this.heartbeatInterval = null;
-    this.roleCheckInterval = null;
+    
+    // Función para desuscribirse de cambios de rol (usa Player.onChange en vez de polling)
+    this.roleChangeUnsubscribe = null;
   }
 
   /**
@@ -1623,9 +1625,9 @@ export class ExtensionController {
       this.heartbeatInterval = null;
     }
     
-    if (this.roleCheckInterval) {
-      clearInterval(this.roleCheckInterval);
-      this.roleCheckInterval = null;
+    if (this.roleChangeUnsubscribe) {
+      this.roleChangeUnsubscribe();
+      this.roleChangeUnsubscribe = null;
     }
     
     // Limpiar broadcast
@@ -5067,16 +5069,17 @@ export class ExtensionController {
   }
 
   /**
-   * Inicia detección de cambio de rol
+   * Inicia detección de cambio de rol usando Player.onChange (event-driven, sin polling)
    * Cuando un player se promociona a GM, solicita todo el vault del GM anterior
    * @private
    */
   _startRoleChangeDetection() {
     let lastRole = this.isGM ? 'GM' : 'PLAYER';
 
-    this.roleCheckInterval = setInterval(async () => {
+    // Usar OBR.player.onChange para detectar cambios de rol (event-driven, sin polling)
+    this.roleChangeUnsubscribe = this.OBR.player.onChange(async (player) => {
       try {
-        const currentRole = await this.OBR.player.getRole();
+        const currentRole = player.role;
         
         if (lastRole !== currentRole) {
           log(`🔄 Cambio de rol detectado: ${lastRole} → ${currentRole}`);
@@ -5094,9 +5097,9 @@ export class ExtensionController {
         
         lastRole = currentRole;
       } catch (e) {
-        // Ignorar errores de conexión
+        // Ignorar errores
       }
-    }, 15000); // 15 segundos (antes 3s) para comprobar rol / co-GM
+    });
   }
 
   /**
