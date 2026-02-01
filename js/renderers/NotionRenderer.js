@@ -82,8 +82,41 @@ export class NotionRenderer {
   }
 
   /**
-   * Comprueba recursivamente si hay algún bloque code con tag GM-only en los descendientes.
-   * Se usa solo para añadir la clase CSS notion-gm-only al contenedor (oculto con CSS para players).
+   * Comprueba si el bloque tiene rich_text que contiene el tag GM-only
+   * (callout, toggle, heading, paragraph, quote, to_do, list items, etc.).
+   * Así detectamos 🔒 GM tanto en bloque "code" como en texto/código inline.
+   * @param {Object} block - Bloque de Notion
+   * @returns {boolean}
+   * @private
+   */
+  _blockRichTextContainsGmTag(block) {
+    if (!block) return false;
+    let richText = null;
+    switch (block.type) {
+      case 'paragraph': richText = block.paragraph?.rich_text; break;
+      case 'heading_1': richText = block.heading_1?.rich_text; break;
+      case 'heading_2': richText = block.heading_2?.rich_text; break;
+      case 'heading_3': richText = block.heading_3?.rich_text; break;
+      case 'callout': richText = block.callout?.rich_text; break;
+      case 'toggle': richText = block.toggle?.rich_text; break;
+      case 'quote': richText = block.quote?.rich_text; break;
+      case 'code': richText = block.code?.rich_text; break;
+      case 'to_do': richText = block.to_do?.rich_text; break;
+      case 'bulleted_list_item': richText = block.bulleted_list_item?.rich_text; break;
+      case 'numbered_list_item': richText = block.numbered_list_item?.rich_text; break;
+      case 'toggle_heading_1': richText = block.heading_1?.rich_text; break;
+      case 'toggle_heading_2': richText = block.heading_2?.rich_text; break;
+      case 'toggle_heading_3': richText = block.heading_3?.rich_text; break;
+      default: break;
+    }
+    if (!richText || !Array.isArray(richText)) return false;
+    const text = this._getPlainTextFromRichText(richText);
+    return text.includes(GM_ONLY_CODE_TAG);
+  }
+
+  /**
+   * True si el bloque (o sus descendientes) contiene el tag GM-only
+   * (bloque code o rich_text con 🔒 GM en callout, toggle, heading, etc.).
    * @param {Array} blocks - Array de bloques
    * @returns {Promise<boolean>}
    * @private
@@ -91,7 +124,7 @@ export class NotionRenderer {
   async _hasGmOnlyContentInDescendants(blocks) {
     if (!blocks || blocks.length === 0) return false;
     for (const block of blocks) {
-      if (this._getCodeBlockGmTag(block)) return true;
+      if (this._getCodeBlockGmTag(block) || this._blockRichTextContainsGmTag(block)) return true;
       if (block.has_children && this.notionService) {
         const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
         if (await this._hasGmOnlyContentInDescendants(children)) return true;
@@ -511,8 +544,10 @@ export class NotionRenderer {
         return `<pre class="notion-code${gmOnlyClass}"><code>${codeText}</code></pre>`;
       }
       
-      case 'quote':
-        return `<div class="notion-quote">${this.renderRichText(block.quote?.rich_text)}</div>`;
+      case 'quote': {
+        const quoteGmClass = this._blockRichTextContainsGmTag(block) ? ' notion-gm-only' : '';
+        return `<div class="notion-quote${quoteGmClass}">${this.renderRichText(block.quote?.rich_text)}</div>`;
+      }
       
       case 'callout':
         return this._renderCallout(block);
@@ -650,15 +685,16 @@ export class NotionRenderer {
     const callout = block.callout;
     const icon = callout?.icon?.emoji || '💡';
     const calloutText = this.renderRichText(callout?.rich_text);
-    
+    const gmOnlyClass = this._blockRichTextContainsGmTag(block) ? ' notion-gm-only' : '';
+
     // Si tiene hijos, se renderizarán después
     const hasChildren = block.has_children;
     const childrenPlaceholder = hasChildren 
       ? `<div class="notion-callout-children" data-callout-id="${block.id}"></div>`
       : '';
-    
+
     return `
-      <div class="notion-callout" data-has-children="${hasChildren}">
+      <div class="notion-callout${gmOnlyClass}" data-has-children="${hasChildren}">
         <div class="notion-callout-icon">${icon}</div>
         <div class="notion-callout-content">
           ${calloutText}
@@ -1029,9 +1065,11 @@ export class NotionRenderer {
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
-        if (await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
+        if (this._blockRichTextContainsGmTag(block) || await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
         toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
+    } else if (this._blockRichTextContainsGmTag(block)) {
+      gmOnlyClass = ' notion-gm-only';
     }
 
     // Si hay filtro y el toggle no tiene contenido filtrado, no mostrarlo
@@ -1061,9 +1099,11 @@ export class NotionRenderer {
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
-        if (await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
+        if (this._blockRichTextContainsGmTag(block) || await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
         toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
+    } else if (this._blockRichTextContainsGmTag(block)) {
+      gmOnlyClass = ' notion-gm-only';
     }
 
     // Si hay filtro y el toggle no tiene contenido, no mostrarlo
@@ -1093,9 +1133,11 @@ export class NotionRenderer {
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
-        if (await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
+        if (this._blockRichTextContainsGmTag(block) || await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
         childrenContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
+    } else if (this._blockRichTextContainsGmTag(block)) {
+      gmOnlyClass = ' notion-gm-only';
     }
 
     return `
