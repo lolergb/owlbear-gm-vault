@@ -214,7 +214,32 @@ exports.handler = async (event, context) => {
         };
       }
 
-      // Consultar la base de datos con paginación
+      // Obtener esquema de la DB para ordenar por la columna título (mismo orden que en Notion)
+      let sortByTitle = null;
+      try {
+        const dbResponse = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${userToken}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          }
+        });
+        if (dbResponse.ok) {
+          const dbData = await dbResponse.json();
+          const properties = dbData.properties || {};
+          for (const [propName, prop] of Object.entries(properties)) {
+            if (prop && prop.type === 'title') {
+              sortByTitle = propName;
+              break;
+            }
+          }
+        }
+      } catch (_) {
+        // Si falla, consultamos sin orden (comportamiento anterior)
+      }
+
+      // Consultar la base de datos con paginación (ordenada por título para coincidir con Notion)
       let allPages = [];
       let hasMore = true;
       let startCursor = null;
@@ -226,6 +251,9 @@ exports.handler = async (event, context) => {
           page_size: 100
         };
         
+        if (sortByTitle) {
+          queryBody.sorts = [{ property: sortByTitle, direction: 'ascending' }];
+        }
         if (startCursor) {
           queryBody.start_cursor = startCursor;
         }
