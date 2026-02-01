@@ -4778,41 +4778,40 @@ export class ExtensionController {
     // Responder a solicitudes de contenido (acepta forceRefresh de Players/Co-GMs)
     this.broadcastService.setupGMContentResponder(async (pageId, forceRefresh = false) => {
       let html = null;
-      
-      // Si NO es forceRefresh, intentar obtener del caché local
+      // Caché específico para vista player (HTML filtrado, sin bloques 🔒 GM)
+      const playerCacheKey = pageId + ':player';
+
+      // Si NO es forceRefresh, intentar obtener del caché de vista player (no el del GM)
       if (!forceRefresh) {
-        html = this.cacheService.getHtmlFromLocalCache(pageId);
+        html = this.cacheService.getHtmlFromLocalCache(playerCacheKey);
         if (html) {
-          log('📦 Contenido del caché local para:', pageId);
+          log('📦 Contenido del caché local (vista player) para:', pageId);
           return html;
         }
       } else {
-        // Si es forceRefresh, limpiar caché para forzar regeneración
+        // Si es forceRefresh, limpiar caché GM y player para forzar regeneración
         log('🔄 forceRefresh solicitado - limpiando caché para:', pageId);
         this.cacheService.clearPageCache(pageId);
       }
-      
-      // Generar contenido bajo demanda CON header (cover, título, icono)
-      log(`📡 Generando contenido bajo demanda para: ${pageId}${forceRefresh ? ' (forceRefresh)' : ''}`);
+
+      // Generar contenido bajo demanda CON header, filtrado para player (renderAsViewer: 'player')
+      log(`📡 Generando contenido bajo demanda (vista player) para: ${pageId}${forceRefresh ? ' (forceRefresh)' : ''}`);
       try {
-        // Usar función centralizada que incluye header completo
-        // useCache: false si es forceRefresh para obtener datos frescos de Notion
         const result = await this._generateNotionHtmlWithHeader(pageId, {
-          includeShareButtons: false, // Players/coGM no deben ver botones de share
+          includeShareButtons: false,
           useCache: !forceRefresh,
-          renderAsViewer: 'player' // Generar HTML filtrado (oculta bloques con tag GM-only)
+          renderAsViewer: 'player' // Oculta bloques con tag 🔒 GM
         });
-        
+
         if (result?.html) {
           html = result.html;
-          // Cachear para futuras solicitudes (header + bloques)
-          this.cacheService.saveHtmlToLocalCache(pageId, html);
-          log('✅ Contenido con header generado y cacheado para:', pageId);
+          this.cacheService.saveHtmlToLocalCache(playerCacheKey, html);
+          log('✅ Contenido con header generado y cacheado (vista player) para:', pageId);
         }
       } catch (e) {
         log('⚠️ Error generando contenido bajo demanda:', e.message);
       }
-      
+
       return html;
     });
 
