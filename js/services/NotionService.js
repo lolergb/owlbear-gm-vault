@@ -1481,6 +1481,29 @@ export class NotionService {
   }
 
   /**
+   * Extrae el título de una página de Notion desde la URL (formato: notion.so/slug-{id})
+   * @param {string} url - URL de la página
+   * @returns {string|null} - Título/slug legible o null
+   * @private
+   */
+  _extractTitleFromNotionUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    try {
+      const path = url.split('?')[0].replace(/^https?:\/\/[^/]+\//, '').trim();
+      if (!path) return null;
+      // El path es "slug-id" donde id son 32 hex (con o sin guiones UUID)
+      const match = path.match(/^(.+)-([a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12})$/i)
+        || path.match(/^(.+)-([a-f0-9]{32})$/i);
+      if (!match) return null;
+      const slug = match[1];
+      if (!slug) return null;
+      return decodeURIComponent(slug).replace(/-/g, ' ').trim() || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * Extrae el título de una página de Notion
    * @private
    */
@@ -1499,6 +1522,12 @@ export class NotionService {
           return prop.title[0].plain_text || 'Untitled';
         }
       }
+    }
+    
+    // Fallback: extraer título desde page.url (la API a veces devuelve propiedades solo con ID)
+    if (page.url && (page.url.includes('notion.so') || page.url.includes('notion.site'))) {
+      const titleFromUrl = this._extractTitleFromNotionUrl(page.url);
+      if (titleFromUrl) return titleFromUrl;
     }
     
     return 'Untitled';
