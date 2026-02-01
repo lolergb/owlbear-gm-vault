@@ -6116,9 +6116,9 @@ export class ExtensionController {
       img.dataset.listenerAdded = 'true';
       
       img.addEventListener('click', () => {
-        const url = img.dataset.imageUrl;
-        const caption = img.dataset.imageCaption;
-        this._showImageModal(url, caption);
+        const url = img.dataset.imageUrl || img.src;
+        const caption = img.dataset.imageCaption || img.alt || '';
+        if (url) this._showImageModal(url, caption);
       });
     });
 
@@ -6130,9 +6130,11 @@ export class ExtensionController {
       
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const url = btn.dataset.imageUrl;
-        const caption = btn.dataset.imageCaption;
-        this._shareImageToPlayers(url, caption);
+        const container = btn.closest('.notion-image-container');
+        const img = container ? container.querySelector('img') : null;
+        const url = (img && (img.dataset.imageUrl || img.src)) || btn.dataset.imageUrl;
+        const caption = (img && (img.dataset.imageCaption || img.alt)) || btn.dataset.imageCaption || '';
+        if (url) this._shareImageToPlayers(url, caption);
       });
     });
     
