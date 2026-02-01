@@ -6,6 +6,9 @@
 
 import { log, logWarn } from '../utils/logger.js';
 
+/** Tag en bloques code que marca contenido solo para GM/coGM (oculto para players) */
+const GM_ONLY_CODE_TAG = '🔒 GM';
+
 /**
  * Renderizador de contenido de Notion
  */
@@ -53,6 +56,62 @@ export class NotionRenderer {
       this.useCache = options.useCache;
       log(`🔧 NotionRenderer.useCache configurado a: ${this.useCache}`);
     }
+  }
+
+  /**
+   * Obtiene el texto plano de un array rich_text (sin HTML)
+   * @param {Array} richTextArray - Array de rich text de Notion
+   * @returns {string}
+   * @private
+   */
+  _getPlainTextFromRichText(richTextArray) {
+    if (!richTextArray || !Array.isArray(richTextArray)) return '';
+    return richTextArray.map(t => t.plain_text || '').join('');
+  }
+
+  /**
+   * Si el bloque es un code que contiene el tag GM-only, devuelve el tag; si no, null.
+   * @param {Object} block - Bloque de Notion
+   * @returns {string|null} '🔒 GM' | null
+   * @private
+   */
+  _getCodeBlockGmTag(block) {
+    if (block?.type !== 'code' || !block.code?.rich_text) return null;
+    const text = this._getPlainTextFromRichText(block.code.rich_text);
+    return text.includes(GM_ONLY_CODE_TAG) ? GM_ONLY_CODE_TAG : null;
+  }
+
+  /**
+   * Indica si el contenido con tag GM-only debe ocultarse para el rol actual.
+   * Un solo tag: oculto para players; visible para GM y Co-GM.
+   * @param {string} tag - '🔒 GM' | null
+   * @returns {boolean} true = ocultar para este usuario
+   * @private
+   */
+  _shouldHideForCurrentRole(tag) {
+    if (!tag) return false;
+    return !this.isGM;
+  }
+
+  /**
+   * Comprueba recursivamente si entre los bloques (y sus descendientes) hay algún
+   * bloque code con el tag GM-only.
+   * @param {Array} blocks - Array de bloques
+   * @returns {Promise<string|null>} Tag si se encuentra, null si no
+   * @private
+   */
+  async _hasGmOnlyContentInDescendants(blocks) {
+    if (!blocks || blocks.length === 0) return null;
+    for (const block of blocks) {
+      const tag = this._getCodeBlockGmTag(block);
+      if (tag) return tag;
+      if (block.has_children && this.notionService) {
+        const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
+        const nestedTag = await this._hasGmOnlyContentInDescendants(children);
+        if (nestedTag) return nestedTag;
+      }
+    }
+    return null;
   }
 
   /**
@@ -941,6 +1000,15 @@ export class NotionRenderer {
         continue;
       }
 
+      // Bloque code con tag GM-only: ocultar para players/coGM según el tag
+      if (type === 'code') {
+        const codeGmTag = this._getCodeBlockGmTag(block);
+        if (codeGmTag && this._shouldHideForCurrentRole(codeGmTag)) {
+          log('🔒 Bloque code oculto por tag GM-only:', codeGmTag);
+          continue;
+        }
+      }
+
       // Renderizar bloque normal
       html += this.renderBlock(block);
     }
@@ -981,6 +1049,11 @@ export class NotionRenderer {
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
+        const gmTag = await this._hasGmOnlyContentInDescendants(children);
+        if (gmTag && this._shouldHideForCurrentRole(gmTag)) {
+          log('🔒 Toggle oculto por tag GM-only:', gmTag);
+          return '';
+        }
         toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
     }
@@ -1011,6 +1084,11 @@ export class NotionRenderer {
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
+        const gmTag = await this._hasGmOnlyContentInDescendants(children);
+        if (gmTag && this._shouldHideForCurrentRole(gmTag)) {
+          log('🔒 Toggle heading oculto por tag GM-only:', gmTag);
+          return '';
+        }
         toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
     }
@@ -1041,6 +1119,11 @@ export class NotionRenderer {
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
+        const gmTag = await this._hasGmOnlyContentInDescendants(children);
+        if (gmTag && this._shouldHideForCurrentRole(gmTag)) {
+          log('🔒 Callout oculto por tag GM-only:', gmTag);
+          return '';
+        }
         childrenContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
     }

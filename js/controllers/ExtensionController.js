@@ -4799,7 +4799,8 @@ export class ExtensionController {
         // useCache: false si es forceRefresh para obtener datos frescos de Notion
         const result = await this._generateNotionHtmlWithHeader(pageId, {
           includeShareButtons: false, // Players/coGM no deben ver botones de share
-          useCache: !forceRefresh
+          useCache: !forceRefresh,
+          renderAsViewer: 'player' // Generar HTML filtrado (oculta bloques con tag GM-only)
         });
         
         if (result?.html) {
@@ -5307,8 +5308,12 @@ export class ExtensionController {
    * @private
    */
   async _renderNotionPageWithToken(page, pageId, notionContent, forceRefresh = false) {
-    // Asegurar que el config del NotionRenderer esté actualizado (para mentions)
-    this.notionRenderer.setDependencies({ config: this.config });
+    // Asegurar que config y rol del NotionRenderer estén actualizados (mentions y tags GM-only)
+    this.notionRenderer.setDependencies({
+      config: this.config,
+      isGM: this.isGM,
+      isCoGM: this.isCoGM
+    });
     
     // Configurar useCache para bloques anidados (tablas, toggles, etc.)
     this.notionRenderer.setRenderingOptions({ useCache: !forceRefresh });
@@ -5428,17 +5433,29 @@ export class ExtensionController {
       includeShareButtons = false,
       fallbackTitle = 'Untitled',
       blockTypes = null,
-      useCache = true
+      useCache = true,
+      renderAsViewer = null // 'player' = generar HTML filtrado para players (oculta tags GM-only)
     } = options;
 
     try {
       // Configurar useCache para bloques anidados (tablas, toggles, etc.)
       this.notionRenderer.setRenderingOptions({ useCache });
+
+      // Si se pide generar para un player (ej. broadcast), usar rol player para ocultar contenido GM-only
+      const prevGM = this.notionRenderer.isGM;
+      const prevCoGM = this.notionRenderer.isCoGM;
+      if (renderAsViewer === 'player') {
+        this.notionRenderer.setDependencies({ isGM: false, isCoGM: false });
+      }
       
       // Obtener info de la página (cover, título, icono) y bloques
       const pageInfo = await this.notionService.fetchPageInfo(pageId, useCache);
       const blocks = await this.notionService.fetchBlocks(pageId, useCache);
       const blocksHtml = await this.notionRenderer.renderBlocks(blocks, blockTypes);
+
+      if (renderAsViewer === 'player') {
+        this.notionRenderer.setDependencies({ isGM: prevGM, isCoGM: prevCoGM });
+      }
       
       // Construir HTML del header (cover + título)
       let headerHtml = '';
