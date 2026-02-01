@@ -1516,8 +1516,10 @@ export class NotionService {
     // Limpiar el ID (quitar guiones)
     const cleanId = pageId.replace(/-/g, '');
     
+    // Usar título o fallback para que la URL siempre tenga formato nombre-id
+    const safeTitle = (title && String(title).trim()) || 'Untitled';
     // Crear slug del título
-    const slug = title
+    const slug = safeTitle
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '') // Quitar acentos
       .replace(/[^a-zA-Z0-9\s-]/g, '') // Solo alfanuméricos, espacios y guiones
@@ -1525,11 +1527,9 @@ export class NotionService {
       .replace(/\s+/g, '-') // Espacios a guiones
       .replace(/-+/g, '-'); // Múltiples guiones a uno
     
-    // Si hay slug, usarlo; si no, solo el ID
-    if (slug && slug !== '-') {
-      return `https://www.notion.so/${slug}-${cleanId}`;
-    }
-    return `https://www.notion.so/${cleanId}`;
+    // Siempre incluir slug (nunca solo ID) para formato notion.so/nombre-id
+    const finalSlug = (slug && slug !== '-') ? slug : 'Untitled';
+    return `https://www.notion.so/${finalSlug}-${cleanId}`;
   }
 
   /**
@@ -1603,11 +1603,15 @@ export class NotionService {
       return pages.map(page => {
         const title = this._extractPageTitle(page);
         const labels = this._extractLabelsFromPage(page);
+        // Usar page.url de la API cuando exista y sea de Notion (formato correcto con slug)
+        const url = (page.url && (page.url.includes('notion.so') || page.url.includes('notion.site')))
+          ? page.url
+          : this._buildNotionUrl(title, page.id);
         
         return {
           id: this._normalizeId(page.id),
           title,
-          url: this._buildNotionUrl(title, page.id),
+          url,
           labels // Array de labels para agrupar por categoría
         };
       });
