@@ -2673,7 +2673,10 @@ export class ExtensionController {
     if (toggleLabel) {
       toggleLabel.classList.toggle('player-view-toggle__label--active', this.playerViewMode);
     }
-    
+
+    // Mostrar/ocultar .notion-gm-only: player real o GM en vista jugador
+    document.body.classList.toggle('role-player', this.playerViewMode || !this.isGM);
+
     // Re-renderizar la lista de páginas
     await this.render();
   }
@@ -5569,6 +5572,8 @@ export class ExtensionController {
     
     if (html) {
       log('✅ Contenido recibido del GM');
+      // Asegurar clase para ocultar .notion-gm-only (por si no se aplicó en init)
+      if (!this.isGM) document.body.classList.add('role-player');
       notionContent.innerHTML = html;
       // Guardar en caché local para próximas visitas
       this.cacheService.saveHtmlToLocalCache(pageId, html);
