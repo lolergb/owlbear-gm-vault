@@ -921,17 +921,19 @@ export class NotionService {
   _extractPageTitleFromInfo(pageInfo) {
     if (!pageInfo || !pageInfo.properties) return null;
     
-    // Buscar propiedad "title" o "Name"
+    // Buscar propiedad "title" o "Name" (unir todos los fragmentos: emoji + texto)
     const titleProp = pageInfo.properties.title || pageInfo.properties.Title || 
                       pageInfo.properties.Name || pageInfo.properties.name;
-    if (titleProp && titleProp.title && titleProp.title[0]) {
-      return titleProp.title[0].plain_text;
+    if (titleProp && titleProp.title && Array.isArray(titleProp.title)) {
+      const full = (titleProp.title.map(t => t.plain_text || '')).join('').trim();
+      if (full) return full;
     }
     
     // Buscar cualquier propiedad tipo title
     for (const prop of Object.values(pageInfo.properties)) {
-      if (prop.type === 'title' && prop.title && prop.title[0]) {
-        return prop.title[0].plain_text;
+      if (prop.type === 'title' && prop.title && Array.isArray(prop.title)) {
+        const full = (prop.title.map(t => t.plain_text || '')).join('').trim();
+        if (full) return full;
       }
     }
     
@@ -1508,18 +1510,20 @@ export class NotionService {
    * @private
    */
   _extractPageTitle(page) {
-    // Intentar obtener título de las propiedades
+    // Intentar obtener título de las propiedades (unir todos los fragmentos: emoji + texto)
     if (page.properties) {
       // Buscar propiedad "title" o "Name"
       const titleProp = page.properties.title || page.properties.Title || page.properties.Name || page.properties.name;
-      if (titleProp && titleProp.title && titleProp.title[0]) {
-        return titleProp.title[0].plain_text || 'Untitled';
+      if (titleProp && titleProp.title && Array.isArray(titleProp.title)) {
+        const full = (titleProp.title.map(t => t.plain_text || '')).join('').trim();
+        if (full) return full;
       }
       
       // Buscar cualquier propiedad tipo title
       for (const prop of Object.values(page.properties)) {
-        if (prop.type === 'title' && prop.title && prop.title[0]) {
-          return prop.title[0].plain_text || 'Untitled';
+        if (prop.type === 'title' && prop.title && Array.isArray(prop.title)) {
+          const full = (prop.title.map(t => t.plain_text || '')).join('').trim();
+          if (full) return full;
         }
       }
     }
