@@ -4573,11 +4573,15 @@ export class ExtensionController {
         isGM: this.isGM,
         isCoGM: this.isCoGM
       });
+
+      // Clase en body para ocultar .notion-gm-only con CSS (solo players)
+      document.body.classList.toggle('role-player', !this.isGM);
     } catch (e) {
       logError('Error obteniendo info del jugador:', e);
       this.roomId = 'default';
       this.isGM = true; // Asumir GM por defecto
       this.isCoGM = false; // No es coGM por defecto
+      document.body.classList.remove('role-player');
     }
   }
 
@@ -4778,35 +4782,30 @@ export class ExtensionController {
     // Responder a solicitudes de contenido (acepta forceRefresh de Players/Co-GMs)
     this.broadcastService.setupGMContentResponder(async (pageId, forceRefresh = false) => {
       let html = null;
-      // Caché específico para vista player (HTML filtrado, sin bloques 🔒 GM)
-      const playerCacheKey = pageId + ':player';
 
-      // Si NO es forceRefresh, intentar obtener del caché de vista player (no el del GM)
+      // Si NO es forceRefresh, intentar obtener del caché local (mismo HTML para GM y players; oculto con CSS .notion-gm-only)
       if (!forceRefresh) {
-        html = this.cacheService.getHtmlFromLocalCache(playerCacheKey);
+        html = this.cacheService.getHtmlFromLocalCache(pageId);
         if (html) {
-          log('📦 Contenido del caché local (vista player) para:', pageId);
+          log('📦 Contenido del caché local para:', pageId);
           return html;
         }
       } else {
-        // Si es forceRefresh, limpiar caché GM y player para forzar regeneración
         log('🔄 forceRefresh solicitado - limpiando caché para:', pageId);
         this.cacheService.clearPageCache(pageId);
       }
 
-      // Generar contenido bajo demanda CON header, filtrado para player (renderAsViewer: 'player')
-      log(`📡 Generando contenido bajo demanda (vista player) para: ${pageId}${forceRefresh ? ' (forceRefresh)' : ''}`);
+      log(`📡 Generando contenido bajo demanda para: ${pageId}${forceRefresh ? ' (forceRefresh)' : ''}`);
       try {
         const result = await this._generateNotionHtmlWithHeader(pageId, {
           includeShareButtons: false,
-          useCache: !forceRefresh,
-          renderAsViewer: 'player' // Oculta bloques con tag 🔒 GM
+          useCache: !forceRefresh
         });
 
         if (result?.html) {
           html = result.html;
-          this.cacheService.saveHtmlToLocalCache(playerCacheKey, html);
-          log('✅ Contenido con header generado y cacheado (vista player) para:', pageId);
+          this.cacheService.saveHtmlToLocalCache(pageId, html);
+          log('✅ Contenido con header generado y cacheado para:', pageId);
         }
       } catch (e) {
         log('⚠️ Error generando contenido bajo demanda:', e.message);
@@ -5432,29 +5431,15 @@ export class ExtensionController {
       includeShareButtons = false,
       fallbackTitle = 'Untitled',
       blockTypes = null,
-      useCache = true,
-      renderAsViewer = null // 'player' = generar HTML filtrado para players (oculta tags GM-only)
+      useCache = true
     } = options;
 
     try {
-      // Configurar useCache para bloques anidados (tablas, toggles, etc.)
       this.notionRenderer.setRenderingOptions({ useCache });
 
-      // Si se pide generar para un player (ej. broadcast), usar rol player para ocultar contenido GM-only
-      const prevGM = this.notionRenderer.isGM;
-      const prevCoGM = this.notionRenderer.isCoGM;
-      if (renderAsViewer === 'player') {
-        this.notionRenderer.setDependencies({ isGM: false, isCoGM: false });
-      }
-      
-      // Obtener info de la página (cover, título, icono) y bloques
       const pageInfo = await this.notionService.fetchPageInfo(pageId, useCache);
       const blocks = await this.notionService.fetchBlocks(pageId, useCache);
       const blocksHtml = await this.notionRenderer.renderBlocks(blocks, blockTypes);
-
-      if (renderAsViewer === 'player') {
-        this.notionRenderer.setDependencies({ isGM: prevGM, isCoGM: prevCoGM });
-      }
       
       // Construir HTML del header (cover + título)
       let headerHtml = '';

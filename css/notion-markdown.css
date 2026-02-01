@@ -7,6 +7,12 @@
 /* ==========================================================================
    Estilos para renderizar contenido de Notion
    ========================================================================== */
+
+/* Bloques con tag 🔒 GM: ocultos solo para players (clase aplicada por JS en body) */
+body.role-player .notion-gm-only {
+  display: none !important;
+}
+
 .notion-content {
   padding: 0 var(--spacing-xl) var(--spacing-xl);
   max-width: 800px;

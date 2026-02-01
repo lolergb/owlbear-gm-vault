@@ -124,13 +124,9 @@ export class CacheService {
       localStorage.removeItem(CACHE_PREFIX + pageId);
       // Limpiar caché de info de página
       localStorage.removeItem(PAGE_INFO_CACHE_PREFIX + pageId);
-      // Limpiar caché de HTML en memoria (vista GM y vista player)
+      // Limpiar caché de HTML en memoria
       if (this.localHtmlCache[pageId]) {
         delete this.localHtmlCache[pageId];
-      }
-      const playerCacheKey = pageId + ':player';
-      if (this.localHtmlCache[playerCacheKey]) {
-        delete this.localHtmlCache[playerCacheKey];
       }
       log('🗑️ Caché limpiado para página:', pageId);
     } catch (e) {
