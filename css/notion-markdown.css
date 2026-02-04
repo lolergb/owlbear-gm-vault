@@ -13,6 +13,11 @@ body.role-player .notion-gm-only {
   display: none !important;
 }
 
+/* Bloques con tag 🔒 HIDDEN: ocultos para todos (GM y players) */
+.notion-hidden {
+  display: none !important;
+}
+
 .notion-content {
   padding: 0 var(--spacing-xl) var(--spacing-xl);
   max-width: 800px;

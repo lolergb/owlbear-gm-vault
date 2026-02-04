@@ -9,6 +9,9 @@ import { log, logWarn } from '../utils/logger.js';
 /** Tag en bloques code que marca contenido solo para GM/coGM (oculto para players) */
 const GM_ONLY_CODE_TAG = '🔒 GM';
 
+/** Tag en bloques code que marca contenido oculto para todos (GM y players) */
+const HIDDEN_CODE_TAG = '🔒 HIDDEN';
+
 /**
  * Renderizador de contenido de Notion
  */
@@ -82,6 +85,18 @@ export class NotionRenderer {
   }
 
   /**
+   * Si el bloque es un code que contiene el tag HIDDEN, devuelve true.
+   * @param {Object} block - Bloque de Notion
+   * @returns {boolean}
+   * @private
+   */
+  _getCodeBlockHiddenTag(block) {
+    if (block?.type !== 'code' || !block.code?.rich_text) return false;
+    const text = this._getPlainTextFromRichText(block.code.rich_text);
+    return text.includes(HIDDEN_CODE_TAG);
+  }
+
+  /**
    * Comprueba si el bloque tiene rich_text que contiene el tag GM-only
    * (callout, toggle, heading, paragraph, quote, to_do, list items, etc.).
    * Así detectamos 🔒 GM tanto en bloque "code" como en texto/código inline.
@@ -115,6 +130,39 @@ export class NotionRenderer {
   }
 
   /**
+   * Comprueba si el bloque tiene rich_text que contiene el tag HIDDEN
+   * (callout, toggle, heading, paragraph, quote, to_do, list items, etc.).
+   * Así detectamos 🔒 HIDDEN tanto en bloque "code" como en texto/código inline.
+   * @param {Object} block - Bloque de Notion
+   * @returns {boolean}
+   * @private
+   */
+  _blockRichTextContainsHiddenTag(block) {
+    if (!block) return false;
+    let richText = null;
+    switch (block.type) {
+      case 'paragraph': richText = block.paragraph?.rich_text; break;
+      case 'heading_1': richText = block.heading_1?.rich_text; break;
+      case 'heading_2': richText = block.heading_2?.rich_text; break;
+      case 'heading_3': richText = block.heading_3?.rich_text; break;
+      case 'callout': richText = block.callout?.rich_text; break;
+      case 'toggle': richText = block.toggle?.rich_text; break;
+      case 'quote': richText = block.quote?.rich_text; break;
+      case 'code': richText = block.code?.rich_text; break;
+      case 'to_do': richText = block.to_do?.rich_text; break;
+      case 'bulleted_list_item': richText = block.bulleted_list_item?.rich_text; break;
+      case 'numbered_list_item': richText = block.numbered_list_item?.rich_text; break;
+      case 'toggle_heading_1': richText = block.heading_1?.rich_text; break;
+      case 'toggle_heading_2': richText = block.heading_2?.rich_text; break;
+      case 'toggle_heading_3': richText = block.heading_3?.rich_text; break;
+      default: break;
+    }
+    if (!richText || !Array.isArray(richText)) return false;
+    const text = this._getPlainTextFromRichText(richText);
+    return text.includes(HIDDEN_CODE_TAG);
+  }
+
+  /**
    * True si el bloque (o sus descendientes) contiene el tag GM-only
    * (bloque code o rich_text con 🔒 GM en callout, toggle, heading, etc.).
    * @param {Array} blocks - Array de bloques
@@ -128,6 +176,25 @@ export class NotionRenderer {
       if (block.has_children && this.notionService) {
         const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
         if (await this._hasGmOnlyContentInDescendants(children)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * True si el bloque (o sus descendientes) contiene el tag HIDDEN
+   * (bloque code o rich_text con 🔒 HIDDEN en callout, toggle, heading, etc.).
+   * @param {Array} blocks - Array de bloques
+   * @returns {Promise<boolean>}
+   * @private
+   */
+  async _hasHiddenContentInDescendants(blocks) {
+    if (!blocks || blocks.length === 0) return false;
+    for (const block of blocks) {
+      if (this._getCodeBlockHiddenTag(block) || this._blockRichTextContainsHiddenTag(block)) return true;
+      if (block.has_children && this.notionService) {
+        const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
+        if (await this._hasHiddenContentInDescendants(children)) return true;
       }
     }
     return false;
@@ -541,12 +608,14 @@ export class NotionRenderer {
       case 'code': {
         const codeText = this.renderRichText(block.code?.rich_text);
         const gmOnlyClass = this._getCodeBlockGmTag(block) ? ' notion-gm-only' : '';
-        return `<pre class="notion-code${gmOnlyClass}"><code>${codeText}</code></pre>`;
+        const hiddenClass = this._getCodeBlockHiddenTag(block) ? ' notion-hidden' : '';
+        return `<pre class="notion-code${gmOnlyClass}${hiddenClass}"><code>${codeText}</code></pre>`;
       }
       
       case 'quote': {
         const quoteGmClass = this._blockRichTextContainsGmTag(block) ? ' notion-gm-only' : '';
-        return `<div class="notion-quote${quoteGmClass}">${this.renderRichText(block.quote?.rich_text)}</div>`;
+        const quoteHiddenClass = this._blockRichTextContainsHiddenTag(block) ? ' notion-hidden' : '';
+        return `<div class="notion-quote${quoteGmClass}${quoteHiddenClass}">${this.renderRichText(block.quote?.rich_text)}</div>`;
       }
       
       case 'callout':
@@ -686,6 +755,7 @@ export class NotionRenderer {
     const icon = callout?.icon?.emoji || '💡';
     const calloutText = this.renderRichText(callout?.rich_text);
     const gmOnlyClass = this._blockRichTextContainsGmTag(block) ? ' notion-gm-only' : '';
+    const hiddenClass = this._blockRichTextContainsHiddenTag(block) ? ' notion-hidden' : '';
 
     // Si tiene hijos, se renderizarán después
     const hasChildren = block.has_children;
@@ -694,7 +764,7 @@ export class NotionRenderer {
       : '';
 
     return `
-      <div class="notion-callout${gmOnlyClass}" data-has-children="${hasChildren}">
+      <div class="notion-callout${gmOnlyClass}${hiddenClass}" data-has-children="${hasChildren}">
         <div class="notion-callout-icon">${icon}</div>
         <div class="notion-callout-content">
           ${calloutText}
@@ -1025,6 +1095,7 @@ export class NotionRenderer {
       }
 
       // Renderizar bloque normal (los code con 🔒 GM llevan clase notion-gm-only; se ocultan con CSS para players)
+      // Los bloques con 🔒 HIDDEN llevan clase notion-hidden; se ocultan para todos (GM y players)
       html += this.renderBlock(block);
     }
 
@@ -1061,15 +1132,18 @@ export class NotionRenderer {
     const toggleText = this.renderRichText(block.toggle?.rich_text);
     let toggleContent = '';
     let gmOnlyClass = '';
+    let hiddenClass = '';
 
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
         if (this._blockRichTextContainsGmTag(block) || await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
+        if (this._blockRichTextContainsHiddenTag(block) || await this._hasHiddenContentInDescendants(children)) hiddenClass = ' notion-hidden';
         toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
-    } else if (this._blockRichTextContainsGmTag(block)) {
-      gmOnlyClass = ' notion-gm-only';
+    } else {
+      if (this._blockRichTextContainsGmTag(block)) gmOnlyClass = ' notion-gm-only';
+      if (this._blockRichTextContainsHiddenTag(block)) hiddenClass = ' notion-hidden';
     }
 
     // Si hay filtro y el toggle no tiene contenido filtrado, no mostrarlo
@@ -1078,7 +1152,7 @@ export class NotionRenderer {
     }
 
     return `
-      <details class="notion-toggle${gmOnlyClass}">
+      <details class="notion-toggle${gmOnlyClass}${hiddenClass}">
         <summary class="notion-toggle-summary">${toggleText}</summary>
         <div class="notion-toggle-content">${toggleContent}</div>
       </details>
@@ -1095,15 +1169,18 @@ export class NotionRenderer {
     const headingText = this.renderRichText(headingData?.rich_text);
     let toggleContent = '';
     let gmOnlyClass = '';
+    let hiddenClass = '';
 
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
         if (this._blockRichTextContainsGmTag(block) || await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
+        if (this._blockRichTextContainsHiddenTag(block) || await this._hasHiddenContentInDescendants(children)) hiddenClass = ' notion-hidden';
         toggleContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
-    } else if (this._blockRichTextContainsGmTag(block)) {
-      gmOnlyClass = ' notion-gm-only';
+    } else {
+      if (this._blockRichTextContainsGmTag(block)) gmOnlyClass = ' notion-gm-only';
+      if (this._blockRichTextContainsHiddenTag(block)) hiddenClass = ' notion-hidden';
     }
 
     // Si hay filtro y el toggle no tiene contenido, no mostrarlo
@@ -1112,7 +1189,7 @@ export class NotionRenderer {
     }
 
     return `
-      <details class="notion-toggle notion-toggle-heading notion-toggle-h${level}${gmOnlyClass}">
+      <details class="notion-toggle notion-toggle-heading notion-toggle-h${level}${gmOnlyClass}${hiddenClass}">
         <summary class="notion-toggle-summary"><h${level} class="notion-heading">${headingText}</h${level}></summary>
         <div class="notion-toggle-content">${toggleContent}</div>
       </details>
@@ -1129,19 +1206,22 @@ export class NotionRenderer {
     const calloutText = this.renderRichText(callout?.rich_text);
     let childrenContent = '';
     let gmOnlyClass = '';
+    let hiddenClass = '';
 
     if (block.has_children && this.notionService) {
       const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
       if (children.length > 0) {
         if (this._blockRichTextContainsGmTag(block) || await this._hasGmOnlyContentInDescendants(children)) gmOnlyClass = ' notion-gm-only';
+        if (this._blockRichTextContainsHiddenTag(block) || await this._hasHiddenContentInDescendants(children)) hiddenClass = ' notion-hidden';
         childrenContent = await this.renderBlocks(children, typesArray, headingLevelOffset);
       }
-    } else if (this._blockRichTextContainsGmTag(block)) {
-      gmOnlyClass = ' notion-gm-only';
+    } else {
+      if (this._blockRichTextContainsGmTag(block)) gmOnlyClass = ' notion-gm-only';
+      if (this._blockRichTextContainsHiddenTag(block)) hiddenClass = ' notion-hidden';
     }
 
     return `
-      <div class="notion-callout${gmOnlyClass}">
+      <div class="notion-callout${gmOnlyClass}${hiddenClass}">
         <div class="notion-callout-icon">${icon}</div>
         <div class="notion-callout-content">
           ${calloutText}
