@@ -3373,7 +3373,9 @@ async function renderTable(tableBlock) {
 // Función para mostrar imagen en modal usando Owlbear SDK
 // @param {boolean} showShareButton - Si true, muestra el botón de share (default: true)
 //                                    Pasar false cuando la imagen es recibida por broadcast
-async function showImageModal(imageUrl, caption, showShareButton = true) {
+// @param {boolean} fullSize - Si true, muestra la imagen a tamaño completo (sin limitar altura)
+//                             Usar cuando el GM comparte para que todos vean tamaño completo
+async function showImageModal(imageUrl, caption, showShareButton = true, fullSize = false) {
   try {
     // Asegurarse de que imageUrl sea una URL absoluta
     let absoluteImageUrl = imageUrl;
@@ -3402,13 +3404,18 @@ async function showImageModal(imageUrl, caption, showShareButton = true) {
     }
     // Pasar parámetro para mostrar/ocultar share button
     viewerUrl.searchParams.set('share', showShareButton ? 'true' : 'false');
+    // Pasar parámetro fullSize para mostrar imagen a tamaño completo cuando el GM comparte
+    if (fullSize) {
+      viewerUrl.searchParams.set('fullSize', 'true');
+    }
     
     log('🔍 Abriendo modal de imagen:', {
       imageUrl: absoluteImageUrl,
       viewerUrl: viewerUrl.toString(),
       baseUrl: baseUrl,
       currentLocation: window.location.href,
-      showShareButton: showShareButton
+      showShareButton: showShareButton,
+      fullSize: fullSize
     });
     
     // Abrir modal usando Owlbear SDK (modal grande fuera del popup)
@@ -3604,12 +3611,15 @@ async function attachImageClickHandlers() {
       }
       
       // Compartir con todos los jugadores via broadcast
+      // Detectar si el sender es GM para mostrar tamaño completo
+      const isGM = await getUserRole();
       try {
         await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
           url: absoluteImageUrl,
-          caption: caption
+          caption: caption,
+          fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
         });
-        log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80));
+        log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80), 'fullSize:', isGM);
         trackImageShare(absoluteImageUrl);
         
         // Feedback visual
@@ -4599,10 +4609,11 @@ try {
       
       // Listener para recibir imágenes compartidas por el GM
       OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
-        const { url, caption } = event.data;
+        const { url, caption, fullSize } = event.data;
         if (url) {
           // Abrir la imagen en modal para este jugador (sin botón de share porque es recibido por broadcast)
-          await showImageModal(url, caption, false);
+          // Si fullSize es true (GM compartió), mostrar a tamaño completo
+          await showImageModal(url, caption, false, fullSize);
         }
       });
       

@@ -4898,12 +4898,12 @@ export class ExtensionController {
   _setupSharedContentListeners() {
     // Listener para recibir imágenes compartidas
     this.OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
-      const { url, caption, senderId } = event.data;
+      const { url, caption, senderId, fullSize } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (url) {
-        log('🖼️ Imagen recibida:', url.substring(0, 50));
-        await this._showImageModal(url, caption, false);
+        log('🖼️ Imagen recibida:', url.substring(0, 50), 'fullSize:', fullSize);
+        await this._showImageModal(url, caption, false, fullSize);
       }
     });
 
@@ -6766,7 +6766,7 @@ export class ExtensionController {
    * @param {boolean} showShareButton - Mostrar botón de compartir (default: true para GM)
    * @private
    */
-  async _showImageModal(imageUrl, caption, showShareButton = true) {
+  async _showImageModal(imageUrl, caption, showShareButton = true, fullSize = false) {
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
       // Fallback: abrir en nueva ventana
@@ -6800,6 +6800,10 @@ export class ExtensionController {
       // El viewer usa el parámetro 'share' (default true si no se especifica)
       if (!(showShareButton && this.isGM)) {
         viewerUrl.searchParams.set('share', 'false');
+      }
+      // Pasar parámetro fullSize para mostrar imagen a tamaño completo cuando el GM comparte
+      if (fullSize) {
+        viewerUrl.searchParams.set('fullSize', 'true');
       }
       
       // Abrir modal usando Owlbear SDK
@@ -6837,11 +6841,15 @@ export class ExtensionController {
         }
       }
 
+      // Detectar si el sender es GM para mostrar tamaño completo
+      const isGM = this.isGM;
+
       // Usar el canal correcto como en el original
       const result = await this.broadcastService.sendMessage('com.dmscreen/showImage', {
         url: absoluteImageUrl,
         caption: caption || '',
-        senderId: this.playerId
+        senderId: this.playerId,
+        fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
       });
       
       if (result?.success) {
