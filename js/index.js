@@ -856,7 +856,7 @@ function filterVisiblePagesForMetadata(config) {
     // Recalcular el orden después del filtrado
     let recalculatedOrder = null;
     if (category.order && Array.isArray(category.order)) {
-      // Recalcular orden de páginas
+      // Primero recalcular orden de páginas
       const pagesOrder = recalculateOrderAfterFilter(
         category.order,
         originalPages,
@@ -864,15 +864,15 @@ function filterVisiblePagesForMetadata(config) {
         'page'
       );
       
-      // Recalcular orden de categorías
-      const categoriesOrder = recalculateOrderAfterFilter(
+      // Luego recalcular orden de categorías
+      // La función recalculateOrderAfterFilter mantiene automáticamente los items
+      // de otros tipos (páginas) con sus índices ya ajustados
+      recalculatedOrder = recalculateOrderAfterFilter(
         pagesOrder, // Usar el orden ya ajustado de páginas
         originalSubcategories,
         filteredSubcategories,
         'category'
       );
-      
-      recalculatedOrder = categoriesOrder;
     }
     
     return {
@@ -899,6 +899,15 @@ function filterVisiblePagesForMetadata(config) {
       filteredCategories,
       'category'
     );
+  }
+  
+  // Inicializar orden si no existe en las categorías filtradas
+  if (filteredCategories.length > 0) {
+    filteredCategories.forEach(cat => {
+      if (!cat.order || !Array.isArray(cat.order) || cat.order.length === 0) {
+        initializeOrderRecursive(cat, cat.name || 'category');
+      }
+    });
   }
   
   return {
@@ -4407,16 +4416,10 @@ try {
           // NO copiar al roomId - usar directamente hasta que el GM cargue su propio vault
           log('✅ [Master GM] No hay configuración para este roomId, usando "default" con', defaultCount, 'elementos');
           pagesConfig = defaultConfig;
-          // Solo sincronizar con room metadata, pero NO guardar como roomId
+          // Sincronizar con room metadata usando savePagesJSON para asegurar consistencia
           pagesConfigCache = pagesConfig;
-          const visibleOnlyConfig = filterVisiblePagesForMetadata(pagesConfig);
-          try {
-            const compressed = compressJson(visibleOnlyConfig);
-            await OBR.room.setMetadata({ [ROOM_METADATA_KEY]: compressed });
-            log('✅ Default sincronizado con room metadata para players');
-          } catch (e) {
-            console.warn('No se pudo sincronizar default con room metadata:', e);
-          }
+          await savePagesJSON(pagesConfig, roomId);
+          log('✅ Default sincronizado con room metadata para players');
         }
       } else {
         // Player usa room metadata (configuración filtrada por el GM)
