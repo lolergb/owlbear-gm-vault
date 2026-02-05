@@ -8869,16 +8869,19 @@ async function showSettings() {
     if (notionTokenForm) notionTokenForm.style.display = 'none';
     if (exportVaultForm) exportVaultForm.style.display = 'none';
     if (feedbackForm) feedbackForm.style.display = '';
+    if (settingsContainer) settingsContainer.classList.add('settings--player');
   } else if (isCoGMGlobal) {
     // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
     if (notionTokenForm) notionTokenForm.style.display = 'none';
     if (exportVaultForm) exportVaultForm.style.display = '';
     if (feedbackForm) feedbackForm.style.display = '';
+    if (settingsContainer) settingsContainer.classList.remove('settings--player');
   } else {
     // Master GM: mostrar todas las secciones
     allForms.forEach(form => {
       form.style.display = '';
     });
+    if (settingsContainer) settingsContainer.classList.remove('settings--player');
   }
   
   // ============================================

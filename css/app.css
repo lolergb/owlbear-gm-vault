@@ -839,6 +839,11 @@
     width: 100%;
     border-radius: var(--radius-lg);
   }
+
+  /* Menos espacio superior cuando el jugador solo ve Feedback */
+  .settings.settings--player .settings__content {
+    padding-top: var(--spacing-md);
+  }
   
   .settings__description {
     color: var(--color-text-muted);
