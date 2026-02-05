@@ -39,24 +39,29 @@
     body {
       color: var(--color-text-secondary);
       font-family: var(--font-family-base);
+      margin: 0;
+      padding: var(--spacing-xl);
+      height: 100vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      padding: var(--spacing-xl);
-      margin: 0;
     }
     .image-container {
       max-width: 100%;
-      max-height: calc(100vh - 100px);
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      max-height: calc(100vh - 2 * var(--spacing-xl));
+      overflow: auto;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: var(--spacing-lg);
     }
     .image-container.full-size {
-      max-height: none;
+      max-height: calc(100vh - 2 * var(--spacing-xl));
     }
     img {
       max-width: 100%;
