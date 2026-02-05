@@ -2471,7 +2471,7 @@
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   border-radius: var(--radius-md);
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
 }
 
 /* Same style for both Master GM and Co-GM */
