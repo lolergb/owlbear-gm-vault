@@ -104,20 +104,20 @@
           <p class="settings__description">
             Save and reuse your GM Vault. Import a setup shared by another GM or export yours as a backup.
           </p>
-          <label class="form__label">Load from file</label>
-          <div class="form__actions form__actions--single">
-            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">View JSON</button>
-          </div>
-          <div class="form__actions form__actions--double">
-            <button id="load-json-btn" class="btn btn--primary btn--flex">Load vault</button>
-            <button id="download-json-btn" class="btn btn--ghost btn--flex">Download vault</button>
-          </div>
           <div class="form__field">
             <label class="form__label" for="vault-url-input">Load from URL</label>
             <input type="url" id="vault-url-input" placeholder="https://example.com/gm-vault" class="input input--mono" autocomplete="off" spellcheck="false">
             <div class="form__actions form__actions--single" style="margin-top: 8px;">
               <button id="load-url-btn" class="btn btn--primary btn--flex">Load from URL</button>
             </div>
+          </div>
+          <label class="form__label" style="margin-top: var(--spacing-lg);">Load from file</label>
+          <div class="form__actions form__actions--single">
+            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">View JSON</button>
+          </div>
+          <div class="form__actions form__actions--double">
+            <button id="load-json-btn" class="btn btn--primary btn--flex">Load vault</button>
+            <button id="download-json-btn" class="btn btn--ghost btn--flex">Download vault</button>
           </div>
         </div>
 
@@ -141,7 +141,7 @@
             <button id="clear-local-data-btn" class="btn btn--ghost btn--flex">🗑️ Clear Local Data</button>
           </div>
         </div>
-        
+
       </div>
     </div>
   </div>

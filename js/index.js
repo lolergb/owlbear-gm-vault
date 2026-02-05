@@ -8926,19 +8926,9 @@ async function showSettings() {
     }
     
     // Insertar vault status antes de la descripción
-    const exportDescription = exportVaultForm.querySelector('.settings__description');
+    const exportDescription = exportVaultForm.querySelector('.settings__content');
     
-    if (exportDescription) {
-      exportDescription.insertAdjacentElement('beforebegin', vaultStatusBox);
-    } else {
-      // Fallback: insertar después del label si no hay descripción
-      const exportLabel = exportVaultForm.querySelector('.form__label');
-      if (exportLabel) {
-        exportLabel.insertAdjacentElement('afterend', vaultStatusBox);
-      } else {
-        exportVaultForm.insertBefore(vaultStatusBox, exportVaultForm.firstChild);
-      }
-    }
+    exportDescription.insertBefore(vaultStatusBox, exportDescription.firstChild);
     
     // Actualizar descripción del export según rol
     if (exportDescription) {
