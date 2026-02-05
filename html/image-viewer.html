@@ -159,8 +159,22 @@
     const urlParams = new URLSearchParams(window.location.search);
     let imageUrl = urlParams.get('url');
     let caption = urlParams.get('caption') || '';
-    const showShareButton = urlParams.get('share') !== 'false'; // Default true
+    // showShareButton: true por defecto, false solo si el parámetro es explícitamente 'false'
+    // Esto permite que jugadores puedan compartir cuando abren imágenes directamente
+    const shareParam = urlParams.get('share');
+    // Si shareParam es null (no se especificó), usar true por defecto
+    // Si shareParam es 'false', usar false
+    // Si shareParam es cualquier otro valor (incluyendo 'true'), usar true
+    const showShareButton = shareParam === null || shareParam !== 'false';
     const fullSize = urlParams.get('fullSize') === 'true'; // Si es true, mostrar a tamaño completo
+    
+    console.log('📋 Parámetros del modal:', {
+      shareParam,
+      showShareButton,
+      fullSize,
+      hasUrl: !!imageUrl,
+      fullUrl: window.location.href
+    });
     
     // Decodificar el caption si existe
     if (caption) {
