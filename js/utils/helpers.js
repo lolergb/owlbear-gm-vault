@@ -270,6 +270,57 @@ export function countCategories(config) {
 }
 
 /**
+ * Recalcula el orden después de filtrar elementos
+ * Crea un mapa de índices antiguos a nuevos y ajusta el orden
+ * @param {Array} originalOrder - Orden original con índices antiguos
+ * @param {Array} originalItems - Array original de items (categories o pages)
+ * @param {Array} filteredItems - Array filtrado de items
+ * @param {string} type - Tipo de item: 'category' o 'page'
+ * @returns {Array} Orden recalculado con nuevos índices
+ */
+function recalculateOrderAfterFilter(originalOrder, originalItems, filteredItems, type) {
+  if (!originalOrder || !Array.isArray(originalOrder)) {
+    // Si no hay orden original, crear uno por defecto
+    return filteredItems.map((_, index) => ({ type, index }));
+  }
+  
+  // Crear mapa de índices antiguos a nuevos usando IDs únicos
+  // Para cada item filtrado, encontrar su índice original por ID
+  const indexMap = new Map();
+  filteredItems.forEach((filteredItem, newIndex) => {
+    // Buscar el índice original del item filtrado usando ID
+    const originalIndex = originalItems.findIndex(originalItem => {
+      // Usar ID si está disponible, sino fallback a nombre (para compatibilidad con datos legacy)
+      if (originalItem.id && filteredItem.id) {
+        return originalItem.id === filteredItem.id;
+      }
+      // Fallback para datos sin ID (legacy)
+      return originalItem.name === filteredItem.name;
+    });
+    if (originalIndex !== -1) {
+      indexMap.set(originalIndex, newIndex);
+    }
+  });
+  
+  // Recalcular el orden usando el mapa
+  const recalculatedOrder = [];
+  originalOrder.forEach(item => {
+    if (item.type === type && indexMap.has(item.index)) {
+      recalculatedOrder.push({
+        type: item.type,
+        index: indexMap.get(item.index)
+      });
+    }
+    // Mantener otros tipos de items (páginas si estamos filtrando categorías, etc.)
+    if (item.type !== type) {
+      recalculatedOrder.push(item);
+    }
+  });
+  
+  return recalculatedOrder;
+}
+
+/**
  * Filtra la configuración para incluir solo páginas visibles para players
  * @param {Object} config - Configuración completa
  * @returns {Object} - Configuración filtrada
@@ -280,23 +331,64 @@ export function filterVisiblePages(config) {
   }
   
   function filterCategory(category) {
-    const filteredPages = (category.pages || []).filter(p => p.visibleToPlayers === true);
-    const filteredCategories = (category.categories || [])
+    const originalPages = category.pages || [];
+    const filteredPages = originalPages.filter(p => p.visibleToPlayers === true);
+    
+    const originalCategories = category.categories || [];
+    const filteredCategories = originalCategories
       .map(filterCategory)
       .filter(c => (c.pages && c.pages.length > 0) || (c.categories && c.categories.length > 0));
+    
+    // Recalcular el orden después del filtrado
+    let recalculatedOrder = null;
+    if (category.order && Array.isArray(category.order)) {
+      // Recalcular orden de páginas
+      const pagesOrder = recalculateOrderAfterFilter(
+        category.order,
+        originalPages,
+        filteredPages,
+        'page'
+      );
+      
+      // Recalcular orden de categorías
+      const categoriesOrder = recalculateOrderAfterFilter(
+        pagesOrder, // Usar el orden ya ajustado de páginas
+        originalCategories,
+        filteredCategories,
+        'category'
+      );
+      
+      recalculatedOrder = categoriesOrder;
+    }
     
     return {
       ...category,
       pages: filteredPages,
-      categories: filteredCategories.length > 0 ? filteredCategories : undefined
+      categories: filteredCategories.length > 0 ? filteredCategories : undefined,
+      ...(recalculatedOrder && recalculatedOrder.length > 0 ? { order: recalculatedOrder } : {})
     };
   }
   
-  const filtered = config.categories
+  const originalCategories = config.categories || [];
+  const filtered = originalCategories
     .map(filterCategory)
     .filter(c => (c.pages && c.pages.length > 0) || (c.categories && c.categories.length > 0));
   
-  return { categories: filtered };
+  // Recalcular el orden del nivel raíz
+  let rootOrder = null;
+  if (config.order && Array.isArray(config.order)) {
+    rootOrder = recalculateOrderAfterFilter(
+      config.order,
+      originalCategories,
+      filtered,
+      'category'
+    );
+  }
+  
+  return { 
+    categories: filtered,
+    ...(rootOrder && rootOrder.length > 0 ? { order: rootOrder } : {})
+  };
 }
 
 /**

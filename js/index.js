@@ -758,6 +758,57 @@ function validateTotalMetadataSize(metadataKey, newValue, currentMetadata = {}) 
 }
 
 /**
+ * Recalcula el orden después de filtrar elementos
+ * Crea un mapa de índices antiguos a nuevos y ajusta el orden
+ * @param {Array} originalOrder - Orden original con índices antiguos
+ * @param {Array} originalItems - Array original de items (categories o pages)
+ * @param {Array} filteredItems - Array filtrado de items
+ * @param {string} type - Tipo de item: 'category' o 'page'
+ * @returns {Array} Orden recalculado con nuevos índices
+ */
+function recalculateOrderAfterFilter(originalOrder, originalItems, filteredItems, type) {
+  if (!originalOrder || !Array.isArray(originalOrder)) {
+    // Si no hay orden original, crear uno por defecto
+    return filteredItems.map((_, index) => ({ type, index }));
+  }
+  
+  // Crear mapa de índices antiguos a nuevos usando IDs únicos
+  // Para cada item filtrado, encontrar su índice original por ID
+  const indexMap = new Map();
+  filteredItems.forEach((filteredItem, newIndex) => {
+    // Buscar el índice original del item filtrado usando ID
+    const originalIndex = originalItems.findIndex(originalItem => {
+      // Usar ID si está disponible, sino fallback a nombre (para compatibilidad con datos legacy)
+      if (originalItem.id && filteredItem.id) {
+        return originalItem.id === filteredItem.id;
+      }
+      // Fallback para datos sin ID (legacy)
+      return originalItem.name === filteredItem.name;
+    });
+    if (originalIndex !== -1) {
+      indexMap.set(originalIndex, newIndex);
+    }
+  });
+  
+  // Recalcular el orden usando el mapa
+  const recalculatedOrder = [];
+  originalOrder.forEach(item => {
+    if (item.type === type && indexMap.has(item.index)) {
+      recalculatedOrder.push({
+        type: item.type,
+        index: indexMap.get(item.index)
+      });
+    }
+    // Mantener otros tipos de items (páginas si estamos filtrando categorías, etc.)
+    if (item.type !== type) {
+      recalculatedOrder.push(item);
+    }
+  });
+  
+  return recalculatedOrder;
+}
+
+/**
  * Filtra la configuración para incluir solo páginas visibles para players
  * Se usa para guardar en room metadata (optimiza espacio)
  * @param {object} config - Configuración completa del GM
@@ -770,11 +821,13 @@ function filterVisiblePagesForMetadata(config) {
   
   const filterCategory = (category) => {
     // Filtrar páginas visibles
-    const visiblePages = (category.pages || []).filter(page => 
+    const originalPages = category.pages || [];
+    const visiblePages = originalPages.filter(page => 
       page.visibleToPlayers === true && 
       page.url && 
       !page.url.includes('...')
     ).map(page => ({
+      id: page.id, // Preservar ID único para identificación correcta
       name: page.name,
       url: page.url,
       icon: page.icon,
@@ -785,7 +838,8 @@ function filterVisiblePagesForMetadata(config) {
     }));
     
     // Filtrar subcategorías recursivamente
-    const filteredSubcategories = (category.categories || [])
+    const originalSubcategories = category.categories || [];
+    const filteredSubcategories = originalSubcategories
       .map(filterCategory)
       .filter(subCat => 
         subCat !== null && (
@@ -799,22 +853,57 @@ function filterVisiblePagesForMetadata(config) {
       return null;
     }
     
+    // Recalcular el orden después del filtrado
+    let recalculatedOrder = null;
+    if (category.order && Array.isArray(category.order)) {
+      // Recalcular orden de páginas
+      const pagesOrder = recalculateOrderAfterFilter(
+        category.order,
+        originalPages,
+        visiblePages,
+        'page'
+      );
+      
+      // Recalcular orden de categorías
+      const categoriesOrder = recalculateOrderAfterFilter(
+        pagesOrder, // Usar el orden ya ajustado de páginas
+        originalSubcategories,
+        filteredSubcategories,
+        'category'
+      );
+      
+      recalculatedOrder = categoriesOrder;
+    }
+    
     return {
+      id: category.id, // Preservar ID único para identificación correcta
       name: category.name,
       ...(category.icon ? { icon: category.icon } : {}),
       ...(visiblePages.length > 0 ? { pages: visiblePages } : {}),
       ...(filteredSubcategories.length > 0 ? { categories: filteredSubcategories } : {}),
-      ...(category.order ? { order: category.order } : {})
+      ...(recalculatedOrder && recalculatedOrder.length > 0 ? { order: recalculatedOrder } : {})
     };
   };
   
-  const filteredCategories = config.categories
+  const originalCategories = config.categories || [];
+  const filteredCategories = originalCategories
     .map(filterCategory)
     .filter(cat => cat !== null);
   
+  // Recalcular el orden del nivel raíz
+  let rootOrder = null;
+  if (config.order && Array.isArray(config.order)) {
+    rootOrder = recalculateOrderAfterFilter(
+      config.order,
+      originalCategories,
+      filteredCategories,
+      'category'
+    );
+  }
+  
   return {
     categories: filteredCategories,
-    ...(config.order ? { order: config.order } : {})
+    ...(rootOrder && rootOrder.length > 0 ? { order: rootOrder } : {})
   };
 }
 
