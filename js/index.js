@@ -4778,25 +4778,56 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   // Mostrar botones al hover (solo para GMs)
   // Mostrar botón contextual en hover (solo para Master GM, no para Co-GM)
   if (isGM && !isCoGMGlobal) {
+    let hoverTimeout = null;
+    
     titleContainer.addEventListener('mouseenter', () => {
+      // Limpiar cualquier timeout pendiente
+      if (hoverTimeout) {
+        clearTimeout(hoverTimeout);
+        hoverTimeout = null;
+      }
+      
       if (!contextMenuButton.classList.contains('context-menu-active')) {
         contextMenuButton.style.opacity = '1';
         // categoryVisibilityButton.style.opacity = '1'; // Temporalmente oculto
       }
     });
+    
     titleContainer.addEventListener('mouseleave', (e) => {
       // No ocultar si el menú contextual está activo
       if (contextMenuButton.classList.contains('context-menu-active')) {
         return;
       }
-      // No ocultar si el mouse está sobre los botones
-      if (!e.relatedTarget || (!e.relatedTarget.closest('.category-context-menu-button') && !e.relatedTarget.closest('.category-visibility-button') && !e.relatedTarget.closest('#context-menu'))) {
-        contextMenuButton.style.opacity = '0';
-        // Solo ocultar el botón de visibilidad si la categoría no tiene contenido visible
-        // Temporalmente oculto
-        // if (!isCategoryVisible) {
-        //   categoryVisibilityButton.style.opacity = '0';
-        // }
+      
+      // Verificar si el mouse está sobre los botones o el menú contextual
+      const isOverButton = e.relatedTarget && (
+        e.relatedTarget.closest('.category-context-menu-button') ||
+        e.relatedTarget.closest('.category-visibility-button') ||
+        e.relatedTarget.closest('#context-menu')
+      );
+      
+      if (!isOverButton) {
+        // Usar timeout para asegurar que el efecto se limpie incluso si hay problemas con relatedTarget
+        hoverTimeout = setTimeout(() => {
+          if (!contextMenuButton.classList.contains('context-menu-active')) {
+            contextMenuButton.style.opacity = '0';
+          }
+          hoverTimeout = null;
+        }, 100); // Pequeño delay para permitir transiciones suaves
+      }
+    });
+    
+    // Limpiar estado hover cuando el mouse sale completamente del área de la carpeta
+    categoryDiv.addEventListener('mouseleave', (e) => {
+      // Solo limpiar si el mouse no está sobre ningún elemento hijo
+      if (!e.relatedTarget || !categoryDiv.contains(e.relatedTarget)) {
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = null;
+        }
+        if (!contextMenuButton.classList.contains('context-menu-active')) {
+          contextMenuButton.style.opacity = '0';
+        }
       }
     });
   }
