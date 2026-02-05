@@ -5519,6 +5519,8 @@ async function moveItemUp(itemType, itemIndex, parentPath, roomId) {
   order[currentPos - 1] = temp;
   
   saveCombinedOrder(parent, order);
+  
+  log(`🔄 Orden actualizado para ${itemType} en posición ${itemIndex}. Sincronizando con jugadores...`);
   await savePagesJSON(config, roomId);
   
   // Track page move
@@ -5559,6 +5561,8 @@ async function moveItemDown(itemType, itemIndex, parentPath, roomId) {
   order[currentPos + 1] = temp;
   
   saveCombinedOrder(parent, order);
+  
+  log(`🔄 Orden actualizado para ${itemType} en posición ${itemIndex}. Sincronizando con jugadores...`);
   await savePagesJSON(config, roomId);
   
   // Track page move
