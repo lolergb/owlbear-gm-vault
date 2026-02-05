@@ -8925,12 +8925,13 @@ async function showSettings() {
       `;
     }
     
-    // Insertar vault status antes de la descripción
-    const exportDescription = exportVaultForm.querySelector('.settings__content');
-    
-    exportDescription.insertBefore(vaultStatusBox, exportDescription.firstChild);
-    
+    // Inyectar vault status como primer hijo de .settings__content
+    const settingsContent = document.querySelector('#settings-container .settings__content');
+    if (settingsContent) {
+      settingsContent.insertBefore(vaultStatusBox, settingsContent.firstChild);
+    }
     // Actualizar descripción del export según rol
+    const exportDescription = exportVaultForm.querySelector('.settings__description');
     if (exportDescription) {
       if (isCoGMGlobal) {
         exportDescription.textContent = 'You can download a copy of the vault. Share content with players using the eye button on pages.';

@@ -2858,12 +2858,10 @@ export class ExtensionController {
       }
     }
 
-    // Insertar vault status antes de la descripción
-    const exportDescription = exportVaultForm.querySelector('.settings__description');
-    if (exportDescription) {
-      exportDescription.insertAdjacentElement('beforebegin', vaultStatusBox);
-    } else {
-      exportVaultForm.insertBefore(vaultStatusBox, exportVaultForm.firstChild);
+    // Inyectar vault status como primer hijo de .settings__content
+    const settingsContent = document.querySelector('#settings-container .settings__content');
+    if (settingsContent) {
+      settingsContent.insertBefore(vaultStatusBox, settingsContent.firstChild);
     }
   }
 
