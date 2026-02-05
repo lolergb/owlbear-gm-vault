@@ -215,6 +215,7 @@
       try {
         const role = await OBR.player.getRole();
         const isGM = role === 'GM';
+        const playerId = await OBR.player.getId();
         
         // Mostrar botón de compartir si showShareButton es true (para todos: GM, Co-GM y Players)
         // (showShareButton es false cuando la imagen fue recibida por broadcast)
@@ -225,13 +226,20 @@
           const shareButton = document.getElementById('share-button');
           shareButton.addEventListener('click', async () => {
             try {
+              // Deshabilitar botón mientras se envía
+              shareButton.disabled = true;
+              
               // Enviar broadcast a todos los usuarios para que abran la imagen
               // Incluir fullSize solo si el sender es GM
+              // Incluir senderId para que el listener pueda ignorar el mensaje si es del mismo usuario
               await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
                 url: imageUrl,
                 caption: caption,
+                senderId: playerId,
                 fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
               });
+              
+              console.log('✅ Imagen compartida exitosamente');
               
               // Mostrar feedback
               const feedback = document.getElementById('feedback');
@@ -244,11 +252,16 @@
               setTimeout(() => {
                 feedback.classList.remove('visible');
                 shareButton.classList.remove('shared');
+                shareButton.disabled = false;
               }, 2000);
               
             } catch (error) {
-              console.error('Error al compartir imagen:', error);
-              alert('Error sharing image');
+              console.error('❌ Error al compartir imagen:', error);
+              shareButton.disabled = false;
+              
+              // Mostrar mensaje de error más descriptivo
+              const errorMessage = error?.error?.message || error?.message || error?.toString() || 'Unknown error';
+              alert('Error sharing image: ' + errorMessage);
             }
           });
         }
