@@ -118,6 +118,9 @@
     .gm-only {
       display: none;
     }
+    .toolbar {
+      display: flex;
+    }
     .feedback {
       position: fixed;
       bottom: var(--spacing-xl);
@@ -213,19 +216,21 @@
         const role = await OBR.player.getRole();
         const isGM = role === 'GM';
         
-        // Mostrar botón de compartir solo si es GM Y el parámetro share no es false
+        // Mostrar botón de compartir si showShareButton es true (para todos: GM, Co-GM y Players)
         // (showShareButton es false cuando la imagen fue recibida por broadcast)
-        if (isGM && showShareButton) {
-          document.querySelector('.gm-only').style.display = 'flex';
+        if (showShareButton) {
+          document.querySelector('.toolbar').style.display = 'flex';
           
           // Configurar botón de compartir
           const shareButton = document.getElementById('share-button');
           shareButton.addEventListener('click', async () => {
             try {
               // Enviar broadcast a todos los usuarios para que abran la imagen
+              // Incluir fullSize solo si el sender es GM
               await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
                 url: imageUrl,
-                caption: caption
+                caption: caption,
+                fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
               });
               
               // Mostrar feedback
