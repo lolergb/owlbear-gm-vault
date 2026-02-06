@@ -380,6 +380,16 @@
   .form--separated {
     margin-top: calc(var(--spacing-xl) + var(--spacing-lg));
   }
+
+  /* El primer .form--separated no lleva margin-top para no duplicar espacio superior */
+  #settings-container .settings__content > .form--separated:nth-child(2) {
+    margin-top: 0;
+  }
+
+  /* En vista player el primer bloque visible es Feedback (3.º hijo) */
+  .settings.settings--player .settings__content > .form--separated:nth-child(3) {
+    margin-top: 0;
+  }
   
   /* ==========================================================================
       Componentes Base - Links
