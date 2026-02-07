@@ -7,6 +7,7 @@
 
 import { generateColorFromString, getInitial, extractNotionPageId } from '../utils/helpers.js';
 import { log } from '../utils/logger.js';
+import { iconHtml } from '../utils/iconHelper.js';
 
 /**
  * Renderizador de interfaz de usuario
@@ -253,7 +254,7 @@ export class UIRenderer {
     if (isGM && !this.isCoGM) {
       const contextMenuButton = document.createElement('button');
       contextMenuButton.className = 'category-context-menu-button icon-button';
-      contextMenuButton.innerHTML = '<img src="img/icon-contextualmenu.svg" class="icon-button-icon" alt="Menu" />';
+      contextMenuButton.innerHTML = iconHtml('img/icon-contextualmenu.svg', { className: 'icon-button-icon', alt: 'Menu' });
       contextMenuButton.title = 'Folder options';
       contextMenuButton.style.opacity = '0';
       
@@ -372,40 +373,41 @@ export class UIRenderer {
     // Determinar icono de tipo de link
     let linkIconHtml = '';
     const url = page.url || '';
+    const ico = (src, alt) => iconHtml(src, { className: 'page-link-icon', alt });
     
     // Primero verificar si es contenido embebido (local-first de Obsidian)
     if (page.htmlContent) {
-      linkIconHtml = '<img src="img/icon-notion.svg" alt="Local" class="page-link-icon">'; // Usar icono Notion para local
+      linkIconHtml = ico('img/icon-notion.svg', 'Local');
     } else if (url.includes('notion.so') || url.includes('notion.site')) {
-      linkIconHtml = '<img src="img/icon-notion.svg" alt="Notion" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-notion.svg', 'Notion');
     } else if (url.includes('dndbeyond.com')) {
-      linkIconHtml = '<img src="img/icon-dnd.svg" alt="D&D Beyond" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-dnd.svg', 'D&D Beyond');
     } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      linkIconHtml = '<img src="img/icon-youtube.svg" alt="YouTube" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-youtube.svg', 'YouTube');
     } else if (url.includes('vimeo.com')) {
-      linkIconHtml = '<img src="img/icon-vimeo.svg" alt="Vimeo" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-vimeo.svg', 'Vimeo');
     } else if (url.includes('drive.google.com') || url.includes('docs.google.com') || url.includes('sheets.google.com') || url.includes('slides.google.com')) {
-      linkIconHtml = '<img src="img/icon-google-docs.svg" alt="Google Docs" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-google-docs.svg', 'Google Docs');
     } else if (url.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?|$)/i)) {
-      linkIconHtml = '<img src="img/icon-image.svg" alt="Image" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-image.svg', 'Image');
     } else if (url.match(/\.(mp4|webm|mov)(\?|$)/i)) {
-      linkIconHtml = '<img src="img/icon-link.svg" alt="Video" class="page-link-icon">'; // No hay icon-video
+      linkIconHtml = ico('img/icon-link.svg', 'Video');
     } else if (url.match(/\.(pdf)(\?|$)/i)) {
-      linkIconHtml = '<img src="img/icon-pdf.svg" alt="PDF" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-pdf.svg', 'PDF');
     } else if (url.includes('dropbox.com')) {
-      linkIconHtml = '<img src="img/icon-dropbox.svg" alt="Dropbox" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-dropbox.svg', 'Dropbox');
     } else if (url.includes('figma.com')) {
-      linkIconHtml = '<img src="img/icon-figma.svg" alt="Figma" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-figma.svg', 'Figma');
     } else if (url.includes('github.com') || url.includes('github.io')) {
-      linkIconHtml = '<img src="img/icon-github.svg" alt="GitHub" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-github.svg', 'GitHub');
     } else if (url.includes('onedrive.live.com') || url.includes('1drv.ms')) {
-      linkIconHtml = '<img src="img/icon-onedrive.svg" alt="OneDrive" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-onedrive.svg', 'OneDrive');
     } else if (url.includes('codepen.io')) {
-      linkIconHtml = '<img src="img/icon-codepen.svg" alt="CodePen" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-codepen.svg', 'CodePen');
     } else if (url.includes('jsfiddle.net')) {
-      linkIconHtml = '<img src="img/icon-jsfiddle.svg" alt="JSFiddle" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-jsfiddle.svg', 'JSFiddle');
     } else if (url.startsWith('http')) {
-      linkIconHtml = '<img src="img/icon-link.svg" alt="Link" class="page-link-icon">';
+      linkIconHtml = ico('img/icon-link.svg', 'Link');
     }
 
     // Indicador de visible para players
@@ -430,7 +432,7 @@ export class UIRenderer {
     // Botón de compartir con players (todos: GM, coGM y Player)
     const shareButton = document.createElement('button');
     shareButton.className = 'page-share-button';
-    shareButton.innerHTML = '<img src="img/icon-players.svg" alt="Share">';
+    shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
     shareButton.title = 'Share with players';
     
     shareButton.addEventListener('click', (e) => {
@@ -446,7 +448,7 @@ export class UIRenderer {
     // Botón de abrir en modal OBR (para todos) - PRIMERO
     const openModalButton = document.createElement('button');
     openModalButton.className = 'page-open-modal-button';
-    openModalButton.innerHTML = '<img src="img/open-modal.svg" alt="Open modal">';
+    openModalButton.innerHTML = iconHtml('img/open-modal.svg', { alt: 'Open modal' });
     openModalButton.title = 'Open in modal';
     
     openModalButton.addEventListener('click', (e) => {
@@ -467,7 +469,7 @@ export class UIRenderer {
         // Botón de visibilidad
         const visibilityButton = document.createElement('button');
         visibilityButton.className = 'page-visibility-button';
-        visibilityButton.innerHTML = `<img src="img/${page.visibleToPlayers ? 'icon-eye-open' : 'icon-eye-close'}.svg" alt="Visibility">`;
+        visibilityButton.innerHTML = iconHtml(`img/${page.visibleToPlayers ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { alt: 'Visibility' });
         visibilityButton.title = page.visibleToPlayers ? 'Visible to players' : 'Hidden from players';
         
         visibilityButton.addEventListener('click', (e) => {
@@ -480,7 +482,7 @@ export class UIRenderer {
         // Botón de menú contextual (editar/eliminar)
         const contextMenuButton = document.createElement('button');
         contextMenuButton.className = 'page-context-menu-button';
-        contextMenuButton.innerHTML = '<img src="img/icon-contextualmenu.svg" alt="Menu">';
+        contextMenuButton.innerHTML = iconHtml('img/icon-contextualmenu.svg', { alt: 'Menu' });
         contextMenuButton.title = 'Options';
         contextMenuButton.setAttribute('data-page-name', page.name);
         contextMenuButton.setAttribute('data-page-index', pageIndex);
@@ -1039,15 +1041,16 @@ export class UIRenderer {
       menuItem.className = 'context-menu__item';
 
       // Icono
-      let iconHtml = '';
+      let itemIconHtml = '';
       if (item.icon && item.icon.startsWith('img/')) {
-        const rotation = item.rotation ? `transform: ${item.rotation};` : '';
-        iconHtml = `<img src="${item.icon}" alt="" class="context-menu__icon" style="${rotation}" />`;
+        const rotateClass = item.rotation === 'rotate(90deg)' ? 'icon--rotate-up' : 
+                            item.rotation === 'rotate(-90deg)' ? 'icon--rotate-down' : '';
+        itemIconHtml = iconHtml(item.icon, { className: `context-menu__icon ${rotateClass}` });
       } else {
-        iconHtml = `<span class="context-menu__icon">${item.icon || ''}</span>`;
+        itemIconHtml = `<span class="context-menu__icon">${item.icon || ''}</span>`;
       }
 
-      menuItem.innerHTML = `${iconHtml}<span>${item.text}</span>`;
+      menuItem.innerHTML = `${itemIconHtml}<span>${item.text}</span>`;
 
       menuItem.addEventListener('click', async (e) => {
         e.stopPropagation();

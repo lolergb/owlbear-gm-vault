@@ -185,6 +185,45 @@
   }
 
   /* ==========================================================================
+      Icon System (CSS mask-image)
+      Los SVGs se usan como máscara; background-color hereda currentColor
+      para que los iconos se adapten automáticamente al tema dark/light.
+      ========================================================================== */
+  .icon {
+    display: inline-block;
+    width: var(--icon-size-md);
+    height: var(--icon-size-md);
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
+
+  .icon--sm {
+    width: var(--icon-size-sm);
+    height: var(--icon-size-sm);
+  }
+
+  .icon--lg {
+    width: var(--icon-size-lg);
+    height: var(--icon-size-lg);
+  }
+
+  /* Rotaciones para flechas de mover arriba/abajo */
+  .icon--rotate-up {
+    transform: rotate(90deg);
+  }
+
+  .icon--rotate-down {
+    transform: rotate(-90deg);
+  }
+
+  /* ==========================================================================
       Componentes Base - Botones
       ========================================================================== */
   
@@ -828,9 +867,13 @@
   }
   
   .page-share-button img,
+  .page-share-button .icon,
   .page-open-modal-button img,
+  .page-open-modal-button .icon,
   .page-visibility-button img,
-  .page-context-menu-button img {
+  .page-visibility-button .icon,
+  .page-context-menu-button img,
+  .page-context-menu-button .icon {
     width: var(--icon-size-md); /* 20px */
     height: var(--icon-size-md); /* 20px */
   }
@@ -1418,7 +1461,7 @@
   .icon-button:hover { background: var(--color-bg-hover); }
   .icon-button:active { background: var(--color-bg-active); }
   .icon-button.shared { background: var(--color-success); }
-  .icon-button-icon { width: var(--icon-size-md); height: var(--icon-size-md); display: block; }
+  .icon-button-icon { width: var(--icon-size-md); height: var(--icon-size-md); display: block; flex-shrink: 0; }
   
   /* Alias: add-first-category-button → btn--primary (para compatibilidad) */
   .add-first-category-button { margin-top: var(--spacing-lg); }

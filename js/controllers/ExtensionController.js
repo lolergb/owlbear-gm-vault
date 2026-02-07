@@ -7,6 +7,7 @@
 import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
 import { filterVisiblePages } from '../utils/helpers.js';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
+import { iconHtml } from '../utils/iconHelper.js';
 
 // Models
 import { Page } from '../models/Page.js';
@@ -1881,7 +1882,7 @@ export class ExtensionController {
       openModalBtn = document.createElement('button');
       openModalBtn.id = 'page-open-modal-button-header';
       openModalBtn.className = 'icon-button';
-      openModalBtn.innerHTML = '<img src="img/open-modal.svg" class="icon-button-icon" alt="Open modal" />';
+      openModalBtn.innerHTML = iconHtml('img/open-modal.svg', { className: 'icon-button-icon', alt: 'Open modal' });
       openModalBtn.title = 'Open in modal';
       header.appendChild(openModalBtn);
     }
@@ -1901,7 +1902,7 @@ export class ExtensionController {
         shareBtn = document.createElement('button');
         shareBtn.id = 'page-share-button-header';
         shareBtn.className = 'icon-button';
-        shareBtn.innerHTML = '<img src="img/icon-players.svg" class="icon-button-icon" alt="Share" />';
+        shareBtn.innerHTML = iconHtml('img/icon-players.svg', { className: 'icon-button-icon', alt: 'Share' });
         shareBtn.title = 'Share with players';
         header.appendChild(shareBtn);
       }
@@ -1925,7 +1926,7 @@ export class ExtensionController {
       }
       visibilityBtn.classList.remove('hidden');
       const isVisible = page.visibleToPlayers === true;
-      visibilityBtn.innerHTML = `<img src="img/${isVisible ? 'icon-eye-open' : 'icon-eye-close'}.svg" class="icon-button-icon" alt="Visibility" />`;
+      visibilityBtn.innerHTML = iconHtml(`img/${isVisible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
       visibilityBtn.title = isVisible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
       
       // Remover listener anterior y agregar nuevo
@@ -1935,7 +1936,7 @@ export class ExtensionController {
         const newVisibility = !page.visibleToPlayers;
         await this._handleVisibilityChange(page, this.currentCategoryPath, this.currentPageIndex, newVisibility);
         // Actualizar icono
-        newVisibilityBtn.innerHTML = `<img src="img/${newVisibility ? 'icon-eye-open' : 'icon-eye-close'}.svg" class="icon-button-icon" alt="Visibility" />`;
+        newVisibilityBtn.innerHTML = iconHtml(`img/${newVisibility ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
         newVisibilityBtn.title = newVisibility ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
         page.visibleToPlayers = newVisibility;
       });
@@ -1948,7 +1949,7 @@ export class ExtensionController {
         contextMenuBtn = document.createElement('button');
         contextMenuBtn.id = 'page-context-menu-button-header';
         contextMenuBtn.className = 'icon-button';
-        contextMenuBtn.innerHTML = '<img src="img/icon-contextualmenu.svg" class="icon-button-icon" alt="Menu" />';
+        contextMenuBtn.innerHTML = iconHtml('img/icon-contextualmenu.svg', { className: 'icon-button-icon', alt: 'Menu' });
         contextMenuBtn.title = 'Page options';
         header.appendChild(contextMenuBtn);
       }
@@ -2613,7 +2614,7 @@ export class ExtensionController {
     const settingsButton = document.createElement('button');
     settingsButton.className = 'icon-button';
     settingsButton.title = 'Settings';
-    settingsButton.innerHTML = '<img src="img/icon-json.svg" alt="Settings" class="icon-button-icon">';
+    settingsButton.innerHTML = iconHtml('img/icon-json.svg', { className: 'icon-button-icon', alt: 'Settings' });
     settingsButton.addEventListener('click', () => this._showSettings());
 
     // Botón Collapse All
@@ -2622,7 +2623,7 @@ export class ExtensionController {
     collapseAllButton.id = 'collapse-all-button';
     collapseAllButton.title = 'Collapse all folders';
     collapseAllButton.dataset.collapsed = 'false';
-    collapseAllButton.innerHTML = '<img src="img/icon-collapse-false.svg" alt="Collapse all" class="icon-button-icon">';
+    collapseAllButton.innerHTML = iconHtml('img/icon-collapse-false.svg', { className: 'icon-button-icon', alt: 'Collapse all' });
     collapseAllButton.addEventListener('click', () => this._toggleCollapseAll(collapseAllButton));
 
     // Agregar botones base
@@ -2634,7 +2635,7 @@ export class ExtensionController {
       const addButton = document.createElement('button');
       addButton.className = 'icon-button';
       addButton.title = 'Add folder or page';
-      addButton.innerHTML = '<img src="img/icon-add.svg" alt="Add" class="icon-button-icon">';
+      addButton.innerHTML = iconHtml('img/icon-add.svg', { className: 'icon-button-icon', alt: 'Add' });
       addButton.addEventListener('click', (e) => this._showAddMenu(addButton));
       buttonContainer.appendChild(addButton);
     }
@@ -4053,9 +4054,11 @@ export class ExtensionController {
     const isCollapsed = button.dataset.collapsed === 'true';
     const newState = !isCollapsed;
     
-    const icon = button.querySelector('img');
+    const icon = button.querySelector('.icon');
     if (icon) {
-      icon.src = newState ? 'img/icon-collapse-false.svg' : 'img/icon-collapse-true.svg';
+      const newSrc = newState ? 'img/icon-collapse-false.svg' : 'img/icon-collapse-true.svg';
+      icon.style.maskImage = `url('${newSrc}')`;
+      icon.style.webkitMaskImage = `url('${newSrc}')`;
     }
     button.dataset.collapsed = newState.toString();
     button.title = newState ? 'Expand all folders' : 'Collapse all folders';
@@ -4064,18 +4067,19 @@ export class ExtensionController {
     const categories = document.querySelectorAll('.category-group');
     categories.forEach(categoryDiv => {
       const contentContainer = categoryDiv.querySelector('.category-content');
-      const collapseBtn = categoryDiv.querySelector('.category-collapse-button img');
+      const collapseBtn = categoryDiv.querySelector('.category-collapse-button .icon');
       const categoryName = categoryDiv.dataset.categoryName;
       const level = categoryDiv.dataset.level;
 
       if (contentContainer && collapseBtn) {
+        const folderSrc = newState ? 'img/folder-close.svg' : 'img/folder-open.svg';
         if (newState) {
           contentContainer.style.display = 'none';
-          collapseBtn.src = 'img/folder-close.svg';
         } else {
           contentContainer.style.display = 'block';
-          collapseBtn.src = 'img/folder-open.svg';
         }
+        collapseBtn.style.maskImage = `url('${folderSrc}')`;
+        collapseBtn.style.webkitMaskImage = `url('${folderSrc}')`;
 
         if (categoryName) {
           const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
@@ -5371,7 +5375,7 @@ export class ExtensionController {
                       data-image-url="${coverUrl}" 
                       data-image-caption=""
                       title="Share with room">
-                <img src="img/icon-players.svg" alt="Share" />
+                ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
               </button>
             </div>
           </div>
@@ -5477,7 +5481,7 @@ export class ExtensionController {
                       data-image-url="${coverUrl}" 
                       data-image-caption=""
                       title="Share with room">
-                <img src="img/icon-players.svg" alt="Share" />
+                ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
               </button>` : '';
           
           headerHtml += `
@@ -5686,7 +5690,7 @@ export class ExtensionController {
                   data-image-url="${absoluteImageUrl}" 
                   data-image-caption="${escapedCaption}"
                   title="Share with room">
-            <img src="img/icon-players.svg" alt="Share" />
+            ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
           </button>
         </div>
         <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm);">Click on the image to view it full size</p>
