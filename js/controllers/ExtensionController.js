@@ -2559,12 +2559,13 @@ export class ExtensionController {
       const menuItem = document.createElement('div');
       menuItem.className = 'context-menu__item';
       
-      let iconHtml = '';
+      let itemIconMarkup = '';
       if (item.icon && item.icon.startsWith('img/')) {
-        const rotation = item.rotation ? `transform: ${item.rotation};` : '';
-        iconHtml = `<img src="${item.icon}" alt="" class="context-menu__icon" style="${rotation}" />`;
+        const rotateClass = item.rotation === 'rotate(90deg)' ? 'icon--rotate-up' : 
+                            item.rotation === 'rotate(-90deg)' ? 'icon--rotate-down' : '';
+        itemIconMarkup = iconHtml(item.icon, { className: `context-menu__icon ${rotateClass}` });
       }
-      menuItem.innerHTML = `${iconHtml}<span>${item.text}</span>`;
+      menuItem.innerHTML = `${itemIconMarkup}<span>${item.text}</span>`;
 
       menuItem.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -3995,14 +3996,14 @@ export class ExtensionController {
       item.dataset.pageId = page.id;
 
       // Icono
-      let iconHtml = '📄';
+      let pageIconMarkup = '📄';
       if (page.icon) {
         if (page.icon.type === 'emoji') {
-          iconHtml = page.icon.emoji;
+          pageIconMarkup = page.icon.emoji;
         } else if (page.icon.type === 'external' && page.icon.external?.url) {
-          iconHtml = `<img src="${page.icon.external.url}" alt="" />`;
+          pageIconMarkup = `<img src="${page.icon.external.url}" alt="" />`;
         } else if (page.icon.type === 'file' && page.icon.file?.url) {
-          iconHtml = `<img src="${page.icon.file.url}" alt="" />`;
+          pageIconMarkup = `<img src="${page.icon.file.url}" alt="" />`;
         }
       }
 
@@ -4015,7 +4016,7 @@ export class ExtensionController {
         <div class="notion-page-item__checkbox">
           <input type="checkbox" ${isSelected ? 'checked' : ''} />
         </div>
-        <div class="notion-page-item__icon">${iconHtml}</div>
+        <div class="notion-page-item__icon">${pageIconMarkup}</div>
         <div class="notion-page-item__info">
           <div class="notion-page-item__title">${page.title}</div>
           ${lastEdited ? `<div class="notion-page-item__meta">Edited: ${lastEdited}</div>` : ''}
@@ -5387,14 +5388,14 @@ export class ExtensionController {
     const notionTitle = this._extractNotionPageTitle(pageInfo);
     
     // Icono de Notion
-    let iconHtml = '';
+    let notionIconMarkup = '';
     if (pageInfo?.icon) {
       if (pageInfo.icon.type === 'emoji') {
-        iconHtml = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+        notionIconMarkup = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
       } else if (pageInfo.icon.external?.url) {
-        iconHtml = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+        notionIconMarkup = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
       } else if (pageInfo.icon.file?.url) {
-        iconHtml = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+        notionIconMarkup = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
       }
     }
     
@@ -5403,7 +5404,7 @@ export class ExtensionController {
     
     // Usar título de Notion para el contenido interno, o "Untitled" si no existe
     const notionPageTitle = notionTitle || 'Untitled';
-    headerHtml += `<h1 class="notion-page-title">${iconHtml}${notionPageTitle}${visibilityIndicator}</h1>`;
+    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${notionPageTitle}${visibilityIndicator}</h1>`;
     
     // Renderizar propiedades de base de datos (si las hay)
     const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
@@ -5508,20 +5509,20 @@ export class ExtensionController {
       const notionTitle = this._extractNotionPageTitle(pageInfo);
       
       // Icono de Notion
-      let iconHtml = '';
+      let notionIconMarkup = '';
       if (pageInfo?.icon) {
         if (pageInfo.icon.type === 'emoji') {
-          iconHtml = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+          notionIconMarkup = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
         } else if (pageInfo.icon.external?.url) {
-          iconHtml = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+          notionIconMarkup = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
         } else if (pageInfo.icon.file?.url) {
-          iconHtml = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+          notionIconMarkup = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
         }
       }
       
       // Título (usar de Notion o fallback)
       const pageTitle = notionTitle || fallbackTitle;
-      headerHtml += `<h1 class="notion-page-title">${iconHtml}${pageTitle}</h1>`;
+      headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${pageTitle}</h1>`;
       
       // Renderizar propiedades de base de datos (si las hay)
       const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
