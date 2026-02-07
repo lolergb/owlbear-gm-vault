@@ -14,31 +14,70 @@
  */
 
 /**
- * Parsea un color hex a componentes RGB
- * @param {string} hex - Color en formato #RGB, #RRGGBB o #RRGGBBAA
+ * Parsea cualquier formato de color CSS a componentes RGB
+ * Soporta: #RGB, #RRGGBB, #RRGGBBAA, rgb(r,g,b), rgba(r,g,b,a), nombres de color
+ * @param {string} color - Color en cualquier formato CSS
  * @returns {{ r: number, g: number, b: number }} Componentes RGB (0-255)
  */
-function hexToRgb(hex) {
-  if (!hex || typeof hex !== 'string') return { r: 150, g: 122, b: 204 }; // fallback púrpura
+function parseColor(color) {
+  const fallback = { r: 150, g: 122, b: 204 }; // fallback púrpura
+  if (!color || typeof color !== 'string') return fallback;
   
-  let h = hex.replace('#', '');
+  const trimmed = color.trim();
   
-  // Expandir shorthand (#RGB → #RRGGBB)
-  if (h.length === 3) {
-    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  // Formato rgb(r, g, b) o rgba(r, g, b, a)
+  const rgbMatch = trimmed.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rgbMatch) {
+    return {
+      r: parseInt(rgbMatch[1], 10),
+      g: parseInt(rgbMatch[2], 10),
+      b: parseInt(rgbMatch[3], 10)
+    };
   }
   
-  // Ignorar canal alpha si existe (#RRGGBBAA)
-  if (h.length === 8) {
-    h = h.substring(0, 6);
+  // Formato hex: #RGB, #RRGGBB, #RRGGBBAA
+  if (trimmed.startsWith('#')) {
+    let h = trimmed.replace('#', '');
+    
+    // Expandir shorthand (#RGB → #RRGGBB)
+    if (h.length === 3) {
+      h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    }
+    
+    // Ignorar canal alpha si existe (#RRGGBBAA)
+    if (h.length === 8) {
+      h = h.substring(0, 6);
+    }
+    
+    const num = parseInt(h, 16);
+    if (!isNaN(num)) {
+      return {
+        r: (num >> 16) & 255,
+        g: (num >> 8) & 255,
+        b: num & 255
+      };
+    }
   }
   
-  const num = parseInt(h, 16);
-  return {
-    r: (num >> 16) & 255,
-    g: (num >> 8) & 255,
-    b: num & 255
-  };
+  // Fallback: usar un canvas offscreen para parsear cualquier color CSS válido
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = trimmed;
+    const computed = ctx.fillStyle; // Devuelve hex normalizado
+    if (computed.startsWith('#')) {
+      const h = computed.replace('#', '');
+      const num = parseInt(h, 16);
+      return {
+        r: (num >> 16) & 255,
+        g: (num >> 8) & 255,
+        b: num & 255
+      };
+    }
+  } catch (e) {
+    // Ignorar errores del canvas
+  }
+  
+  return fallback;
 }
 
 /**
@@ -94,16 +133,16 @@ export function applyOBRTheme(theme) {
   const isDark = theme.mode === 'DARK';
   const root = document.documentElement;
 
-  // ---- Parsear colores del tema ----
-  const primaryRgb = hexToRgb(theme.primary.main);
-  const primaryLightRgb = hexToRgb(theme.primary.light);
-  const primaryDarkRgb = hexToRgb(theme.primary.dark);
-  const secondaryRgb = hexToRgb(theme.secondary.main);
-  const bgDefaultRgb = hexToRgb(theme.background.default);
-  const bgPaperRgb = hexToRgb(theme.background.paper);
-  const textPrimaryRgb = hexToRgb(theme.text.primary);
-  const textSecondaryRgb = hexToRgb(theme.text.secondary);
-  const textDisabledRgb = hexToRgb(theme.text.disabled);
+  // ---- Parsear colores del tema (soporta hex, rgb(), rgba()) ----
+  const primaryRgb = parseColor(theme.primary.main);
+  const primaryLightRgb = parseColor(theme.primary.light);
+  const primaryDarkRgb = parseColor(theme.primary.dark);
+  const secondaryRgb = parseColor(theme.secondary.main);
+  const bgDefaultRgb = parseColor(theme.background.default);
+  const bgPaperRgb = parseColor(theme.background.paper);
+  const textPrimaryRgb = parseColor(theme.text.primary);
+  const textSecondaryRgb = parseColor(theme.text.secondary);
+  const textDisabledRgb = parseColor(theme.text.disabled);
 
   // ---- Derivar colores intermedios ----
 
@@ -241,8 +280,19 @@ export function applyOBRTheme(theme) {
 
   console.log(`🎨 OBR Theme aplicado: ${theme.mode}`, {
     primary: theme.primary.main,
+    primaryDark: theme.primary.dark,
     background: theme.background.paper,
-    text: theme.text.primary
+    bgDefault: theme.background.default,
+    textPrimary: theme.text.primary,
+    textSecondary: theme.text.secondary,
+    textDisabled: theme.text.disabled,
+    // Parsed RGB values para verificación
+    _parsed: {
+      textPrimary: textPrimaryRgb,
+      textSecondary: textSecondaryRgb,
+      textMuted: textMutedRgb,
+      textDisabled: textDisabledRgb
+    }
   });
 }
 
