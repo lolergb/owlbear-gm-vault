@@ -273,6 +273,9 @@ export function applyOBRTheme(theme) {
     root.style.setProperty(prop, value);
   }
 
+  // Debug: verificar valor muted aplicado
+  console.log('🎨 text-muted valor:', vars['--color-text-muted'], '| computed:', getComputedStyle(root).getPropertyValue('--color-text-muted'));
+
   // Marcar modo en el body para selectores CSS condicionales
   document.body.dataset.obrTheme = isDark ? 'dark' : 'light';
   document.body.style.backgroundColor = vars['--body-bg'];
