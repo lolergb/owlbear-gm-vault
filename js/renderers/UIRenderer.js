@@ -233,14 +233,11 @@ export class UIRenderer {
     const collapseButton = document.createElement('button');
     collapseButton.className = 'category-collapse-button';
     
-    const collapseIcon = document.createElement('img');
-    collapseIcon.className = 'category-collapse-icon';
-    
     const collapseStateKey = `category-collapsed-${category.name}-level-${level}`;
     const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
-    collapseIcon.src = isCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
-    collapseIcon.alt = isCollapsed ? 'Expand' : 'Collapse';
-    collapseButton.appendChild(collapseIcon);
+    const folderSrc = isCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
+    collapseButton.innerHTML = iconHtml(folderSrc, { className: 'category-collapse-icon', alt: isCollapsed ? 'Expand' : 'Collapse' });
+    const collapseIcon = collapseButton.querySelector('.icon');
     titleContainer.appendChild(collapseButton);
 
     // Título
@@ -339,7 +336,9 @@ export class UIRenderer {
       
       const newIsCollapsed = contentContainer.style.display !== 'none';
       contentContainer.style.display = newIsCollapsed ? 'none' : 'block';
-      collapseIcon.src = newIsCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
+      const newFolderSrc = newIsCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
+      collapseIcon.style.maskImage = `url('${newFolderSrc}')`;
+      collapseIcon.style.webkitMaskImage = `url('${newFolderSrc}')`;
       localStorage.setItem(collapseStateKey, newIsCollapsed);
     });
 

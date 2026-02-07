@@ -4057,7 +4057,7 @@ export class ExtensionController {
     
     const icon = button.querySelector('.icon');
     if (icon) {
-      const newSrc = newState ? 'img/icon-collapse-false.svg' : 'img/icon-collapse-true.svg';
+      const newSrc = newState ? 'img/icon-collapse-true.svg' : 'img/icon-collapse-false.svg';
       icon.style.maskImage = `url('${newSrc}')`;
       icon.style.webkitMaskImage = `url('${newSrc}')`;
     }
@@ -4359,8 +4359,8 @@ export class ExtensionController {
       onConfigChange: async (newConfig) => {
         await this.saveConfig(newConfig);
       },
-      onPageOpen: (page) => {
-        this.openPage(page);
+      onPageOpen: (page, categoryPath, pageIndex) => {
+        this.openPage(page, categoryPath, pageIndex);
       }
     });
 
@@ -7385,6 +7385,8 @@ export class ExtensionController {
   async _openLinkedPage(url, name, pageId = null) {
     // Buscar la página en la configuración para obtener todos sus datos
     let foundPage = null;
+    let foundCategoryPath = [];
+    let foundPageIndex = 0;
     
     // Si tenemos pageId, buscar directamente por ID (más confiable)
     if (pageId && this.config) {
@@ -7392,51 +7394,80 @@ export class ExtensionController {
       log(`🔍 Buscando página por ID: ${pageId} - ${foundPage ? '✅ Encontrada' : '❌ No encontrada'}`);
     }
     
-    // Si no encontramos por ID, buscar por URL o nombre
-    if (!foundPage) {
-      const findPage = (category) => {
-        if (!category || foundPage) return;
-        
-        // Buscar en páginas de esta categoría
-        const pages = category.pages || [];
-        for (const page of pages) {
-          // Convertir a instancia de Page si es necesario
-          const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
-          
-          // Buscar por URL si hay URL
-          if (url && pageInstance.url === url) {
-            foundPage = pageInstance;
-            return;
-          }
-          // O buscar por nombre si no hay URL (páginas de Obsidian)
-          if (!url && pageInstance.name === name) {
-            foundPage = pageInstance;
-            return;
-          }
-        }
-        
-        // Buscar en subcategorías
-        const subcategories = category.categories || [];
-        for (const subcat of subcategories) {
-          findPage(subcat);
-        }
-      };
+    // Buscar por URL o nombre, rastreando la ruta de la carpeta
+    const findPage = (category, path) => {
+      if (!category || foundPage) return;
       
-      // Buscar en todas las categorías raíz
-      if (this.config && this.config.categories) {
-        for (const cat of this.config.categories) {
-          findPage(cat);
-          if (foundPage) break;
+      // Buscar en páginas de esta categoría
+      const pages = category.pages || [];
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        // Convertir a instancia de Page si es necesario
+        const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
+        
+        const matchById = pageId && pageInstance.id === pageId;
+        const matchByUrl = !foundPage && url && pageInstance.url === url;
+        const matchByName = !foundPage && !url && pageInstance.name === name;
+        
+        if (matchById || matchByUrl || matchByName) {
+          foundPage = pageInstance;
+          foundCategoryPath = path;
+          foundPageIndex = i;
+          return;
+        }
+      }
+      
+      // Buscar en subcategorías
+      const subcategories = category.categories || [];
+      for (const subcat of subcategories) {
+        findPage(subcat, [...path, subcat.name]);
+      }
+    };
+    
+    // Si ya encontramos por ID, igual necesitamos la ruta
+    // Buscar en todas las categorías raíz para obtener path e index
+    if (this.config && this.config.categories) {
+      // Resetear foundPage si solo lo encontramos por ID (sin ruta)
+      const pageById = foundPage;
+      foundPage = null;
+      
+      for (const cat of this.config.categories) {
+        findPage(cat, [cat.name]);
+        if (foundPage) break;
+      }
+      
+      // Si no lo encontramos por búsqueda recursiva pero sí por ID, usar el de ID
+      if (!foundPage && pageById) {
+        foundPage = pageById;
+        foundCategoryPath = [];
+        foundPageIndex = 0;
+      }
+    }
+    
+    // También buscar en páginas raíz (sin carpeta)
+    if (!foundPage && this.config && this.config.pages) {
+      for (let i = 0; i < this.config.pages.length; i++) {
+        const page = this.config.pages[i];
+        const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
+        const matchById = pageId && pageInstance.id === pageId;
+        const matchByUrl = url && pageInstance.url === url;
+        const matchByName = !url && pageInstance.name === name;
+        
+        if (matchById || matchByUrl || matchByName) {
+          foundPage = pageInstance;
+          foundCategoryPath = [];
+          foundPageIndex = i;
+          break;
         }
       }
     }
     
     // Si encontramos la página, usarla; sino crear una básica
     if (foundPage) {
-      log(`📖 Abriendo página encontrada: ${foundPage.name} (ID: ${foundPage.id})`);
+      log(`📖 Abriendo página encontrada: ${foundPage.name} (ID: ${foundPage.id}) en carpeta: [${foundCategoryPath.join('/')}]`);
       // Convertir a instancia de Page si es necesario
       const pageInstance = foundPage instanceof Page ? foundPage : Page.fromJSON(foundPage);
-      await this.openPage(pageInstance, [], 0);
+      await this.openPage(pageInstance, foundCategoryPath, foundPageIndex);
     } else {
       log(`⚠️ Página no encontrada, creando básica: ${name}`);
       const page = new Page(name, url || null, { visibleToPlayers: false, blockTypes: null });
