@@ -8,6 +8,7 @@
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
 import { ExtensionController } from './controllers/ExtensionController.js';
+import { initTheme } from './utils/themeManager.js';
 
 // Instancia global del controlador
 let extensionController = null;
@@ -21,6 +22,9 @@ try {
     console.log('✅ OBR SDK listo, inicializando GM Vault...');
     
     try {
+      // Aplicar tema de OBR antes de renderizar la UI
+      await initTheme(OBR);
+      
       // Crear controlador
       extensionController = new ExtensionController();
       

@@ -7,12 +7,16 @@
   Variables CSS
   ========================================================================== */
   :root {
-    /* Colores de fondo */
+    /* ================================================================
+       Colores de fondo
+       (Sobreescritos dinámicamente por OBR theme via themeManager.js)
+       ================================================================ */
     --color-bg-primary: rgba(0, 0, 0, 0.24);
     --color-bg-hover: rgba(0, 0, 0, 0.24);
     --color-bg-active: rgba(187, 153, 255, 0.12);
     --color-bg-overlay: rgba(34, 38, 57, 0.8);
     --color-bg-surface: rgb(34, 38, 57);
+    --color-bg-default: rgb(30, 33, 49);
     
     /* Colores de borde */
     --color-border-primary: rgba(0, 0, 0, 0);
@@ -26,15 +30,41 @@
     --color-text-hint: #888;
     --color-text-disabled: #777;
     
-    /* Colores de acento */
+    /* Colores de acento (primary) */
     --color-accent-primary: #967ACC;
     --color-accent-primary-hover: #603EA2;
+    --color-accent-primary-light: #bb99ff;
     --color-accent-link: #967ACC;
+    --color-accent-primary-rgb: 150, 122, 204;
+    --color-accent-primary-contrast: #fff;
+
+    /* Colores de acento (secondary) */
+    --color-secondary: #ce93d8;
+    --color-secondary-light: #f3e5f5;
+    --color-secondary-dark: #ab47bc;
+    
+    /* Surface tints (adaptativos dark/light) */
+    --color-surface-tint: rgba(255, 255, 255, 0.08);
+    --color-surface-hover: rgba(255, 255, 255, 0.1);
+    --color-surface-separator: rgba(255, 255, 255, 0.05);
     
     /* Colores de error */
     --color-error-bg: #4a2d2d;
     --color-error-border: #6a4040;
     --color-error-text: #ff6b6b;
+
+    /* Danger button */
+    --color-danger: #ff6b6b;
+    --color-danger-hover: #e05555;
+    --color-danger-active: #cc4444;
+
+    /* Semantic status colors */
+    --color-success: #4caf50;
+    --color-success-bg: rgb(34, 48, 40);
+    --color-warning: #ff9800;
+    --color-warning-bg: rgb(48, 42, 34);
+    --color-info: var(--color-accent-primary);
+    --color-info-bg: rgb(40, 38, 52);
     
     /* Espaciado */
     --spacing-xs: 4px;
@@ -220,17 +250,17 @@
 
   /* Botón destructivo (danger) */
   .btn--danger {
-    background: var(--color-error-text);
+    background: var(--color-danger);
     border: none;
-    color: #fff;
+    color: var(--color-accent-primary-contrast, #fff);
   }
 
   .btn--danger:hover {
-    background: #e05555;
+    background: var(--color-danger-hover);
   }
 
   .btn--danger:active {
-    background: #cc4444;
+    background: var(--color-danger-active);
   }
   
   /* Botón de icono */
@@ -542,7 +572,7 @@
     background-color: var(--color-text-primary);
     border-radius: var(--radius-full);
     transition: transform var(--transition-normal), background-color var(--transition-normal);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-card);
   }
 
   .player-view-toggle__switch--active {
@@ -889,7 +919,7 @@
     font-size: var(--font-size-md);
     background-color: var(--color-bg-surface);
     box-shadow: var(--shadow-menu);
-    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+    background-image: linear-gradient(var(--color-surface-tint), var(--color-surface-tint));
     overflow: hidden;
   }
   
@@ -904,12 +934,12 @@
   }
   
   .context-menu__item:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--color-surface-hover);
   }
   
   .context-menu__separator {
     height: 1px;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--color-surface-separator);
   }
   
   .context-menu__icon {
@@ -926,10 +956,10 @@
   }
   
   /* Alias para compatibilidad */
-  #context-menu {position: fixed;border-radius: var(--radius-lg);min-width: 180px;z-index: 10000;font-family: var(--font-family-base);font-size: var(--font-size-base);background-color: var(--color-bg-surface);box-shadow: var(--shadow-menu);background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));overflow: hidden;/* line-height: var(--font-line-base); */}
+  #context-menu {position: fixed;border-radius: var(--radius-lg);min-width: 180px;z-index: 10000;font-family: var(--font-family-base);font-size: var(--font-size-base);background-color: var(--color-bg-surface);box-shadow: var(--shadow-menu);background-image: linear-gradient(var(--color-surface-tint), var(--color-surface-tint));overflow: hidden;}
   .context-menu-item { display: flex; align-items: center; gap: var(--spacing-lg); padding: var(--spacing-md) var(--spacing-lg); cursor: pointer; color: var(--color-text-secondary); transition: background var(--transition-fast); }
-  .context-menu-item:hover { background: rgba(255, 255, 255, 0.1); }
-  .context-menu-separator { height: 1px; background: rgba(255, 255, 255, 0.05); }
+  .context-menu-item:hover { background: var(--color-surface-hover); }
+  .context-menu-separator { height: 1px; background: var(--color-surface-separator); }
   .context-menu-icon-rotate-up { transform: rotate(90deg); }
   .context-menu-icon-rotate-down { transform: rotate(-90deg); }
   
@@ -960,7 +990,7 @@
     font-size: var(--font-size-md);
     background-color: var(--color-bg-surface);
     box-shadow: var(--shadow-menu);
-    background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+    background-image: linear-gradient(var(--color-surface-tint), var(--color-surface-tint));
   }
   
   .modal__title {
@@ -973,15 +1003,15 @@
 
   /* Modal variants */
   .modal__content--warning {
-    border-left: 4px solid #f59e0b;
+    border-left: 4px solid var(--color-warning);
   }
 
   .modal__content--info {
-    border-left: 4px solid #3b82f6;
+    border-left: 4px solid var(--color-info);
   }
 
   .modal__content--error {
-    border-left: 4px solid #ef4444;
+    border-left: 4px solid var(--color-error-text);
   }
 
   .modal__icon {
@@ -1195,7 +1225,7 @@
   .error-message {
     padding: var(--spacing-sm);
     color: var(--color-error-text);
-    background: rgba(255, 107, 107, 0.1);
+    background: var(--color-error-bg);
     border-radius: var(--radius-sm);
     margin: var(--spacing-xs) 0;
   }
@@ -1341,7 +1371,7 @@
       ========================================================================== */
   .visibility-indicator {
     font-size: var(--font-size-sm);
-    color: var(--color-primary);
+    color: var(--color-accent-primary);
     opacity: 0.8;
     margin-left: var(--spacing-xs);
     display: none;
@@ -1387,7 +1417,7 @@
   .page-button.context-menu-open .page-context-menu-button,
   .icon-button:hover { background: var(--color-bg-hover); }
   .icon-button:active { background: var(--color-bg-active); }
-  .icon-button.shared { background: var(--color-success, #22c55e); }
+  .icon-button.shared { background: var(--color-success); }
   .icon-button-icon { width: var(--icon-size-md); height: var(--icon-size-md); display: block; }
   
   /* Alias: add-first-category-button → btn--primary (para compatibilidad) */
@@ -1477,7 +1507,7 @@
     padding: var(--spacing-sm);
     max-width: 100%;
     width: 100%;
-    background: #1a1a1a;
+    background: var(--color-bg-default, #1a1a1a);
   }
   
   /* ==========================================================================
@@ -1706,11 +1736,11 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--bg-primary, #1a1a1a);
-  border-top: 1px solid var(--border-primary, rgba(255, 255, 255, 0.1));
+  background: var(--color-bg-surface);
+  border-top: 1px solid var(--color-border-subtle);
     padding: var(--spacing-lg);
   z-index: 10000;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-menu);
 }
 
 .cookie-consent-content {
@@ -1728,7 +1758,7 @@
   margin: 0;
     font-size: var(--font-size-sm);
   line-height: 1.5;
-  color: var(--text-primary, #ffffff);
+  color: var(--color-text-primary);
 }
 
 .cookie-consent-actions {
@@ -1892,7 +1922,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-bg-overlay);
   z-index: 10000;
   display: flex;
   align-items: center;
@@ -1909,8 +1939,8 @@
 .modal-container {
   background: var(--color-bg-surface);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: var(--shadow-menu);
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
@@ -1930,7 +1960,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-md) var(--spacing-lg);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
 
@@ -1958,7 +1988,7 @@
 }
 
 .modal-close-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-surface-hover);
   color: var(--color-text-primary);
 }
 
@@ -1979,7 +2009,7 @@
   display: flex;
   gap: var(--spacing-sm);
   padding: var(--spacing-md) var(--spacing-lg);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
 
@@ -1995,16 +2025,16 @@
 
 .modal-button-cancel {
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
 }
 
 .modal-button-cancel:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-surface-separator);
 }
 
 .modal-button-submit {
-  background: var(--color-primary);
+  background: var(--color-accent-primary);
   border: none;
   color: white;
 }
@@ -2019,11 +2049,11 @@
 }
 
 .modal-button-danger {
-  background: #f44336;
+  background: var(--color-danger);
 }
 
 .modal-button-danger:hover {
-  background: #d32f2f;
+  background: var(--color-danger-hover);
 }
 
 .modal-message {
@@ -2050,14 +2080,14 @@
 }
 
 .form-label .required {
-  color: #f44336;
+  color: var(--color-error-text);
 }
 
 .form-input {
   width: 100%;
   padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--color-bg-input);
-  border: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 0.9em;
@@ -2065,7 +2095,7 @@
 
 .form-input:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-accent-primary);
 }
 
 .form-hint {
@@ -2088,9 +2118,9 @@
   transform: translateY(100px);
   z-index: 9999;
   background: var(--color-bg-surface);
-  border: 1px solid rgba(150, 122, 204, 0.4);
+  border: 1px solid rgba(var(--color-accent-primary-rgb), 0.4);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-menu);
   opacity: 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
 }
@@ -2146,11 +2176,11 @@
 
 /* Warning variant (Master GM disconnected) */
 .cogm-toast.cogm-toast--warning {
-  border-color: rgba(255, 193, 7, 0.4);
+  border-color: var(--color-warning);
 }
 
 .cogm-toast.cogm-toast--warning .cogm-toast-icon {
-  color: #ffc107;
+  color: var(--color-warning);
 }
 
 /* ==========================================================================
@@ -2165,9 +2195,9 @@
   width: calc(100% - 40px);
   transform: translateY(100px);
   z-index: 10000;
-  background: rgb(34, 38, 57);
+  background: var(--color-bg-surface);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-menu);
   opacity: 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
   pointer-events: none;
@@ -2229,42 +2259,42 @@
 
 /* Success variant */
 .gm-toast--success {
-  border: 1px solid #4caf50;
-  background: rgb(34, 48, 40);
+  border: 1px solid var(--color-success);
+  background: var(--color-success-bg);
 }
 
 .gm-toast--success .gm-toast__icon {
-  color: #4caf50;
+  color: var(--color-success);
 }
 
 /* Error variant */
 .gm-toast--error {
-  border: 1px solid #f44336;
-  background: rgb(48, 34, 34);
+  border: 1px solid var(--color-error-text);
+  background: var(--color-error-bg);
 }
 
 .gm-toast--error .gm-toast__icon {
-  color: #f44336;
+  color: var(--color-error-text);
 }
 
 /* Warning variant */
 .gm-toast--warning {
-  border: 1px solid #ff9800;
-  background: rgb(48, 42, 34);
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-bg);
 }
 
 .gm-toast--warning .gm-toast__icon {
-  color: #ff9800;
+  color: var(--color-warning);
 }
 
 /* Info variant */
 .gm-toast--info {
-  border: 1px solid var(--color-primary);
-  background: rgb(40, 38, 52);
+  border: 1px solid var(--color-info);
+  background: var(--color-info-bg);
 }
 
 .gm-toast--info .gm-toast__icon {
-  color: var(--color-primary);
+  color: var(--color-accent-primary);
 }
 
 /* ==========================================================================
@@ -2316,12 +2346,12 @@
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: var(--color-primary);
+  accent-color: var(--color-accent-primary);
 }
 
 .notion-selection-count {
   font-weight: 400;
-  color: var(--color-primary);
+  color: var(--color-accent-primary);
   font-size: var(--font-size-sm);
 }
 
@@ -2374,8 +2404,8 @@
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border: 2px solid var(--color-border-subtle);
+  border-top-color: var(--color-accent-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-left: var(--spacing-sm);
@@ -2507,8 +2537,8 @@
 /* Same style for both Master GM and Co-GM */
 .vault-status--master,
 .vault-status--cogm {
-  background: linear-gradient(135deg, rgba(150, 122, 204, 0.1) 0%, rgba(96, 62, 162, 0.1) 100%);
-  border: 1px solid rgba(150, 122, 204, 0.2);
+  background: linear-gradient(135deg, rgba(var(--color-accent-primary-rgb), 0.1) 0%, rgba(var(--color-accent-primary-dark-rgb, 96, 62, 162), 0.1) 100%);
+  border: 1px solid rgba(var(--color-accent-primary-rgb), 0.2);
 }
 
 .vault-status__icon {
@@ -2539,11 +2569,11 @@
 }
 
 .vault-status__sync--ok {
-  color: #4caf50;
+  color: var(--color-success);
 }
 
 .vault-status__sync--warn {
-  color: #ff9800;
+  color: var(--color-warning);
 }
 
 /* ==========================================================================
@@ -2562,7 +2592,7 @@
 
 /* Clickable mention link */
 .notion-mention--link {
-  background-color: rgba(150, 122, 204, 0.15);
+  background-color: rgba(var(--color-accent-primary-rgb), 0.15);
   color: var(--color-accent-primary);
   padding: 1px 4px;
   border-radius: 3px;
@@ -2573,7 +2603,7 @@
 }
 
 .notion-mention--link:hover {
-  background-color: rgba(150, 122, 204, 0.3);
+  background-color: rgba(var(--color-accent-primary-rgb), 0.3);
   color: var(--color-accent-secondary);
 }
 
@@ -2584,7 +2614,7 @@
 
 /* Locked mention (visible for players/co-GMs but page not shared yet) */
 .notion-mention--locked {
-  background-color: rgba(150, 122, 204, 0.08);
+  background-color: rgba(var(--color-accent-primary-rgb), 0.08);
   color: var(--color-text-secondary);
   opacity: 0.8;
 }
@@ -2596,7 +2626,7 @@
 }
 
 .notion-mention--locked:hover {
-  background-color: rgba(150, 122, 204, 0.15);
+  background-color: rgba(var(--color-accent-primary-rgb), 0.15);
   opacity: 1;
 }
 
@@ -2626,7 +2656,7 @@
 
 /* Disabled mention (inside modal - no navigation) */
 .notion-mention--disabled {
-  background-color: rgba(150, 122, 204, 0.1);
+  background-color: rgba(var(--color-accent-primary-rgb), 0.1);
   color: var(--color-text-secondary);
   padding: 1px 4px;
   border-radius: 3px;
@@ -2653,7 +2683,7 @@
 }
 
 .mention-modal-overlay--visible {
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-bg-overlay);
 }
 
 .mention-modal-overlay--closing {
@@ -2663,7 +2693,7 @@
 .mention-modal {
   background: var(--color-bg-surface);
   border-radius: var(--radius-lg);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-menu);
   max-width: 90%;
   max-height: fit-content;
   width: 100%;
@@ -2691,7 +2721,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-md) var(--spacing-lg);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
 
@@ -2711,7 +2741,7 @@
 }
 
 .mention-modal__share.shared {
-  background-color: var(--color-success, #22c55e);
+  background-color: var(--color-success);
 }
 
 .mention-modal__close {
@@ -2771,7 +2801,7 @@
 
 /* Mentions inside modal - disable clicks to prevent infinite navigation */
 .mention-modal__notion-content .notion-mention--link {
-  background-color: rgba(150, 122, 204, 0.1);
+  background-color: rgba(var(--color-accent-primary-rgb), 0.1);
   color: var(--color-text-secondary);
   cursor: default;
   pointer-events: none;
