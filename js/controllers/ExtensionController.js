@@ -992,14 +992,25 @@ export class ExtensionController {
   }
 
   /**
+   * Normaliza un categoryPath (que puede ser array de objetos {id, name} o strings) a un string "name1/name2"
+   * @param {Array} path - Array de objetos {id, name} o strings
+   * @returns {string}
+   * @private
+   */
+  _pathToString(path) {
+    if (!path || !Array.isArray(path)) return '';
+    return path.map(p => (typeof p === 'object' && p !== null) ? p.name : p).join('/');
+  }
+
+  /**
    * Obtiene las opciones de carpetas para el selector
-   * @param {string[]} excludePath - Path a excluir (para evitar mover a sí mismo o subcarpetas)
+   * @param {Array} excludePath - Path a excluir (para evitar mover a sí mismo o subcarpetas)
    * @returns {Array<{value: string, label: string}>}
    * @private
    */
   _getFolderOptions(excludePath = []) {
     const options = [{ value: '', label: '/ (Root)' }];
-    const excludePathStr = excludePath.join('/');
+    const excludePathStr = this._pathToString(excludePath);
 
     const addFolders = (categories, path = []) => {
       if (!categories) return;
@@ -1112,7 +1123,7 @@ export class ExtensionController {
   _handleCategoryEdit(category, categoryPath) {
     // Calcular el path actual de la carpeta (sin incluirse a sí misma)
     const currentFolderPath = categoryPath.slice(0, -1);
-    const currentFolderPathStr = currentFolderPath.join('/');
+    const currentFolderPathStr = this._pathToString(currentFolderPath);
     
     // Obtener opciones de carpetas, excluyendo esta carpeta y sus subcarpetas
     const folderOptions = this._getFolderOptions(categoryPath);
@@ -2402,7 +2413,7 @@ export class ExtensionController {
 
     // Obtener opciones de carpetas
     const folderOptions = this._getFolderOptions();
-    const currentFolderPathStr = this.currentCategoryPath.join('/');
+    const currentFolderPathStr = this._pathToString(this.currentCategoryPath);
     
     // Asegurarse de que el valor coincida exactamente con una opción disponible
     let folderValue = currentFolderPathStr;
@@ -2459,7 +2470,7 @@ export class ExtensionController {
   _showEditPageModalFromList(page, categoryPath, pageIndex) {
     // Obtener opciones de carpetas
     const folderOptions = this._getFolderOptions();
-    const currentFolderPathStr = categoryPath.join('/');
+    const currentFolderPathStr = this._pathToString(categoryPath);
     
     // Asegurarse de que el valor coincida exactamente con una opción disponible
     let folderValue = currentFolderPathStr;
