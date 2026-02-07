@@ -217,6 +217,21 @@
     background-color: var(--color-bg-active);
     border-color: var(--color-border-active);
   }
+
+  /* Botón destructivo (danger) */
+  .btn--danger {
+    background: var(--color-error-text);
+    border: none;
+    color: #fff;
+  }
+
+  .btn--danger:hover {
+    background: #e05555;
+  }
+
+  .btn--danger:active {
+    background: #cc4444;
+  }
   
   /* Botón de icono */
   .btn--icon {

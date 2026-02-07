@@ -555,18 +555,18 @@ export class ExtensionController {
       return false;
     }
     
-    if (confirm('¿Limpiar todo el room metadata del vault? Esto eliminará:\n' +
-                '- Configuración visible para players\n' +
-                '- Configuración completa (si existe)\n' +
-                '- Caché de contenido compartido\n\n' +
-                'Tu configuración local (localStorage) NO se afectará.')) {
+    const userConfirmed = await this.uiRenderer._showConfirmDialog(
+      'Clear all room metadata? This will remove shared configuration and cache. Your local data will NOT be affected.',
+      { confirmText: 'Clear', isDangerous: true }
+    );
+    if (userConfirmed) {
       const result = await this.storageService.clearRoomMetadata();
       if (result) {
-        alert('✅ Room metadata limpiado correctamente');
+        this.uiRenderer.showSuccessToast('Room metadata cleared', 'Configuration remains in localStorage.');
         log('✅ Room metadata limpiado. La configuración sigue en localStorage.');
         this.analyticsService.trackCacheCleared();
       } else {
-        alert('❌ Error al limpiar room metadata');
+        this.uiRenderer.showErrorToast('Error', 'Could not clear room metadata.');
       }
       return result;
     }
@@ -2249,7 +2249,8 @@ export class ExtensionController {
           icon: 'img/icon-trash.svg', 
           text: 'Delete page',
           action: async () => {
-            if (confirm(`Delete "${page.name}"?`)) {
+            const confirmed = await this.uiRenderer._showConfirmDialog(`Delete "${page.name}"?`);
+            if (confirmed) {
               await this._handlePageDelete(page, this.currentCategoryPath, this.currentPageIndex);
               this._goBackToList();
             }
@@ -2961,8 +2962,12 @@ export class ExtensionController {
     // Eliminar token
     if (clearBtn && !clearBtn.dataset.listenerAdded) {
       clearBtn.dataset.listenerAdded = 'true';
-      clearBtn.addEventListener('click', () => {
-        if (confirm('Delete token? You will go back to using the server token.')) {
+      clearBtn.addEventListener('click', async () => {
+        const confirmed = await this.uiRenderer._showConfirmDialog(
+          'Delete token? You will go back to using the server token.',
+          { confirmText: 'Delete', isDangerous: true }
+        );
+        if (confirmed) {
           this.storageService.saveUserToken('');
           this.analyticsService.trackTokenRemoved();
           if (tokenInput) tokenInput.value = '';
@@ -3201,14 +3206,9 @@ export class ExtensionController {
     if (clearLocalDataBtn && !clearLocalDataBtn.dataset.listenerAdded) {
       clearLocalDataBtn.dataset.listenerAdded = 'true';
       clearLocalDataBtn.addEventListener('click', async () => {
-        const confirmed = confirm(
-          '⚠️ Clear all local data?\n\n' +
-          'This will remove:\n' +
-          '• Cached vault configuration\n' +
-          '• Cached page content\n' +
-          '• UI preferences (collapsed folders, etc.)\n\n' +
-          'Your Notion token will NOT be removed.\n\n' +
-          'The page will reload after clearing.'
+        const confirmed = await this.uiRenderer._showConfirmDialog(
+          'Clear all local data? This will remove cached config, content, and UI preferences. Your Notion token will NOT be removed. The page will reload.',
+          { confirmText: 'Clear', isDangerous: true }
         );
         
         if (confirmed) {

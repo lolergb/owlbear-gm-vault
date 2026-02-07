@@ -948,7 +948,10 @@ export class UIRenderer {
       icon: 'img/icon-trash.svg', 
       text: 'Delete', 
       action: async () => {
-        if (confirm(`Delete folder "${category.name}" and all its contents?`)) {
+        const confirmed = await this._showConfirmDialog(
+          `Delete folder "${category.name}" and all its contents?`
+        );
+        if (confirmed) {
           if (this.onCategoryDelete) {
             await this.onCategoryDelete(category, categoryPath);
           }
@@ -1096,11 +1099,103 @@ export class UIRenderer {
    * @private
    */
   async _confirmDeletePage(page, categoryPath, pageIndex) {
-    if (confirm(`Delete "${page.name}"?`)) {
+    const confirmed = await this._showConfirmDialog(`Delete "${page.name}"?`);
+    if (confirmed) {
       if (this.onPageDelete) {
         await this.onPageDelete(page, categoryPath, pageIndex);
       }
     }
+  }
+
+  /**
+   * Muestra un diálogo de confirmación personalizado (reemplaza confirm() nativo 
+   * que no funciona en iframes cross-origin como las extensiones de Owlbear)
+   * @param {string} message - Mensaje de confirmación
+   * @param {Object} [options] - Opciones del diálogo
+   * @param {string} [options.confirmText='Delete'] - Texto del botón de confirmar
+   * @param {string} [options.cancelText='Cancel'] - Texto del botón de cancelar
+   * @param {boolean} [options.isDangerous=true] - Si la acción es destructiva (botón rojo)
+   * @returns {Promise<boolean>} - true si el usuario confirma, false si cancela
+   */
+  _showConfirmDialog(message, options = {}) {
+    const { confirmText = 'Delete', cancelText = 'Cancel', isDangerous = true } = options;
+
+    return new Promise((resolve) => {
+      // Remover diálogo anterior si existe
+      const existing = document.getElementById('gm-confirm-dialog');
+      if (existing) existing.remove();
+
+      // Crear overlay
+      const overlay = document.createElement('div');
+      overlay.id = 'gm-confirm-dialog';
+      overlay.className = 'modal';
+      overlay.style.zIndex = '10002';
+
+      // Crear contenido
+      const content = document.createElement('div');
+      content.className = 'modal__content';
+      content.style.maxWidth = '300px';
+      content.style.width = '85%';
+
+      // Mensaje
+      const messageEl = document.createElement('p');
+      messageEl.className = 'modal__text';
+      messageEl.style.fontSize = 'var(--font-size-base)';
+      messageEl.style.marginBottom = 'var(--spacing-lg)';
+      messageEl.style.textAlign = 'center';
+      messageEl.textContent = message;
+
+      // Botones
+      const actions = document.createElement('div');
+      actions.className = 'form__actions';
+      actions.style.display = 'flex';
+      actions.style.gap = 'var(--spacing-md)';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn--ghost btn--flex';
+      cancelBtn.textContent = cancelText;
+      cancelBtn.style.flex = '1';
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = isDangerous ? 'btn btn--danger btn--flex' : 'btn btn--primary btn--flex';
+      confirmBtn.textContent = confirmText;
+      confirmBtn.style.flex = '1';
+
+      // Event handlers
+      const cleanup = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      cancelBtn.addEventListener('click', () => cleanup(false));
+      confirmBtn.addEventListener('click', () => cleanup(true));
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) cleanup(false);
+      });
+
+      // Escape key
+      const handleKeydown = (e) => {
+        if (e.key === 'Escape') {
+          document.removeEventListener('keydown', handleKeydown);
+          cleanup(false);
+        } else if (e.key === 'Enter') {
+          document.removeEventListener('keydown', handleKeydown);
+          cleanup(true);
+        }
+      };
+      document.addEventListener('keydown', handleKeydown);
+
+      // Ensamblar
+      actions.appendChild(cancelBtn);
+      actions.appendChild(confirmBtn);
+      content.appendChild(messageEl);
+      content.appendChild(actions);
+      overlay.appendChild(content);
+      document.body.appendChild(overlay);
+
+      // Focus en el botón de confirmar
+      confirmBtn.focus();
+    });
   }
 
   // ============================================
