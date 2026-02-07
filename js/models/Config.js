@@ -44,6 +44,24 @@ export class Config {
   }
 
   /**
+   * Añade una página a nivel raíz
+   * @param {Page} page - Página a añadir
+   */
+  addPage(page) {
+    this.pages.push(page);
+  }
+
+  /**
+   * Elimina una página raíz por índice
+   * @param {number} index - Índice de la página
+   */
+  removePage(index) {
+    if (index >= 0 && index < this.pages.length) {
+      this.pages.splice(index, 1);
+    }
+  }
+
+  /**
    * Cuenta el total de páginas en toda la configuración
    * @returns {number}
    */

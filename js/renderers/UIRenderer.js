@@ -947,10 +947,10 @@ export class UIRenderer {
     menuItems.push({ 
       icon: 'img/icon-trash.svg', 
       text: 'Delete', 
-      action: () => {
+      action: async () => {
         if (confirm(`Delete folder "${category.name}" and all its contents?`)) {
           if (this.onCategoryDelete) {
-            this.onCategoryDelete(category, categoryPath);
+            await this.onCategoryDelete(category, categoryPath);
           }
         }
       }
@@ -1095,10 +1095,10 @@ export class UIRenderer {
    * Confirma eliminación de página
    * @private
    */
-  _confirmDeletePage(page, categoryPath, pageIndex) {
+  async _confirmDeletePage(page, categoryPath, pageIndex) {
     if (confirm(`Delete "${page.name}"?`)) {
       if (this.onPageDelete) {
-        this.onPageDelete(page, categoryPath, pageIndex);
+        await this.onPageDelete(page, categoryPath, pageIndex);
       }
     }
   }

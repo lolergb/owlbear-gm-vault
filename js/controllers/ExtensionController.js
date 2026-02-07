@@ -738,50 +738,61 @@ export class ExtensionController {
     if (!this.config || !this.isGM) return;
 
     console.log('🗑️ DELETE PAGE - Page:', page.name, 'ID:', page.id);
-    console.log('🗑️ DELETE PAGE - Path:', categoryPath);
+    console.log('🗑️ DELETE PAGE - Path:', categoryPath, '(isRoot:', (!categoryPath || categoryPath.length === 0), ')');
 
-    // Navegar a la categoría correcta
-    const currentLevel = this._navigateToCategory(categoryPath);
-    if (!currentLevel) {
-      console.log('🗑️ DELETE PAGE - No se pudo navegar al path');
-      return;
-    }
-
-    // Encontrar y eliminar la página
-    const pages = currentLevel.pages || [];
-    
-    // Buscar por ID primero, luego por nombre
-    let pageIndexInArray = -1;
-    if (page.id) {
-      pageIndexInArray = pages.findIndex(p => p.id === page.id);
-      console.log('🗑️ DELETE PAGE - Buscando por ID:', page.id, '-> índice:', pageIndexInArray);
-    }
-    if (pageIndexInArray < 0) {
-      pageIndexInArray = pages.findIndex(p => p.name === page.name);
-      console.log('🗑️ DELETE PAGE - Buscando por nombre:', page.name, '-> índice:', pageIndexInArray);
-    }
-    
-    console.log('🗑️ DELETE PAGE - Todas las páginas:', pages.map(p => ({ id: p.id, name: p.name })));
-    
-    if (pageIndexInArray !== -1) {
-      console.log('🗑️ DELETE PAGE - Eliminando índice:', pageIndexInArray);
-      pages.splice(pageIndexInArray, 1);
+    try {
+      // Para root level (categoryPath vacío), usar this.config directamente
+      const isRootLevel = !categoryPath || categoryPath.length === 0;
+      const currentLevel = isRootLevel ? this.config : this._navigateToCategory(categoryPath);
       
-      // Actualizar el order para eliminar la referencia y reajustar índices
-      if (currentLevel.order) {
-        currentLevel.order = currentLevel.order.filter(o => !(o.type === 'page' && o.index === pageIndexInArray));
-        currentLevel.order = currentLevel.order.map(o => {
-          if (o.type === 'page' && o.index > pageIndexInArray) {
-            return { ...o, index: o.index - 1 };
-          }
-          return o;
-        });
+      if (!currentLevel) {
+        console.log('🗑️ DELETE PAGE - No se pudo navegar al path');
+        return;
+      }
+
+      // Encontrar y eliminar la página
+      const pages = currentLevel.pages;
+      if (!pages || !Array.isArray(pages)) {
+        console.log('🗑️ DELETE PAGE - No hay array de páginas en el nivel actual');
+        return;
       }
       
-      await this.saveConfig(this.config);
-      this.analyticsService.trackPageDeleted(page.name);
-    } else {
-      console.log('🗑️ DELETE PAGE - NO ENCONTRADO!');
+      // Buscar por ID primero, luego por nombre
+      let pageIndexInArray = -1;
+      if (page.id) {
+        pageIndexInArray = pages.findIndex(p => p.id === page.id);
+        console.log('🗑️ DELETE PAGE - Buscando por ID:', page.id, '-> índice:', pageIndexInArray);
+      }
+      if (pageIndexInArray < 0) {
+        pageIndexInArray = pages.findIndex(p => p.name === page.name);
+        console.log('🗑️ DELETE PAGE - Buscando por nombre:', page.name, '-> índice:', pageIndexInArray);
+      }
+      
+      console.log('🗑️ DELETE PAGE - Todas las páginas:', pages.map(p => ({ id: p.id, name: p.name })));
+      
+      if (pageIndexInArray !== -1) {
+        console.log('🗑️ DELETE PAGE - Eliminando índice:', pageIndexInArray, '(isRoot:', isRootLevel, ')');
+        pages.splice(pageIndexInArray, 1);
+        
+        // Actualizar el order para eliminar la referencia y reajustar índices
+        if (currentLevel.order) {
+          currentLevel.order = currentLevel.order.filter(o => !(o.type === 'page' && o.index === pageIndexInArray));
+          currentLevel.order = currentLevel.order.map(o => {
+            if (o.type === 'page' && o.index > pageIndexInArray) {
+              return { ...o, index: o.index - 1 };
+            }
+            return o;
+          });
+        }
+        
+        await this.saveConfig(this.config);
+        this.analyticsService.trackPageDeleted(page.name);
+      } else {
+        console.log('🗑️ DELETE PAGE - NO ENCONTRADO!');
+      }
+    } catch (error) {
+      console.error('🗑️ DELETE PAGE - Error:', error);
+      logError('Error eliminando página:', error);
     }
   }
 
@@ -1166,51 +1177,63 @@ export class ExtensionController {
     console.log('🗑️ DELETE - Category:', category.name, 'ID:', category.id);
     console.log('🗑️ DELETE - Path:', categoryPath);
 
-    // Navegar al nivel padre (path sin el último elemento)
-    const parentPath = categoryPath.slice(0, -1);
-    const currentLevel = parentPath.length > 0 
-      ? this._navigateToCategory(parentPath) 
-      : this.config;
-    
-    if (!currentLevel) {
-      console.log('🗑️ DELETE - No se pudo navegar al path padre');
-      return;
-    }
-
-    const categories = currentLevel.categories || [];
-    
-    // Buscar por ID primero, luego por nombre
-    let catIndex = -1;
-    if (category.id) {
-      catIndex = categories.findIndex(c => c.id === category.id);
-      console.log('🗑️ DELETE - Buscando por ID:', category.id, '-> índice:', catIndex);
-    }
-    if (catIndex < 0) {
-      catIndex = categories.findIndex(c => c.name === category.name);
-      console.log('🗑️ DELETE - Buscando por nombre:', category.name, '-> índice:', catIndex);
-    }
-    
-    console.log('🗑️ DELETE - Todas las categorías:', categories.map(c => ({ id: c.id, name: c.name })));
-    
-    if (catIndex !== -1) {
-      console.log('🗑️ DELETE - Eliminando índice:', catIndex);
-      categories.splice(catIndex, 1);
+    try {
+      // Navegar al nivel padre (path sin el último elemento)
+      const parentPath = categoryPath.slice(0, -1);
+      const isRootLevel = parentPath.length === 0;
+      const currentLevel = isRootLevel 
+        ? this.config 
+        : this._navigateToCategory(parentPath);
       
-      // Actualizar el order para eliminar la referencia y reajustar índices
-      if (currentLevel.order) {
-        currentLevel.order = currentLevel.order.filter(o => !(o.type === 'category' && o.index === catIndex));
-        currentLevel.order = currentLevel.order.map(o => {
-          if (o.type === 'category' && o.index > catIndex) {
-            return { ...o, index: o.index - 1 };
-          }
-          return o;
-        });
+      if (!currentLevel) {
+        console.log('🗑️ DELETE - No se pudo navegar al path padre');
+        return;
+      }
+
+      console.log('🗑️ DELETE - Nivel padre:', isRootLevel ? 'ROOT (config)' : 'categoría');
+
+      const categories = currentLevel.categories;
+      if (!categories || !Array.isArray(categories)) {
+        console.log('🗑️ DELETE - No hay array de categorías en el nivel padre');
+        return;
       }
       
-      await this.saveConfig(this.config);
-      this.analyticsService.trackFolderDeleted(category.name);
-    } else {
-      console.log('🗑️ DELETE - NO ENCONTRADO!');
+      // Buscar por ID primero, luego por nombre
+      let catIndex = -1;
+      if (category.id) {
+        catIndex = categories.findIndex(c => c.id === category.id);
+        console.log('🗑️ DELETE - Buscando por ID:', category.id, '-> índice:', catIndex);
+      }
+      if (catIndex < 0) {
+        catIndex = categories.findIndex(c => c.name === category.name);
+        console.log('🗑️ DELETE - Buscando por nombre:', category.name, '-> índice:', catIndex);
+      }
+      
+      console.log('🗑️ DELETE - Todas las categorías:', categories.map(c => ({ id: c.id, name: c.name })));
+      
+      if (catIndex !== -1) {
+        console.log('🗑️ DELETE - Eliminando índice:', catIndex, '(isRoot:', isRootLevel, ')');
+        categories.splice(catIndex, 1);
+        
+        // Actualizar el order para eliminar la referencia y reajustar índices
+        if (currentLevel.order) {
+          currentLevel.order = currentLevel.order.filter(o => !(o.type === 'category' && o.index === catIndex));
+          currentLevel.order = currentLevel.order.map(o => {
+            if (o.type === 'category' && o.index > catIndex) {
+              return { ...o, index: o.index - 1 };
+            }
+            return o;
+          });
+        }
+        
+        await this.saveConfig(this.config);
+        this.analyticsService.trackFolderDeleted(category.name);
+      } else {
+        console.log('🗑️ DELETE - NO ENCONTRADO!');
+      }
+    } catch (error) {
+      console.error('🗑️ DELETE - Error:', error);
+      logError('Error eliminando categoría:', error);
     }
   }
 
@@ -2225,9 +2248,9 @@ export class ExtensionController {
         { 
           icon: 'img/icon-trash.svg', 
           text: 'Delete page',
-          action: () => {
+          action: async () => {
             if (confirm(`Delete "${page.name}"?`)) {
-              this._handlePageDelete(page, this.currentCategoryPath, this.currentPageIndex);
+              await this._handlePageDelete(page, this.currentCategoryPath, this.currentPageIndex);
               this._goBackToList();
             }
           }
@@ -4351,30 +4374,30 @@ export class ExtensionController {
       onPageOpenModal: (page, categoryPath, pageIndex) => {
         this._openPageInModal(page);
       },
-      onPageEdit: (page, categoryPath, pageIndex, newData) => {
-        this._handlePageEdit(page, categoryPath, pageIndex, newData);
+      onPageEdit: async (page, categoryPath, pageIndex, newData) => {
+        await this._handlePageEdit(page, categoryPath, pageIndex, newData);
       },
-      onPageDelete: (page, categoryPath, pageIndex) => {
-        this._handlePageDelete(page, categoryPath, pageIndex);
+      onPageDelete: async (page, categoryPath, pageIndex) => {
+        await this._handlePageDelete(page, categoryPath, pageIndex);
       },
-      onPageMove: (page, categoryPath, pageIndex, direction) => {
-        this._handlePageMove(page, categoryPath, pageIndex, direction);
+      onPageMove: async (page, categoryPath, pageIndex, direction) => {
+        await this._handlePageMove(page, categoryPath, pageIndex, direction);
       },
-      onPageDuplicate: (page, categoryPath, pageIndex) => {
-        this._handlePageDuplicate(page, categoryPath, pageIndex);
+      onPageDuplicate: async (page, categoryPath, pageIndex) => {
+        await this._handlePageDuplicate(page, categoryPath, pageIndex);
       },
       // Categorías
-      onCategoryEdit: (category, categoryPath) => {
-        this._handleCategoryEdit(category, categoryPath);
+      onCategoryEdit: async (category, categoryPath) => {
+        await this._handleCategoryEdit(category, categoryPath);
       },
-      onCategoryDelete: (category, categoryPath) => {
-        this._handleCategoryDelete(category, categoryPath);
+      onCategoryDelete: async (category, categoryPath) => {
+        await this._handleCategoryDelete(category, categoryPath);
       },
-      onCategoryMove: (category, categoryPath, direction) => {
-        this._handleCategoryMove(category, categoryPath, direction);
+      onCategoryMove: async (category, categoryPath, direction) => {
+        await this._handleCategoryMove(category, categoryPath, direction);
       },
-      onCategoryDuplicate: (category, categoryPath) => {
-        this._handleCategoryDuplicate(category, categoryPath);
+      onCategoryDuplicate: async (category, categoryPath) => {
+        await this._handleCategoryDuplicate(category, categoryPath);
       },
       onAddPage: (categoryPath, roomId) => {
         this._handleAddPage(categoryPath, roomId);
