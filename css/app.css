@@ -152,6 +152,11 @@
     overflow-x: hidden;
   }
   
+  /* Reset: los botones heredan color del padre (evita el negro del user-agent) */
+  button {
+    color: inherit;
+  }
+
   body {
     font-family: var(--font-family-base);
     font-weight: var(--font-weight-normal);
@@ -815,7 +820,7 @@
   
   /* Alias para compatibilidad */
   .category-title-container { display: flex; align-items: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-sm); cursor: pointer; position: relative; }
-  .category-collapse-button { background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: var(--icon-size-lg); height: 32px; transition: transform var(--transition-normal); }
+  .category-collapse-button { background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: var(--icon-size-lg); height: 32px; transition: transform var(--transition-normal); color: var(--color-text-secondary); }
   .category-collapse-icon { width: var(--icon-size-lg); height: var(--icon-size-lg); display: block; }
   .category-title {font-family: var(--font-family-base);font-size: var(--font-size-base);line-height: 24px;font-weight: var(--font-weight-bold);color: var(--color-text-primary);letter-spacing: 0.5px;margin: 0;flex: 1;}
   .category-content { display: block; margin-left: 32px; }
@@ -857,6 +862,7 @@
     transition: background var(--transition-fast);
     padding: var(--spacing-sm); /* 8px padding */
     flex-shrink: 0;
+    color: var(--color-text-secondary);
   }
 
   .page-share-button:hover,
@@ -886,6 +892,7 @@
     top: 50%;
     transform: translateY(-50%);
     opacity: 0;
+    color: var(--color-text-secondary);
     transition: opacity var(--transition-fast);
     width: var(--icon-size-lg);
     height: var(--icon-size-lg);
@@ -1453,7 +1460,7 @@
   }
   
   /* Alias: icon-button → btn--icon (para compatibilidad) */
-  .icon-button { background: transparent; border: none; border-radius: var(--radius-full); width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all var(--transition-normal); }
+  .icon-button { background: transparent; border: none; border-radius: var(--radius-full); width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all var(--transition-normal); color: var(--color-text-secondary); }
   .category-context-menu-button.context-menu-active,
   .page-context-menu-button.context-menu-active,
   .category-title-container.context-menu-open .category-context-menu-button,
