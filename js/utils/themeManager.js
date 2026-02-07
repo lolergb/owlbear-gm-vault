@@ -144,12 +144,11 @@ export function applyOBRTheme(theme) {
   const textSecondaryRgb = parseColor(theme.text.secondary);
   const textDisabledRgb = parseColor(theme.text.disabled);
 
-  // ---- Derivar colores intermedios ----
-
-  // Muted: entre secondary y disabled
-  const textMutedRgb = mixColors(textSecondaryRgb, textDisabledRgb, 0.4);
-  // Hint: cercano a disabled pero un poco más visible
-  const textHintRgb = mixColors(textSecondaryRgb, textDisabledRgb, 0.65);
+  // ---- Derivar colores intermedios de texto ----
+  // OBR usa rgba con alpha para jerarquía de texto (ej: rgba(255,255,255,0.7))
+  // Muted y Hint se derivan del color base de texto con opacidad reducida
+  const textMutedAlpha = isDark ? 0.5 : 0.55;
+  const textHintAlpha = isDark ? 0.38 : 0.42;
 
   // ---- Colores de fondo ----
   // En dark mode: overlays con negro semi-transparente
@@ -203,8 +202,8 @@ export function applyOBRTheme(theme) {
     // === TEXTO ===
     '--color-text-primary': theme.text.primary,
     '--color-text-secondary': theme.text.secondary,
-    '--color-text-muted': rgb(textMutedRgb.r, textMutedRgb.g, textMutedRgb.b),
-    '--color-text-hint': rgb(textHintRgb.r, textHintRgb.g, textHintRgb.b),
+    '--color-text-muted': rgba(textPrimaryRgb.r, textPrimaryRgb.g, textPrimaryRgb.b, textMutedAlpha),
+    '--color-text-hint': rgba(textPrimaryRgb.r, textPrimaryRgb.g, textPrimaryRgb.b, textHintAlpha),
     '--color-text-disabled': theme.text.disabled,
 
     // === ACENTO (PRIMARY) ===
@@ -286,12 +285,11 @@ export function applyOBRTheme(theme) {
     textPrimary: theme.text.primary,
     textSecondary: theme.text.secondary,
     textDisabled: theme.text.disabled,
-    // Parsed RGB values para verificación
+    // Parsed values para verificación
     _parsed: {
-      textPrimary: textPrimaryRgb,
-      textSecondary: textSecondaryRgb,
-      textMuted: textMutedRgb,
-      textDisabled: textDisabledRgb
+      textPrimaryRgb,
+      mutedAlpha: textMutedAlpha,
+      hintAlpha: textHintAlpha
     }
   });
 }
