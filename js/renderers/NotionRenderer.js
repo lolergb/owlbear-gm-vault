@@ -219,6 +219,10 @@ export class NotionRenderer {
       // Convertir saltos de línea a <br>
       content = content.replace(/\n/g, '<br>');
       
+      // Ocultar tags de GM y HIDDEN visualmente (pero mantenerlos en el DOM para detectarlos)
+      content = content.replace(/🔒 GM/g, '<span class="notion-tag-hidden">🔒 GM</span>');
+      content = content.replace(/🔒 HIDDEN/g, '<span class="notion-tag-hidden">🔒 HIDDEN</span>');
+      
       if (text.annotations) {
         if (text.annotations.bold) content = `<strong class="notion-text-bold">${content}</strong>`;
         if (text.annotations.italic) content = `<em class="notion-text-italic">${content}</em>`;

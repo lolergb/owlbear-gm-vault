@@ -18,6 +18,11 @@ body.role-player .notion-gm-only {
   display: none !important;
 }
 
+/* Tags 🔒 GM y 🔒 HIDDEN: ocultos visualmente en todo el contenido */
+.notion-tag-hidden {
+  display: none !important;
+}
+
 .notion-content {
   padding: 0 var(--spacing-xl) var(--spacing-xl);
   max-width: 800px;
@@ -38,6 +43,8 @@ body.role-player .notion-gm-only {
   overflow: hidden;
   border-radius: 0;
   position: relative;
+  flex-shrink: 0;
+  margin-bottom: 0;
 }
 
 .notion-page-cover .notion-image-container {

@@ -199,6 +199,14 @@ export class ExtensionController {
     window.refreshImage = async function(button) {
       log('🔄 Refrescando página por error de imagen...');
       
+      // Proporcionar feedback visual inmediato
+      if (button) {
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '⏳ Cargando...';
+        button.disabled = true;
+        button.style.opacity = '0.6';
+      }
+      
       // Solo el Master GM puede refrescar contenido de Notion (tiene acceso a la API)
       // Para Co-GM y Players, no intentar refrescar automáticamente
       if (!controller.isGM || controller.isCoGM) {

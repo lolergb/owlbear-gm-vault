@@ -3434,6 +3434,14 @@ async function showImageModal(imageUrl, caption, showShareButton = true, fullSiz
 
 // Función global para refrescar la página cuando una imagen falla
 window.refreshImage = async function(button) {
+  // Proporcionar feedback visual inmediato
+  if (button) {
+    const originalHTML = button.innerHTML;
+    button.innerHTML = '⏳ Cargando...';
+    button.disabled = true;
+    button.style.opacity = '0.6';
+  }
+  
   // Intentar obtener la información de la página actual para recargar el contenido
   const openModalButton = document.getElementById("page-open-modal-button-header");
   const pageTitle = document.getElementById("page-title");
