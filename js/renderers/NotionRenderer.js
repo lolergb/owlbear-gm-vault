@@ -216,6 +216,11 @@ export class NotionRenderer {
       
       let content = text.plain_text || '';
       
+      // Detectar si el contenido es solo un tag de GM o HIDDEN
+      const isOnlyGmTag = content.trim() === '🔒 GM';
+      const isOnlyHiddenTag = content.trim() === '🔒 HIDDEN';
+      const isOnlyTag = isOnlyGmTag || isOnlyHiddenTag;
+      
       // Convertir saltos de línea a <br>
       content = content.replace(/\n/g, '<br>');
       
@@ -224,15 +229,21 @@ export class NotionRenderer {
       content = content.replace(/🔒 HIDDEN/g, '<span class="notion-tag-hidden">🔒 HIDDEN</span>');
       
       if (text.annotations) {
-        if (text.annotations.bold) content = `<strong class="notion-text-bold">${content}</strong>`;
-        if (text.annotations.italic) content = `<em class="notion-text-italic">${content}</em>`;
-        if (text.annotations.underline) content = `<u class="notion-text-underline">${content}</u>`;
-        if (text.annotations.strikethrough) content = `<s class="notion-text-strikethrough">${content}</s>`;
-        if (text.annotations.code) content = `<code class="notion-text-code">${content}</code>`;
+        // Si el contenido es solo el tag, aplicar la clase de ocultar al elemento exterior también
+        const hiddenClass = isOnlyTag ? ' notion-tag-hidden' : '';
+        
+        if (text.annotations.bold) content = `<strong class="notion-text-bold${hiddenClass}">${content}</strong>`;
+        if (text.annotations.italic) content = `<em class="notion-text-italic${hiddenClass}">${content}</em>`;
+        if (text.annotations.underline) content = `<u class="notion-text-underline${hiddenClass}">${content}</u>`;
+        if (text.annotations.strikethrough) content = `<s class="notion-text-strikethrough${hiddenClass}">${content}</s>`;
+        if (text.annotations.code) content = `<code class="notion-text-code${hiddenClass}">${content}</code>`;
         
         if (text.href) {
-          content = `<a href="${text.href}" class="notion-text-link" target="_blank" rel="noopener noreferrer">${content}</a>`;
+          content = `<a href="${text.href}" class="notion-text-link${hiddenClass}" target="_blank" rel="noopener noreferrer">${content}</a>`;
         }
+      } else if (isOnlyTag) {
+        // Si no hay anotaciones pero es solo el tag, envolver en span oculto
+        content = `<span class="notion-tag-hidden">${content}</span>`;
       }
       
       return content;
@@ -956,7 +967,9 @@ export class NotionRenderer {
       });
       
       tableHtml += '</table>';
-      return tableHtml;
+      
+      // Envolver la tabla en un contenedor con scroll horizontal
+      return `<div class="notion-table-wrapper">${tableHtml}</div>`;
     } catch (error) {
       logWarn('Error al renderizar tabla:', error);
       return `
