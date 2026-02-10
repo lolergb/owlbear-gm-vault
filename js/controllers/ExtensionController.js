@@ -1810,6 +1810,7 @@ export class ExtensionController {
     if (!backButton || backButton.dataset.listenerAdded) return;
 
     backButton.addEventListener('click', () => {
+      this.analyticsService.trackBackButtonClicked();
       this._goBackToList();
     });
     backButton.dataset.listenerAdded = 'true';
@@ -1834,6 +1835,7 @@ export class ExtensionController {
 
     if (isSettingsVisible) {
       // Cerrar settings
+      this.analyticsService.trackSettingsClosed();
       settingsContainer.classList.add('hidden');
     } else if (isNotionContainerVisible) {
       // Volver a la lista desde notion-container
@@ -2301,6 +2303,9 @@ export class ExtensionController {
       return;
     }
     
+    // Track modal opened
+    this.analyticsService.trackPageOpenedInModal(page.name);
+    
     // Asegurar que tenemos una instancia de Page
     const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
     
@@ -2731,6 +2736,9 @@ export class ExtensionController {
    * @private
    */
   _showSettings() {
+    // Track settings opened
+    this.analyticsService.trackSettingsOpened();
+    
     const settingsContainer = document.getElementById('settings-container');
     const pageList = document.getElementById('page-list');
     const notionContainer = document.getElementById('notion-container');
@@ -3069,6 +3077,8 @@ export class ExtensionController {
           alert('Please enter a URL');
           return;
         }
+        
+        this.analyticsService.trackLoadFromUrlClicked(url);
 
         // Validar que sea una URL válida
         try {
@@ -3192,6 +3202,7 @@ export class ExtensionController {
         if (!viewJsonBtn.dataset.listenerAdded) {
           viewJsonBtn.dataset.listenerAdded = 'true';
           viewJsonBtn.addEventListener('click', () => {
+            this.analyticsService.trackViewJsonClicked();
             const config = this.config || { categories: [] };
             const jsonStr = JSON.stringify(config, null, 2);
             // Mostrar en modal o nueva ventana
@@ -3234,6 +3245,8 @@ export class ExtensionController {
         
         if (confirmed) {
           try {
+            this.analyticsService.trackClearLocalData();
+            
             // Clear localStorage (except token)
             this.storageService.clearAllLocalData();
             
@@ -3261,6 +3274,7 @@ export class ExtensionController {
     if (importNotionBtn && !importNotionBtn.dataset.listenerAdded) {
       importNotionBtn.dataset.listenerAdded = 'true';
       importNotionBtn.addEventListener('click', () => {
+        this.analyticsService.trackImportFromNotionClicked();
         this._showNotionPagesSelector();
       });
     }
@@ -4074,6 +4088,9 @@ export class ExtensionController {
     const isCollapsed = button.dataset.collapsed === 'true';
     const newState = !isCollapsed;
     
+    // Track collapse all action
+    this.analyticsService.trackCollapseAllFolders(newState);
+    
     const icon = button.querySelector('.icon');
     if (icon) {
       const newSrc = newState ? 'img/icon-collapse-true.svg' : 'img/icon-collapse-false.svg';
@@ -4114,6 +4131,8 @@ export class ExtensionController {
    * @private
    */
   _showAddMenu(button) {
+    this.analyticsService.trackAddMenuOpened();
+    
     const rect = button.getBoundingClientRect();
     
     // Remover menú y overlay existentes

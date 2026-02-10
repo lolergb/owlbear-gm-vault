@@ -115,12 +115,15 @@ export class AnalyticsService {
       banner.remove();
       // Inicializar Mixpanel después del consent
       this.init();
+      // Nota: No trackeamos "accepted" aquí porque Mixpanel se inicializa después
+      // El evento extension_opened ya indica que el usuario aceptó
     });
 
     // Botón Reject
     const rejectBtn = banner.querySelector('#cookie-reject');
     rejectBtn.addEventListener('click', () => {
       this.setConsent(false);
+      // Nota: No podemos trackear el reject porque el usuario rechazó analytics
       banner.remove();
     });
   }
@@ -497,6 +500,269 @@ export class AnalyticsService {
    */
   trackPageReloaded(pageName) {
     this.trackEvent('page_reloaded', {
+      page_name: pageName
+    });
+  }
+
+  // ============================================
+  // NUEVOS EVENTOS - Navegación y UI
+  // ============================================
+
+  /**
+   * Track back button clicked
+   */
+  trackBackButtonClicked() {
+    this.trackEvent('back_button_clicked');
+  }
+
+  /**
+   * Track settings opened
+   */
+  trackSettingsOpened() {
+    this.trackEvent('settings_opened');
+  }
+
+  /**
+   * Track settings closed
+   */
+  trackSettingsClosed() {
+    this.trackEvent('settings_closed');
+  }
+
+  /**
+   * Track search/filter used
+   * @param {string} query - Query de búsqueda
+   */
+  trackSearchUsed(query) {
+    this.trackEvent('search_used', {
+      query_length: query ? query.length : 0
+    });
+  }
+
+  // ============================================
+  // NUEVOS EVENTOS - Folders/Categories
+  // ============================================
+
+  /**
+   * Track folder collapsed
+   * @param {string} folderName - Nombre de la carpeta
+   */
+  trackFolderCollapsed(folderName) {
+    this.trackEvent('folder_collapsed', {
+      folder_name: folderName
+    });
+  }
+
+  /**
+   * Track folder expanded
+   * @param {string} folderName - Nombre de la carpeta
+   */
+  trackFolderExpanded(folderName) {
+    this.trackEvent('folder_expanded', {
+      folder_name: folderName
+    });
+  }
+
+  /**
+   * Track collapse all folders
+   * @param {boolean} collapsed - true si se colapsaron todos, false si se expandieron
+   */
+  trackCollapseAllFolders(collapsed) {
+    this.trackEvent('collapse_all_folders', {
+      collapsed: collapsed
+    });
+  }
+
+  /**
+   * Track category visibility toggled
+   * @param {string} categoryName - Nombre de la categoría
+   * @param {boolean} visible - Nuevo estado de visibilidad
+   */
+  trackCategoryVisibilityToggled(categoryName, visible) {
+    this.trackEvent('category_visibility_toggled', {
+      category_name: categoryName,
+      visible: visible
+    });
+  }
+
+  /**
+   * Track first category added (vault vacío)
+   */
+  trackFirstCategoryAdded() {
+    this.trackEvent('first_category_added');
+  }
+
+  // ============================================
+  // NUEVOS EVENTOS - Modales
+  // ============================================
+
+  /**
+   * Track modal opened
+   * @param {string} pageName - Nombre de la página en el modal
+   */
+  trackModalOpened(pageName) {
+    this.trackEvent('modal_opened', {
+      page_name: pageName
+    });
+  }
+
+  /**
+   * Track modal closed
+   */
+  trackModalClosed() {
+    this.trackEvent('modal_closed');
+  }
+
+  /**
+   * Track page opened in modal
+   * @param {string} pageName - Nombre de la página
+   */
+  trackPageOpenedInModal(pageName) {
+    this.trackEvent('page_opened_in_modal', {
+      page_name: pageName
+    });
+  }
+
+  // ============================================
+  // NUEVOS EVENTOS - Visualización de contenido
+  // ============================================
+
+  /**
+   * Track image opened in viewer
+   * @param {string} imageUrl - URL de la imagen
+   */
+  trackImageOpened(imageUrl) {
+    this.trackEvent('image_opened', {
+      image_url: imageUrl ? imageUrl.substring(0, 100) : 'unknown'
+    });
+  }
+
+  /**
+   * Track video opened
+   * @param {string} videoUrl - URL del video
+   */
+  trackVideoOpened(videoUrl) {
+    this.trackEvent('video_opened', {
+      video_url: videoUrl ? videoUrl.substring(0, 100) : 'unknown'
+    });
+  }
+
+  /**
+   * Track Google Doc opened
+   * @param {string} docUrl - URL del documento
+   */
+  trackGoogleDocOpened(docUrl) {
+    this.trackEvent('google_doc_opened', {
+      doc_url: docUrl ? docUrl.substring(0, 100) : 'unknown'
+    });
+  }
+
+  /**
+   * Track PDF opened
+   * @param {string} pdfUrl - URL del PDF
+   */
+  trackPdfOpened(pdfUrl) {
+    this.trackEvent('pdf_opened', {
+      pdf_url: pdfUrl ? pdfUrl.substring(0, 100) : 'unknown'
+    });
+  }
+
+  // ============================================
+  // NUEVOS EVENTOS - Import/Export y Data
+  // ============================================
+
+  /**
+   * Track import from Notion clicked
+   */
+  trackImportFromNotionClicked() {
+    this.trackEvent('import_from_notion_clicked');
+  }
+
+  /**
+   * Track load from URL clicked
+   * @param {string} url - URL cargada
+   */
+  trackLoadFromUrlClicked(url) {
+    this.trackEvent('load_from_url_clicked', {
+      url_domain: url ? new URL(url).hostname : 'unknown'
+    });
+  }
+
+  /**
+   * Track view JSON clicked
+   */
+  trackViewJsonClicked() {
+    this.trackEvent('view_json_clicked');
+  }
+
+  /**
+   * Track clear local data
+   */
+  trackClearLocalData() {
+    this.trackEvent('clear_local_data');
+  }
+
+  /**
+   * Track retry after error
+   * @param {string} context - Contexto del error
+   */
+  trackRetryAfterError(context) {
+    this.trackEvent('retry_after_error', {
+      context: context
+    });
+  }
+
+  // ============================================
+  // NUEVOS EVENTOS - Consent y Menus
+  // ============================================
+
+  /**
+   * Track cookie consent accepted
+   */
+  trackCookieConsentAccepted() {
+    this.trackEvent('cookie_consent_accepted');
+  }
+
+  /**
+   * Track cookie consent rejected
+   */
+  trackCookieConsentRejected() {
+    this.trackEvent('cookie_consent_rejected');
+  }
+
+  /**
+   * Track page context menu opened
+   * @param {string} pageName - Nombre de la página
+   */
+  trackPageContextMenuOpened(pageName) {
+    this.trackEvent('page_context_menu_opened', {
+      page_name: pageName
+    });
+  }
+
+  /**
+   * Track category context menu opened
+   * @param {string} categoryName - Nombre de la categoría
+   */
+  trackCategoryContextMenuOpened(categoryName) {
+    this.trackEvent('category_context_menu_opened', {
+      category_name: categoryName
+    });
+  }
+
+  /**
+   * Track add menu opened
+   */
+  trackAddMenuOpened() {
+    this.trackEvent('add_menu_opened');
+  }
+
+  /**
+   * Track page shared to players
+   * @param {string} pageName - Nombre de la página
+   */
+  trackPageSharedToPlayers(pageName) {
+    this.trackEvent('page_shared_to_players', {
       page_name: pageName
     });
   }
