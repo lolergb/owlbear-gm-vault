@@ -392,6 +392,33 @@ export function filterVisiblePages(config) {
 }
 
 /**
+ * Builds a compact vault summary for GM AI (cross-extension via room metadata).
+ * Includes ALL pages (not just visible to players). Only id, title, category name.
+ * @param {Object} config - Full vault config
+ * @returns {Object} - { categories: [ { name, pages: [ { id, title } ], categories?: [...] } ] }
+ */
+export function buildVaultSummaryForGMIA(config) {
+  if (!config || !config.categories) {
+    return { categories: [] };
+  }
+
+  function mapCategory(cat) {
+    const summary = {
+      name: cat.name || 'Uncategorized',
+      pages: (cat.pages || []).map(p => ({ id: p.id, title: p.title || 'Untitled' }))
+    };
+    if (cat.categories && cat.categories.length > 0) {
+      summary.categories = cat.categories.map(mapCategory);
+    }
+    return summary;
+  }
+
+  return {
+    categories: config.categories.map(mapCategory)
+  };
+}
+
+/**
  * Debounce - Retrasa la ejecución de una función
  * @param {Function} func - Función a ejecutar
  * @param {number} wait - Tiempo de espera en ms
