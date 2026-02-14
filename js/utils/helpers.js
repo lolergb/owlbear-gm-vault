@@ -405,7 +405,7 @@ export function buildVaultSummaryForGMIA(config) {
   function mapCategory(cat) {
     const summary = {
       name: cat.name || 'Uncategorized',
-      pages: (cat.pages || []).map(p => ({ id: p.id, title: p.title || 'Untitled' }))
+      pages: (cat.pages || []).map(p => ({ id: p.id, title: p.name || p.title || 'Untitled' }))
     };
     if (cat.categories && cat.categories.length > 0) {
       summary.categories = cat.categories.map(mapCategory);
