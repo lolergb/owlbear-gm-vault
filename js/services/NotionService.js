@@ -647,7 +647,7 @@ export class NotionService {
               // Escanear mentions dentro de las propiedades de las páginas de DB
               for (const dbPage of dbPages) {
                 if (dbPage.properties) {
-                  const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties);
+                  const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties, dbPage.title);
                   for (const mention of propertyMentions) {
                     const normalizedId = this._normalizeId(mention.pageId);
                     mentionedPageIds.add(normalizedId);
@@ -723,11 +723,10 @@ export class NotionService {
             // Escanear mentions dentro de las propiedades de las páginas de DB
             for (const dbPage of dbPages) {
               if (dbPage.properties) {
-                const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties);
+                const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties, dbPage.title);
                 for (const mention of propertyMentions) {
                   const normalizedId = this._normalizeId(mention.pageId);
                   mentionedPageIds.add(normalizedId);
-                  log(`🔗 Mention encontrado en properties de DB "${dbPage.title}": ${mention.text || mention.pageId}`);
                 }
               }
             }
@@ -1026,10 +1025,11 @@ export class NotionService {
   /**
    * Extrae mentions de las propiedades de una página de base de datos
    * @param {Object} properties - Propiedades de la página de DB
+   * @param {string} pageTitle - Título de la página que contiene estas propiedades (para logging)
    * @returns {Array} - Array de {pageId, text}
    * @private
    */
-  _extractMentionsFromPageProperties(properties) {
+  _extractMentionsFromPageProperties(properties, pageTitle = '') {
     const mentions = [];
     
     if (!properties) return mentions;
@@ -1038,10 +1038,15 @@ export class NotionService {
       if (!richTextArray) return;
       for (const item of richTextArray) {
         if (item.type === 'mention' && item.mention?.type === 'page') {
+          // El plain_text del mention suele contener el título de la página mencionada
+          const mentionText = item.plain_text?.trim() || null;
           mentions.push({
             pageId: item.mention.page.id,
-            text: item.plain_text || 'Untitled'
+            text: mentionText
           });
+          if (pageTitle) {
+            log(`  🔗 Mention detectado en "${pageTitle}": ${mentionText || item.mention.page.id}`);
+          }
         }
       }
     };
@@ -1063,6 +1068,9 @@ export class NotionService {
               pageId: rel.id,
               text: 'Related page'
             });
+            if (pageTitle) {
+              log(`  🔗 Relación detectada en "${pageTitle}": ${rel.id}`);
+            }
           }
         }
       }
@@ -1109,6 +1117,12 @@ export class NotionService {
       
       // Extraer título
       const title = this._extractPageTitle(pageData) || 'Untitled';
+      
+      // Debug: mostrar si se obtuvo título correctamente
+      if (title === 'Untitled') {
+        logWarn(`⚠️ No se pudo extraer título de página ${pageId}. properties:`, !!pageData.properties, 'url:', pageData.url);
+      } else {
+        log(`✅ Título obtenido para mention: "${title}"`);
       
       // Verificar si el parent es una base de datos
       let parentDbId = null;
@@ -1446,10 +1460,16 @@ export class NotionService {
                   continue;
                 }
                 
+                // Usar el título del mention si está disponible y pageInfo.title es "Untitled"
+                // El mention.text ya contiene el título correcto desde la API de Notion
+                const finalTitle = (pageInfo.title === 'Untitled' && mention.text && mention.text !== 'Untitled') 
+                  ? mention.text 
+                  : pageInfo.title;
+                
                 // Crear la página
                 const newPage = {
                   type: 'page',
-                  name: pageInfo.title,
+                  name: finalTitle,
                   url: pageInfo.url
                 };
                 
