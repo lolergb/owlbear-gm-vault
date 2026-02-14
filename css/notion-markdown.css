@@ -308,7 +308,6 @@ body.role-player .notion-gm-only {
 }
 
 .notion-table-wrapper {
-  overflow-x: auto;
   overflow-y: visible;
   margin: var(--font-size-base) 0;
   border: 1px solid var(--color-border-subtle);
