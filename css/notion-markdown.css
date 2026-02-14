@@ -122,6 +122,14 @@ body.role-player .notion-gm-only {
   word-break: break-word;
 }
 
+/* Ocultar párrafos vacíos (bases de datos inline convertidas a páginas) */
+.notion-content .notion-paragraph:empty,
+.notion-content .notion-paragraph:has(> br:only-child) {
+  display: none;
+  margin: 0;
+  padding: 0;
+}
+
 .notion-content .notion-text {
   color: var(--color-text-primary);
 }
