@@ -1123,6 +1123,7 @@ export class NotionService {
         logWarn(`⚠️ No se pudo extraer título de página ${pageId}. properties:`, !!pageData.properties, 'url:', pageData.url);
       } else {
         log(`✅ Título obtenido para mention: "${title}"`);
+      }
       
       // Verificar si el parent es una base de datos
       let parentDbId = null;
