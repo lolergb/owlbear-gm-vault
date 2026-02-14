@@ -5321,6 +5321,16 @@ export class ExtensionController {
     // Restaurar clases originales
     notionContent.className = 'notion-container__content notion-content';
 
+    // Mostrar loading si es un refresh
+    if (forceRefresh) {
+      notionContent.innerHTML = `
+        <div class="empty-state">
+          <div class="loading-spinner"></div>
+          <p class="empty-state-text">Refreshing content...</p>
+        </div>
+      `;
+    }
+
     // DEBUG: Log para verificar rol y tipo de página
     console.log('🔍 _renderNotionPage DEBUG:', {
       isGM: this.isGM,

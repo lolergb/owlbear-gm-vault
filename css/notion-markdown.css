@@ -377,8 +377,21 @@ body.role-player .notion-gm-only {
 .notion-content .notion-toggle-heading summary h3 {
   display: inline;
   margin: 0;
-  font-size: inherit;
-  font-weight: inherit;
+  /* Mantener el tamaño original de los headings */
+  font-weight: var(--font-weight-bold);
+}
+
+/* Tamaños específicos para cada nivel de heading en toggles */
+.notion-content .notion-toggle-heading summary h1 {
+  font-size: calc(var(--font-size-xl) * 1.4);
+}
+
+.notion-content .notion-toggle-heading summary h2 {
+  font-size: var(--font-size-xl);
+}
+
+.notion-content .notion-toggle-heading summary h3 {
+  font-size: var(--font-size-lg);
 }
 
 .notion-content .notion-loading {
