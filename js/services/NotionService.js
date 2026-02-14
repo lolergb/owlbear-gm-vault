@@ -1389,7 +1389,7 @@ export class NotionService {
         }
 
         // ============================================
-        // ESCANEAR MENTIONS EN EL CONTENIDO
+        // ESCANEAR MENTIONS EN EL CONTENIDO Y EN PROPIEDADES DE DB
         // ============================================
         if (onProgress) {
           onProgress({ 
@@ -1403,10 +1403,43 @@ export class NotionService {
           // Obtener bloques de la página para buscar mentions
           const blocks = await this.fetchBlocks(id, true);
           
+          // Mentions de bloques de contenido
+          let mentions = [];
           if (blocks && blocks.length > 0) {
-            const mentions = this._extractMentionsFromBlocks(blocks);
-            
-            if (mentions.length > 0) {
+            mentions = this._extractMentionsFromBlocks(blocks);
+          }
+          
+          // También escanear mentions en las propiedades de las páginas de DB
+          // (wiki links dentro de celdas de tablas inline)
+          const scannedDbIds = new Set();
+          for (const child of childPages) {
+            if (child.type === 'database_page' || child.type === 'child_database') {
+              const dbId = child.databaseId || child.id;
+              if (dbId && !scannedDbIds.has(dbId)) {
+                scannedDbIds.add(dbId);
+                try {
+                  const dbPages = await this.fetchDatabasePages(dbId);
+                  for (const dbPage of dbPages) {
+                    if (dbPage.properties) {
+                      const propMentions = this._extractMentionsFromPageProperties(dbPage.properties, dbPage.title);
+                      for (const pm of propMentions) {
+                        // Evitar duplicados con mentions ya encontrados
+                        const exists = mentions.some(m => this._normalizeId(m.pageId) === this._normalizeId(pm.pageId));
+                        if (!exists) {
+                          mentions.push(pm);
+                        }
+                      }
+                    }
+                  }
+                  log(`🔍 Escaneadas properties de DB "${child.databaseTitle || dbId}": ${mentions.length} mentions totales`);
+                } catch (e) {
+                  log(`⚠️ Error escaneando properties de DB ${dbId}:`, e.message);
+                }
+              }
+            }
+          }
+          
+          if (mentions.length > 0) {
               log(`🔗 Mentions encontrados en "${title}":`, mentions.length);
               
               // Recopilar todos los IDs ya importados
@@ -1415,6 +1448,27 @@ export class NotionService {
               // IDs de childPages
               for (const child of childPages) {
                 importedIds.add(child.id);
+              }
+              
+              // IDs de páginas ya en items (incluyendo las de DB ya procesadas)
+              for (const item of items) {
+                if (item.url) {
+                  const urlMatch = item.url.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
+                  if (urlMatch) {
+                    importedIds.add(this._normalizeId(urlMatch[1]));
+                  }
+                }
+                // También buscar en sub-items (carpetas de DB)
+                if (item.items) {
+                  for (const subItem of item.items) {
+                    if (subItem.url) {
+                      const subMatch = subItem.url.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
+                      if (subMatch) {
+                        importedIds.add(this._normalizeId(subMatch[1]));
+                      }
+                    }
+                  }
+                }
               }
               
               // IDs de páginas ya en categorías
@@ -1533,7 +1587,6 @@ export class NotionService {
                 log(`  ✅ Mention "${page.name}" añadido a items`);
               }
             }
-          }
         } catch (mentionError) {
           logWarn(`Error escaneando mentions en "${title}":`, mentionError);
           // Continuar sin fallar - los mentions son opcionales
