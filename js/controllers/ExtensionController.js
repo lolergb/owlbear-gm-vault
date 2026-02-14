@@ -5324,9 +5324,10 @@ export class ExtensionController {
     // Mostrar loading si es un refresh
     if (forceRefresh) {
       notionContent.innerHTML = `
-        <div class="empty-state">
-          <div class="loading-spinner"></div>
-          <p class="empty-state-text">Refreshing content...</p>
+        <div class="empty-state notion-loading">
+          <div class="empty-state-icon">⏳</div>
+          <p class="empty-state-text">Refreshing content</p>
+          <p class="empty-state-hint">Fetching updated data from Notion...</p>
         </div>
       `;
     }

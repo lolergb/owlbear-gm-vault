@@ -644,6 +644,21 @@ export class NotionService {
             try {
               const dbPages = await this.fetchDatabasePages(databaseId);
               
+              // Escanear mentions dentro de las propiedades de las páginas de DB
+              for (const dbPage of dbPages) {
+                if (dbPage.properties) {
+                  const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties);
+                  for (const mention of propertyMentions) {
+                    const normalizedId = this._normalizeId(mention.pageId);
+                    mentionedPageIds.add(normalizedId);
+                  }
+                }
+              }
+              
+              if (mentionedPageIds.size > 0) {
+                log(`🔍 Total mentions encontrados (incluyendo properties de DB): ${mentionedPageIds.size}`);
+              }
+              
               // Filtrar por mentions si hay alguno en el contenido
               let pagesToAdd = dbPages;
               if (mentionedPageIds.size > 0) {
@@ -704,6 +719,22 @@ export class NotionService {
           try {
             const dbPages = await this.fetchDatabasePages(databaseId);
             log('📊 Páginas encontradas en DB:', dbPages.length);
+            
+            // Escanear mentions dentro de las propiedades de las páginas de DB
+            for (const dbPage of dbPages) {
+              if (dbPage.properties) {
+                const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties);
+                for (const mention of propertyMentions) {
+                  const normalizedId = this._normalizeId(mention.pageId);
+                  mentionedPageIds.add(normalizedId);
+                  log(`🔗 Mention encontrado en properties de DB "${dbPage.title}": ${mention.text || mention.pageId}`);
+                }
+              }
+            }
+            
+            if (mentionedPageIds.size > 0) {
+              log(`🔍 Total mentions encontrados (incluyendo properties de DB): ${mentionedPageIds.size}`);
+            }
             
             // Filtrar por mentions si hay alguno en el contenido
             let pagesToAdd = dbPages;
@@ -980,6 +1011,64 @@ export class NotionService {
     }
     
     // Eliminar duplicados por pageId
+    const uniqueMentions = [];
+    const seenIds = new Set();
+    for (const mention of mentions) {
+      if (!seenIds.has(mention.pageId)) {
+        seenIds.add(mention.pageId);
+        uniqueMentions.push(mention);
+      }
+    }
+    
+    return uniqueMentions;
+  }
+
+  /**
+   * Extrae mentions de las propiedades de una página de base de datos
+   * @param {Object} properties - Propiedades de la página de DB
+   * @returns {Array} - Array de {pageId, text}
+   * @private
+   */
+  _extractMentionsFromPageProperties(properties) {
+    const mentions = [];
+    
+    if (!properties) return mentions;
+    
+    const extractFromRichText = (richTextArray) => {
+      if (!richTextArray) return;
+      for (const item of richTextArray) {
+        if (item.type === 'mention' && item.mention?.type === 'page') {
+          mentions.push({
+            pageId: item.mention.page.id,
+            text: item.plain_text || 'Untitled'
+          });
+        }
+      }
+    };
+    
+    // Iterar sobre todas las propiedades
+    for (const [propName, property] of Object.entries(properties)) {
+      // Propiedades con rich_text (text, title)
+      if (property.type === 'rich_text' && property.rich_text) {
+        extractFromRichText(property.rich_text);
+      }
+      if (property.type === 'title' && property.title) {
+        extractFromRichText(property.title);
+      }
+      // Propiedades de relación pueden tener IDs de páginas
+      if (property.type === 'relation' && property.relation) {
+        for (const rel of property.relation) {
+          if (rel.id) {
+            mentions.push({
+              pageId: rel.id,
+              text: 'Related page'
+            });
+          }
+        }
+      }
+    }
+    
+    // Eliminar duplicados
     const uniqueMentions = [];
     const seenIds = new Set();
     for (const mention of mentions) {
@@ -1632,7 +1721,7 @@ export class NotionService {
       
       log('📊 Páginas encontradas en la base de datos:', pages.length);
       
-      // Mapear a formato simplificado con ID, título y labels
+      // Mapear a formato simplificado con ID, título, labels y properties
       return pages.map(page => {
         const title = this._extractPageTitle(page);
         const labels = this._extractLabelsFromPage(page);
@@ -1645,7 +1734,8 @@ export class NotionService {
           id: this._normalizeId(page.id),
           title,
           url,
-          labels // Array de labels para agrupar por categoría
+          labels, // Array de labels para agrupar por categoría
+          properties: page.properties // Incluir properties para escanear mentions
         };
       });
     } catch (e) {
