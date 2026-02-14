@@ -605,7 +605,7 @@ export class NotionService {
       log('📂 Bloques de página encontrados:', pageBlocks.length);
       
       // Extraer mentions del contenido para filtrar bases de datos
-      const mentionsInContent = this._extractMentionsFromBlocks(pageBlocks);
+      const mentionsInContent = await this._extractMentionsFromBlocks(pageBlocks);
       const mentionedPageIds = new Set(mentionsInContent.map(m => {
         // Normalizar ID para comparación
         let id = m.pageId;
@@ -971,11 +971,12 @@ export class NotionService {
   }
 
   /**
-   * Extrae todos los mentions de tipo página de un array de bloques
+   * Extrae todos los mentions de tipo página de un array de bloques (recursivo)
    * @param {Array} blocks - Bloques de Notion
-   * @returns {Array} - Array de {pageId, text} para cada mention encontrado
+   * @param {boolean} recursive - Si true, escanea también bloques hijos (default: true)
+   * @returns {Promise<Array>} - Array de {pageId, text} para cada mention encontrado
    */
-  _extractMentionsFromBlocks(blocks) {
+  async _extractMentionsFromBlocks(blocks, recursive = true) {
     const mentions = [];
     
     const extractFromRichText = (richTextArray) => {
@@ -990,7 +991,7 @@ export class NotionService {
       }
     };
     
-    const processBlock = (block) => {
+    const processBlock = async (block) => {
       // Extraer de diferentes tipos de bloques que tienen rich_text
       const blockData = block[block.type];
       if (blockData?.rich_text) {
@@ -1003,10 +1004,35 @@ export class NotionService {
       if (blockData?.text) {
         extractFromRichText(blockData.text);
       }
+      
+      // Escanear celdas de tablas (table_row)
+      if (block.type === 'table_row' && blockData?.cells) {
+        for (const cell of blockData.cells) {
+          // Cada cell es un array de rich_text
+          if (Array.isArray(cell)) {
+            extractFromRichText(cell);
+          }
+        }
+      }
+      
+      // Recursión: escanear bloques hijos (toggles, callouts, etc.)
+      if (recursive && block.has_children) {
+        try {
+          const children = await this.fetchChildBlocks(block.id, true);
+          if (children && children.length > 0) {
+            const childMentions = await this._extractMentionsFromBlocks(children, true);
+            for (const cm of childMentions) {
+              mentions.push(cm);
+            }
+          }
+        } catch (e) {
+          // Si falla, continuar sin los hijos
+        }
+      }
     };
     
     for (const block of blocks) {
-      processBlock(block);
+      await processBlock(block);
     }
     
     // Eliminar duplicados por pageId
@@ -1406,7 +1432,7 @@ export class NotionService {
           // Mentions de bloques de contenido
           let mentions = [];
           if (blocks && blocks.length > 0) {
-            mentions = this._extractMentionsFromBlocks(blocks);
+            mentions = await this._extractMentionsFromBlocks(blocks);
           }
           
           // También escanear mentions en las propiedades de las páginas de DB
