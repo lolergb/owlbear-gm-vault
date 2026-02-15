@@ -1,16 +1,16 @@
 {
-  "name": "GM vault",
+  "name": "GM vault - Beta",
   "version": "1.1.0",
   "manifest_version": 1,
   "author": "lolergb",
-  "description": "A digital GM vault for Owlbear Rodeo. Organize and access notes, NPCs, and references during play.",
+  "description": "Refactor & Get Notion's page",
   "homepage_url": "https://www.notion.so/Quick-Start-2d8d4856c90e80f1b4e4ecff59e61dd5?source=manifes",
-  "icon": "https://owlbear-gm-vault.netlify.app/img/icon-store.svg",
+  "icon": "https://deploy-preview-2--owlbear-gm-vault.netlify.app/img/icon-store-beta.svg",
   "action": {
-    "title": "GM vault",
+    "title": "GM vault - Beta",
     "icon": "https://owlbear-gm-vault.netlify.app/icon.svg",
     "popover": "/index.html",
-    "height": 1000,
+    "height": 2000,
     "width": 600
   }
 }

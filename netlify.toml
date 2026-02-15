@@ -40,6 +40,31 @@
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
 
+# Cache headers para assets estáticos
+[[headers]]
+  for = "/img/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
+[[headers]]
+  for = "/*.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
+[[headers]]
+  for = "/css/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
+[[headers]]
+  for = "/js/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
 # Configuración de build
 # No se necesita build step - los archivos son estáticos
 [build]
@@ -60,4 +85,6 @@
 #   - Valor: "false" o "0" para desactivar logs
 #   - Si OWNER_TOKEN está configurado, DEBUG_MODE solo funciona para tu token
 #   - Si OWNER_TOKEN NO está configurado, DEBUG_MODE funciona para todos (menos seguro)
+# GM_VAULT_DEFAULT_CONFIG: Token de Notion para default-config
+#   - Se usa para cargar páginas de Notion en la configuración por defecto
 

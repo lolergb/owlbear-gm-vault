@@ -39,26 +39,36 @@
     body {
       color: var(--color-text-secondary);
       font-family: var(--font-family-base);
+      margin: 0;
+      padding: var(--spacing-xl);
+      height: 100vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      padding: var(--spacing-xl);
-      margin: 0;
     }
     .image-container {
       max-width: 100%;
-      max-height: calc(100vh - 100px);
+      width: 100%;
+      max-height: calc(100vh - 2 * var(--spacing-xl));
+      overflow: auto;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: var(--spacing-lg);
     }
+    .image-container.full-size {
+      max-height: calc(100vh - 2 * var(--spacing-xl));
+    }
     img {
       max-width: 100%;
       object-fit: contain;
       border-radius: var(--radius-lg);
+    }
+    img.full-size {
+      max-height: none;
+      height: auto;
     }
     .caption {
       color: var(--color-text-muted);
@@ -111,6 +121,9 @@
     .gm-only {
       display: none;
     }
+    .toolbar {
+      display: flex;
+    }
     .feedback {
       position: fixed;
       bottom: var(--spacing-xl);
@@ -149,7 +162,22 @@
     const urlParams = new URLSearchParams(window.location.search);
     let imageUrl = urlParams.get('url');
     let caption = urlParams.get('caption') || '';
-    const showShareButton = urlParams.get('share') !== 'false'; // Default true
+    // showShareButton: true por defecto, false solo si el parámetro es explícitamente 'false'
+    // Esto permite que jugadores puedan compartir cuando abren imágenes directamente
+    const shareParam = urlParams.get('share');
+    // Si shareParam es null (no se especificó), usar true por defecto
+    // Si shareParam es 'false', usar false
+    // Si shareParam es cualquier otro valor (incluyendo 'true'), usar true
+    const showShareButton = shareParam === null || shareParam !== 'false';
+    const fullSize = urlParams.get('fullSize') === 'true'; // Si es true, mostrar a tamaño completo
+    
+    console.log('📋 Parámetros del modal:', {
+      shareParam,
+      showShareButton,
+      fullSize,
+      hasUrl: !!imageUrl,
+      fullUrl: window.location.href
+    });
     
     // Decodificar el caption si existe
     if (caption) {
@@ -171,8 +199,17 @@
         }
       }
       
-      document.getElementById('viewer-image').src = imageUrl;
-      document.getElementById('viewer-image').alt = caption;
+      const viewerImage = document.getElementById('viewer-image');
+      const imageContainer = document.querySelector('.image-container');
+      
+      viewerImage.src = imageUrl;
+      viewerImage.alt = caption;
+      
+      // Si fullSize es true, aplicar estilos para mostrar a tamaño completo
+      if (fullSize) {
+        imageContainer.classList.add('full-size');
+        viewerImage.classList.add('full-size');
+      }
       
       if (caption) {
         const captionDiv = document.getElementById('viewer-caption');
@@ -195,37 +232,51 @@
       try {
         const role = await OBR.player.getRole();
         const isGM = role === 'GM';
+        const playerId = await OBR.player.getId();
         
-        // Mostrar botón de compartir si es GM/Co-GM/Player Y el parámetro share es true
-        // (showShareButton es false cuando la imagen fue recibida por broadcast)
-        if (showShareButton) {
-          document.querySelector('.gm-only').style.display = 'flex';
-          
-          // Configurar botón de compartir
+        // Siempre mostrar y configurar el botón de compartir cuando hay URL de imagen
+        // (así funciona tanto al abrir desde la lista como al recibir la imagen por broadcast)
+        const toolbar = document.querySelector('.toolbar');
+        if (toolbar && imageUrl) {
+          toolbar.style.display = 'flex';
+
           const shareButton = document.getElementById('share-button');
-          shareButton.addEventListener('click', async () => {
-            try {
-              // Enviar broadcast a todos los usuarios para que abran la imagen
-              await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
-                url: imageUrl,
-                caption: caption
-              });
-              
-              // Mostrar feedback
-              const feedback = document.getElementById('feedback');
-              feedback.classList.add('visible');
-              setTimeout(() => {
-                feedback.classList.remove('visible');
-              }, 2000);
-              
-              // Cambiar el botón a estado compartido
-              shareButton.classList.add('shared');
-              
-            } catch (error) {
-              console.error('Error al compartir imagen:', error);
-              alert('Error sharing image');
-            }
-          });
+          if (shareButton) {
+            shareButton.addEventListener('click', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+
+              try {
+                shareButton.disabled = true;
+
+                await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
+                  url: imageUrl,
+                  caption: caption,
+                  senderId: playerId,
+                  fullSize: isGM
+                });
+
+                const feedback = document.getElementById('feedback');
+                if (feedback) {
+                  feedback.classList.add('visible');
+                }
+                shareButton.classList.add('shared');
+
+                setTimeout(() => {
+                  if (feedback) {
+                    feedback.classList.remove('visible');
+                  }
+                  shareButton.classList.remove('shared');
+                  shareButton.disabled = false;
+                }, 2000);
+              } catch (error) {
+                console.error('Error al compartir imagen:', error);
+                shareButton.disabled = false;
+                const errorMessage = error?.error?.message || error?.message || error?.toString() || 'Unknown error';
+                alert('Error sharing image: ' + errorMessage);
+              }
+            });
+          }
         }
       } catch (e) {
         console.warn('No se pudo verificar el rol:', e);

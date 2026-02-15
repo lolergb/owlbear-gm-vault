@@ -758,57 +758,6 @@ function validateTotalMetadataSize(metadataKey, newValue, currentMetadata = {}) 
 }
 
 /**
- * Recalcula el orden después de filtrar elementos
- * Crea un mapa de índices antiguos a nuevos y ajusta el orden
- * @param {Array} originalOrder - Orden original con índices antiguos
- * @param {Array} originalItems - Array original de items (categories o pages)
- * @param {Array} filteredItems - Array filtrado de items
- * @param {string} type - Tipo de item: 'category' o 'page'
- * @returns {Array} Orden recalculado con nuevos índices
- */
-function recalculateOrderAfterFilter(originalOrder, originalItems, filteredItems, type) {
-  if (!originalOrder || !Array.isArray(originalOrder)) {
-    // Si no hay orden original, crear uno por defecto
-    return filteredItems.map((_, index) => ({ type, index }));
-  }
-  
-  // Crear mapa de índices antiguos a nuevos usando IDs únicos
-  // Para cada item filtrado, encontrar su índice original por ID
-  const indexMap = new Map();
-  filteredItems.forEach((filteredItem, newIndex) => {
-    // Buscar el índice original del item filtrado usando ID
-    const originalIndex = originalItems.findIndex(originalItem => {
-      // Usar ID si está disponible, sino fallback a nombre (para compatibilidad con datos legacy)
-      if (originalItem.id && filteredItem.id) {
-        return originalItem.id === filteredItem.id;
-      }
-      // Fallback para datos sin ID (legacy)
-      return originalItem.name === filteredItem.name;
-    });
-    if (originalIndex !== -1) {
-      indexMap.set(originalIndex, newIndex);
-    }
-  });
-  
-  // Recalcular el orden usando el mapa
-  const recalculatedOrder = [];
-  originalOrder.forEach(item => {
-    if (item.type === type && indexMap.has(item.index)) {
-      recalculatedOrder.push({
-        type: item.type,
-        index: indexMap.get(item.index)
-      });
-    }
-    // Mantener otros tipos de items (páginas si estamos filtrando categorías, etc.)
-    if (item.type !== type) {
-      recalculatedOrder.push(item);
-    }
-  });
-  
-  return recalculatedOrder;
-}
-
-/**
  * Filtra la configuración para incluir solo páginas visibles para players
  * Se usa para guardar en room metadata (optimiza espacio)
  * @param {object} config - Configuración completa del GM
@@ -821,13 +770,11 @@ function filterVisiblePagesForMetadata(config) {
   
   const filterCategory = (category) => {
     // Filtrar páginas visibles
-    const originalPages = category.pages || [];
-    const visiblePages = originalPages.filter(page => 
+    const visiblePages = (category.pages || []).filter(page => 
       page.visibleToPlayers === true && 
       page.url && 
       !page.url.includes('...')
     ).map(page => ({
-      id: page.id, // Preservar ID único para identificación correcta
       name: page.name,
       url: page.url,
       icon: page.icon,
@@ -838,8 +785,7 @@ function filterVisiblePagesForMetadata(config) {
     }));
     
     // Filtrar subcategorías recursivamente
-    const originalSubcategories = category.categories || [];
-    const filteredSubcategories = originalSubcategories
+    const filteredSubcategories = (category.categories || [])
       .map(filterCategory)
       .filter(subCat => 
         subCat !== null && (
@@ -853,66 +799,22 @@ function filterVisiblePagesForMetadata(config) {
       return null;
     }
     
-    // Recalcular el orden después del filtrado
-    let recalculatedOrder = null;
-    if (category.order && Array.isArray(category.order)) {
-      // Primero recalcular orden de páginas
-      const pagesOrder = recalculateOrderAfterFilter(
-        category.order,
-        originalPages,
-        visiblePages,
-        'page'
-      );
-      
-      // Luego recalcular orden de categorías
-      // La función recalculateOrderAfterFilter mantiene automáticamente los items
-      // de otros tipos (páginas) con sus índices ya ajustados
-      recalculatedOrder = recalculateOrderAfterFilter(
-        pagesOrder, // Usar el orden ya ajustado de páginas
-        originalSubcategories,
-        filteredSubcategories,
-        'category'
-      );
-    }
-    
     return {
-      id: category.id, // Preservar ID único para identificación correcta
       name: category.name,
       ...(category.icon ? { icon: category.icon } : {}),
       ...(visiblePages.length > 0 ? { pages: visiblePages } : {}),
       ...(filteredSubcategories.length > 0 ? { categories: filteredSubcategories } : {}),
-      ...(recalculatedOrder && recalculatedOrder.length > 0 ? { order: recalculatedOrder } : {})
+      ...(category.order ? { order: category.order } : {})
     };
   };
   
-  const originalCategories = config.categories || [];
-  const filteredCategories = originalCategories
+  const filteredCategories = config.categories
     .map(filterCategory)
     .filter(cat => cat !== null);
   
-  // Recalcular el orden del nivel raíz
-  let rootOrder = null;
-  if (config.order && Array.isArray(config.order)) {
-    rootOrder = recalculateOrderAfterFilter(
-      config.order,
-      originalCategories,
-      filteredCategories,
-      'category'
-    );
-  }
-  
-  // Inicializar orden si no existe en las categorías filtradas
-  if (filteredCategories.length > 0) {
-    filteredCategories.forEach(cat => {
-      if (!cat.order || !Array.isArray(cat.order) || cat.order.length === 0) {
-        initializeOrderRecursive(cat, cat.name || 'category');
-      }
-    });
-  }
-  
   return {
     categories: filteredCategories,
-    ...(rootOrder && rootOrder.length > 0 ? { order: rootOrder } : {})
+    ...(config.order ? { order: config.order } : {})
   };
 }
 
@@ -932,8 +834,8 @@ let currentRoomId = null;
 // Variable para almacenar el último rol conocido
 let lastKnownRole = null;
 
-// Función para desuscribirse de cambios de rol (usa Player.onChange en vez de polling)
-let roleChangeUnsubscribe = null;
+// Intervalo para detectar cambios de rol
+let roleCheckInterval = null;
 
 /**
  * Verifica el estado de ownership del vault
@@ -1130,20 +1032,19 @@ function getConfigSize(config) {
 }
 
 /**
- * Inicia la detección de cambios de rol usando Player.onChange
+ * Inicia la detección periódica de cambios de rol
  * Detecta promoción/revocación de GM y recarga la vista automáticamente
  */
 function startRoleChangeDetection() {
-  // Cancelar suscripción previa si existe
-  if (roleChangeUnsubscribe) {
-    roleChangeUnsubscribe();
-    roleChangeUnsubscribe = null;
+  // Cancelar intervalo previo si existe
+  if (roleCheckInterval) {
+    clearInterval(roleCheckInterval);
   }
   
-  // Usar OBR.player.onChange para detectar cambios de rol (event-driven, sin polling)
-  roleChangeUnsubscribe = OBR.player.onChange((player) => {
+  // Verificar cada 3 segundos
+  roleCheckInterval = setInterval(async () => {
     try {
-      const currentRole = player.role;
+      const currentRole = await OBR.player.getRole();
       
       if (lastKnownRole !== null && currentRole !== lastKnownRole) {
         console.log(`🔄 Role change detected: ${lastKnownRole} → ${currentRole}`);
@@ -1154,18 +1055,19 @@ function startRoleChangeDetection() {
       
       lastKnownRole = currentRole;
     } catch (e) {
-      // Ignorar errores
+      // Ignorar errores de conexión
     }
-  });
+  }, 3000);
+  
 }
 
 /**
  * Detiene la detección de cambios de rol
  */
 function stopRoleChangeDetection() {
-  if (roleChangeUnsubscribe) {
-    roleChangeUnsubscribe();
-    roleChangeUnsubscribe = null;
+  if (roleCheckInterval) {
+    clearInterval(roleCheckInterval);
+    roleCheckInterval = null;
   }
 }
 
@@ -2480,9 +2382,7 @@ function renderBlock(block) {
       return '<div class="notion-table-container" data-table-id="' + block.id + '">Loading table...</div>';
     
     case 'child_database':
-      // Las bases de datos se manejan de forma especial en renderBlocks (similar a las tablas)
-      // Este caso no debería ejecutarse nunca, pero lo dejamos por seguridad
-      return '<div class="notion-database-placeholder" data-database-id="' + block.id + '">Loading database...</div>';
+      return '<div class="notion-database-placeholder">[Base de datos - Requiere implementación adicional]</div>';
     
     case 'column_list':
       // Columnas: se procesan en renderBlocks de forma especial
@@ -2884,67 +2784,6 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
         const headingTag = `h${adjustedLevel}`;
         const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text || block.toggle?.rich_text);
         html += `<details class="notion-toggle"><summary class="notion-toggle-summary"><${headingTag} class="notion-toggle-heading-inline-error">${headingText}</${headingTag}></summary><div class="notion-toggle-content">[Error loading content]</div></details>`;
-        continue;
-      }
-    }
-    
-    // Manejar bases de datos de forma especial
-    if (type === 'child_database') {
-      try {
-        const databaseId = block.id;
-        const databaseTitle = block.child_database?.title || 'Database';
-        
-        // Intentar obtener información de la base de datos para verificar si es accesible
-        // Si se puede obtener, significa que la base de datos se procesó correctamente
-        // durante la importación, así que no mostramos nada
-        try {
-          // Obtener token del usuario
-          const userToken = getUserToken();
-          if (!userToken) {
-            throw new Error('No hay token disponible');
-          }
-          
-          // Intentar obtener páginas de la base de datos
-          const params = new URLSearchParams({
-            action: 'database',
-            databaseId: databaseId,
-            token: userToken
-          });
-          
-          const response = await fetch(`/.netlify/functions/notion-api?${params.toString()}`);
-          
-          if (response.ok) {
-            // Si se puede obtener información, la base de datos se procesó correctamente
-            // No mostramos nada porque las páginas ya están en el vault
-            log('✅ Base de datos procesada correctamente:', databaseTitle);
-            continue; // No agregar nada al HTML
-          } else {
-            // Si hay un error, mostrar mensaje de error
-            const errorData = await response.json().catch(() => ({}));
-            const errorMsg = errorData.error || 'Error desconocido';
-            throw new Error(errorMsg);
-          }
-        } catch (dbError) {
-          // Si hay un error al obtener la base de datos, mostrar mensaje de error
-          logWarn('Error al obtener información de base de datos:', dbError);
-          html += `
-            <div class="empty-state notion-database-placeholder">
-              <div class="empty-state-icon">⚠️</div>
-              <p class="empty-state-text">Error loading database</p>
-              <p class="empty-state-hint">${dbError.message || 'The database may not be accessible or shared with your Notion integration'}</p>
-            </div>
-          `;
-        }
-        continue;
-      } catch (error) {
-        log('❌ Error al renderizar base de datos:', error);
-        html += `
-          <div class="empty-state notion-database-placeholder">
-            <div class="empty-state-icon">⚠️</div>
-            <p class="empty-state-text">Error loading database</p>
-            <p class="empty-state-hint">${error.message || 'An error occurred'}</p>
-          </div>
-        `;
         continue;
       }
     }
@@ -3373,9 +3212,7 @@ async function renderTable(tableBlock) {
 // Función para mostrar imagen en modal usando Owlbear SDK
 // @param {boolean} showShareButton - Si true, muestra el botón de share (default: true)
 //                                    Pasar false cuando la imagen es recibida por broadcast
-// @param {boolean} fullSize - Si true, muestra la imagen a tamaño completo (sin limitar altura)
-//                             Usar cuando el GM comparte para que todos vean tamaño completo
-async function showImageModal(imageUrl, caption, showShareButton = true, fullSize = false) {
+async function showImageModal(imageUrl, caption, showShareButton = true) {
   try {
     // Asegurarse de que imageUrl sea una URL absoluta
     let absoluteImageUrl = imageUrl;
@@ -3404,18 +3241,13 @@ async function showImageModal(imageUrl, caption, showShareButton = true, fullSiz
     }
     // Pasar parámetro para mostrar/ocultar share button
     viewerUrl.searchParams.set('share', showShareButton ? 'true' : 'false');
-    // Pasar parámetro fullSize para mostrar imagen a tamaño completo cuando el GM comparte
-    if (fullSize) {
-      viewerUrl.searchParams.set('fullSize', 'true');
-    }
     
     log('🔍 Abriendo modal de imagen:', {
       imageUrl: absoluteImageUrl,
       viewerUrl: viewerUrl.toString(),
       baseUrl: baseUrl,
       currentLocation: window.location.href,
-      showShareButton: showShareButton,
-      fullSize: fullSize
+      showShareButton: showShareButton
     });
     
     // Abrir modal usando Owlbear SDK (modal grande fuera del popup)
@@ -3434,14 +3266,6 @@ async function showImageModal(imageUrl, caption, showShareButton = true, fullSiz
 
 // Función global para refrescar la página cuando una imagen falla
 window.refreshImage = async function(button) {
-  // Proporcionar feedback visual inmediato
-  if (button) {
-    const originalHTML = button.innerHTML;
-    button.innerHTML = '⏳ Cargando...';
-    button.disabled = true;
-    button.style.opacity = '0.6';
-  }
-  
   // Intentar obtener la información de la página actual para recargar el contenido
   const openModalButton = document.getElementById("page-open-modal-button-header");
   const pageTitle = document.getElementById("page-title");
@@ -3536,39 +3360,27 @@ async function attachImageClickHandlers() {
       showImageModal(imageUrl, caption);
     });
     
-    // Error handler para mostrar mensaje de error y refrescar automáticamente
+    // Error handler para mostrar mensaje de error
     img.addEventListener('error', function() {
-      // Si ya intentamos refrescar, mostrar mensaje de error
-      if (this.dataset.refreshAttempted === 'true') {
-        this.style.display = 'none';
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'empty-state notion-image-error';
-        errorDiv.innerHTML = `
-          <div class="empty-state-icon">⚠️</div>
-          <p class="empty-state-text">Could not load image</p>
-          <p class="empty-state-hint">The URL may have expired</p>
-          <button class="btn btn--sm btn--ghost">🔄 Reload page</button></div>
-        `;
-        
-        // Agregar event listener al botón de recargar
-        const refreshButton = errorDiv.querySelector('button');
-        if (refreshButton) {
-          refreshButton.addEventListener('click', () => {
-            refreshImage(refreshButton);
-          });
-        }
-        
-        this.parentElement.appendChild(errorDiv);
-      } else {
-        // Primera vez: intentar refrescar automáticamente
-        this.dataset.refreshAttempted = 'true';
-        log('🔄 Imagen expirada detectada, refrescando automáticamente...');
-        setTimeout(() => {
-          if (window.refreshImage) {
-            window.refreshImage();
-          }
-        }, 500); // Pequeño delay para evitar loops
+      this.style.display = 'none';
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'empty-state notion-image-error';
+      errorDiv.innerHTML = `
+        <div class="empty-state-icon">⚠️</div>
+        <p class="empty-state-text">Could not load image</p>
+        <p class="empty-state-hint">The URL may have expired</p>
+        <button class="btn btn--sm btn--ghost">🔄 Reload page</button></div>
+      `;
+      
+      // Agregar event listener al botón de recargar
+      const refreshButton = errorDiv.querySelector('button');
+      if (refreshButton) {
+        refreshButton.addEventListener('click', () => {
+          refreshImage(refreshButton);
+        });
       }
+      
+      this.parentElement.appendChild(errorDiv);
     });
     
     // Load handler para logging
@@ -3619,15 +3431,12 @@ async function attachImageClickHandlers() {
       }
       
       // Compartir con todos los jugadores via broadcast
-      // Detectar si el sender es GM para mostrar tamaño completo
-      const isGM = await getUserRole();
       try {
         await OBR.broadcast.sendMessage('com.dmscreen/showImage', {
           url: absoluteImageUrl,
-          caption: caption,
-          fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
+          caption: caption
         });
-        log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80), 'fullSize:', isGM);
+        log('📤 Imagen compartida con jugadores:', absoluteImageUrl.substring(0, 80));
         trackImageShare(absoluteImageUrl);
         
         // Feedback visual
@@ -3718,8 +3527,7 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   contentDiv.innerHTML = `
     <div class="empty-state notion-loading">
       <div class="empty-state-icon">⏳</div>
-      <p class="empty-state-text">Loading content</p>
-      <p class="empty-state-hint">Fetching data from Notion...</p>
+      <p class="empty-state-text">Loading content...</p>
     </div>
   `;
   // No usar estilos inline - la clase show-content ya está añadida por setNotionDisplayMode
@@ -3797,10 +3605,9 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
     
     if (!blocks || blocks.length === 0) {
       contentDiv.innerHTML = `
-        <div class="empty-state">
+        <div class="empty-state notion-loading">
           <div class="empty-state-icon">📄</div>
-          <p class="empty-state-text">No content found</p>
-          <p class="empty-state-hint">This page appears to be empty</p>
+          <p class="empty-state-text">No content found on this page.</p>
         </div>
       `;
       return;
@@ -3839,11 +3646,10 @@ async function loadNotionContent(url, container, forceRefresh = false, blockType
   } catch (error) {
     console.error('Error al cargar contenido de Notion:', error);
     contentDiv.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">⚠️</div>
-        <p class="empty-state-text">Error loading content</p>
-        <p class="empty-state-hint">${error.message}</p>
-        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary" style="margin-top: var(--spacing-md);">Open in Notion</button>
+      <div class="notion-error">
+        <strong>Error loading content:</strong><br>
+        ${error.message}<br><br>
+        <button onclick="window.open('${url}', '_blank')" class="btn btn--sm btn--primary">Open in Notion</button>
       </div>
     `;
   }
@@ -4141,18 +3947,6 @@ initDebugMode();
 try {
   OBR.onReady(async () => {
     try {
-      // Configurar el panel para usar 100% de altura responsive
-      // Esto ajusta el panel al tamaño del viewport disponible
-      if (OBR.panel && typeof OBR.panel.setHeight === 'function') {
-        try {
-          // Obtener la altura del viewport y configurar el panel
-          const viewportHeight = window.innerHeight;
-          await OBR.panel.setHeight(viewportHeight);
-        } catch (e) {
-          console.warn('No se pudo ajustar la altura del panel dinámicamente:', e);
-        }
-      }
-      
       // Inicializar analytics y verificar rol EN PARALELO
       const [, isGM] = await Promise.all([
         initMixpanel(),
@@ -4361,9 +4155,9 @@ try {
       const currentRoomConfig = getPagesJSONFromLocalStorage(roomId);
       let defaultConfig = getPagesJSONFromLocalStorage('default');
       
-      // Cargar room metadata para players y como fallback para Co-GMs
+      // Solo cargar room metadata para players
       let roomMetadataConfig = null;
-      if (!isGM || isCoGM) {
+      if (!isGM) {
         roomMetadataConfig = await loadPagesFromRoomMetadata();
       }
       
@@ -4434,10 +4228,16 @@ try {
           // NO copiar al roomId - usar directamente hasta que el GM cargue su propio vault
           log('✅ [Master GM] No hay configuración para este roomId, usando "default" con', defaultCount, 'elementos');
           pagesConfig = defaultConfig;
-          // Sincronizar con room metadata usando savePagesJSON para asegurar consistencia
+          // Solo sincronizar con room metadata, pero NO guardar como roomId
           pagesConfigCache = pagesConfig;
-          await savePagesJSON(pagesConfig, roomId);
-          log('✅ Default sincronizado con room metadata para players');
+          const visibleOnlyConfig = filterVisiblePagesForMetadata(pagesConfig);
+          try {
+            const compressed = compressJson(visibleOnlyConfig);
+            await OBR.room.setMetadata({ [ROOM_METADATA_KEY]: compressed });
+            log('✅ Default sincronizado con room metadata para players');
+          } catch (e) {
+            console.warn('No se pudo sincronizar default con room metadata:', e);
+          }
         }
       } else {
         // Player usa room metadata (configuración filtrada por el GM)
@@ -4617,11 +4417,10 @@ try {
       
       // Listener para recibir imágenes compartidas por el GM
       OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
-        const { url, caption, fullSize } = event.data;
+        const { url, caption } = event.data;
         if (url) {
           // Abrir la imagen en modal para este jugador (sin botón de share porque es recibido por broadcast)
-          // Si fullSize es true (GM compartió), mostrar a tamaño completo
-          await showImageModal(url, caption, false, fullSize);
+          await showImageModal(url, caption, false);
         }
       });
       
@@ -4797,115 +4596,44 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   // Mostrar botones al hover (solo para GMs)
   // Mostrar botón contextual en hover (solo para Master GM, no para Co-GM)
   if (isGM && !isCoGMGlobal) {
-    let hoverTimeout = null;
-    
     titleContainer.addEventListener('mouseenter', () => {
-      // Limpiar cualquier timeout pendiente
-      if (hoverTimeout) {
-        clearTimeout(hoverTimeout);
-        hoverTimeout = null;
-      }
-      
       if (!contextMenuButton.classList.contains('context-menu-active')) {
         contextMenuButton.style.opacity = '1';
         // categoryVisibilityButton.style.opacity = '1'; // Temporalmente oculto
       }
     });
-    
     titleContainer.addEventListener('mouseleave', (e) => {
       // No ocultar si el menú contextual está activo
       if (contextMenuButton.classList.contains('context-menu-active')) {
         return;
       }
-      
-      // Verificar si el mouse está sobre los botones o el menú contextual
-      const isOverButton = e.relatedTarget && (
-        e.relatedTarget.closest('.category-context-menu-button') ||
-        e.relatedTarget.closest('.category-visibility-button') ||
-        e.relatedTarget.closest('#context-menu')
-      );
-      
-      if (!isOverButton) {
-        // Usar timeout para asegurar que el efecto se limpie incluso si hay problemas con relatedTarget
-        hoverTimeout = setTimeout(() => {
-          if (!contextMenuButton.classList.contains('context-menu-active')) {
-            contextMenuButton.style.opacity = '0';
-          }
-          hoverTimeout = null;
-        }, 100); // Pequeño delay para permitir transiciones suaves
-      }
-    });
-    
-    // Limpiar estado hover cuando el mouse sale completamente del área de la carpeta
-    categoryDiv.addEventListener('mouseleave', (e) => {
-      // Solo limpiar si el mouse no está sobre ningún elemento hijo
-      if (!e.relatedTarget || !categoryDiv.contains(e.relatedTarget)) {
-        if (hoverTimeout) {
-          clearTimeout(hoverTimeout);
-          hoverTimeout = null;
-        }
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '0';
-        }
+      // No ocultar si el mouse está sobre los botones
+      if (!e.relatedTarget || (!e.relatedTarget.closest('.category-context-menu-button') && !e.relatedTarget.closest('.category-visibility-button') && !e.relatedTarget.closest('#context-menu'))) {
+        contextMenuButton.style.opacity = '0';
+        // Solo ocultar el botón de visibilidad si la categoría no tiene contenido visible
+        // Temporalmente oculto
+        // if (!isCategoryVisible) {
+        //   categoryVisibilityButton.style.opacity = '0';
+        // }
       }
     });
   }
   
   // Menú contextual para carpetas (solo para Master GM, no para Co-GM)
-  console.log('🟢 Verificando permisos para menú contextual:', { isGM, isCoGMGlobal, categoryName: category.name });
   if (isGM && !isCoGMGlobal) {
-  console.log('🟢 Registrando listener para menú contextual de:', category.name);
   contextMenuButton.addEventListener('click', async (e) => {
-    console.log('🔵 CLICK en menú contextual de carpeta:', category.name);
     e.stopPropagation();
     const rect = contextMenuButton.getBoundingClientRect();
     
     // Obtener información para determinar si se puede mover arriba/abajo (usando orden combinado)
-    // Usar getPagesJSONFromLocalStorage para asegurar datos frescos
-    const config = getPagesJSONFromLocalStorage(roomId) || getPagesJSON(roomId) || await getDefaultJSON();
-    console.log('🔵 Config cargado:', { hasCategories: !!config?.categories, count: config?.categories?.length });
-    
-    // Inicializar orden si no existe
-    initializeOrderRecursive(config);
-    
+    const config = getPagesJSON(roomId) || await getDefaultJSON();
     const parentPath = categoryPath.slice(0, -2);
     const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
     const index = categoryPath[categoryPath.length - 1];
-    
-    // Debug para niveles anidados
-    console.log('📂 Menú carpeta:', { 
-      categoryName: category.name, 
-      categoryPath, 
-      parentPath, 
-      index, 
-      parentExists: !!parent,
-      level 
-    });
-    
-    // Calcular si se puede mover de forma robusta (validar que parent existe)
-    let canMoveUp = false;
-    let canMoveDown = false;
-    if (parent) {
-      const combinedOrder = getCombinedOrder(parent);
-      const currentPos = combinedOrder.findIndex(o => o.type === 'category' && o.index === index);
-      canMoveUp = currentPos > 0;
-      canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
-      console.log('📂 DEBUG Menú carpeta:', { 
-        categoryName: category.name,
-        categoryPath,
-        parentPath,
-        index,
-        parentCategories: parent.categories?.length || 0,
-        parentPages: parent.pages?.length || 0,
-        parentOrder: parent.order,
-        combinedOrder, 
-        currentPos, 
-        canMoveUp, 
-        canMoveDown 
-      });
-    } else {
-      console.log('⚠️ Parent no encontrado para carpeta:', category.name, { categoryPath, parentPath });
-    }
+    const combinedOrder = getCombinedOrder(parent);
+    const currentPos = combinedOrder.findIndex(o => o.type === 'category' && o.index === index);
+    const canMoveUp = currentPos > 0;
+    const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
     
     const menuItems = [
       { 
@@ -5116,40 +4844,17 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       pageContextMenuButton.addEventListener('click', async (e) => {
         e.stopPropagation();
         const rect = pageContextMenuButton.getBoundingClientRect();
-        // Usar getPagesJSONFromLocalStorage para asegurar datos frescos
-        const config = getPagesJSONFromLocalStorage(roomId) || getPagesJSON(roomId) || await getDefaultJSON();
-        
-        // Inicializar orden si no existe
-        initializeOrderRecursive(config);
-        
+        const config = getPagesJSON(roomId) || await getDefaultJSON();
         // Obtener el path de la carpeta padre para agregar páginas en la misma carpeta
         const pageCategoryPath = categoryPath; // categoryPath viene del scope de renderCategory
         
         // Obtener información para determinar si se puede mover arriba/abajo (usando orden combinado)
         const parent = navigateConfigPath(config, pageCategoryPath);
         const pageIndex = parent && parent.pages ? parent.pages.findIndex(p => p.name === page.name && p.url === page.url) : -1;
-        
-        // Debug para niveles anidados
-        log('📄 Menú página:', { 
-          pageName: page.name, 
-          pageCategoryPath, 
-          pageIndex, 
-          parentExists: !!parent,
-          level 
-        });
-        
-        // Calcular si se puede mover de forma robusta (validar que parent existe)
-        let canMoveUp = false;
-        let canMoveDown = false;
-        if (parent && pageIndex !== -1) {
-          const combinedOrder = getCombinedOrder(parent);
-          const currentPos = combinedOrder.findIndex(o => o.type === 'page' && o.index === pageIndex);
-          canMoveUp = currentPos > 0;
-          canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
-          log('📄 Orden combinado:', { combinedOrder, currentPos, canMoveUp, canMoveDown });
-        } else {
-          log('⚠️ Parent no encontrado o página no encontrada:', { parent: !!parent, pageIndex });
-        }
+        const combinedOrder = getCombinedOrder(parent);
+        const currentPos = combinedOrder.findIndex(o => o.type === 'page' && o.index === pageIndex);
+        const canMoveUp = currentPos > 0;
+        const canMoveDown = currentPos !== -1 && currentPos < combinedOrder.length - 1;
         
         const menuItems = [
           { 
@@ -5354,10 +5059,6 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
       }
     const newIsCollapsed = contentContainer.style.display === 'none';
       
-      // Nielsen: User control - Guardar posición del título antes de animar
-      const titleRect = titleContainer.getBoundingClientRect();
-      const titleTopBeforeAnimation = titleRect.top;
-      
       // Aplicar animación suave
       if (newIsCollapsed) {
         // Abrir
@@ -5384,21 +5085,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           contentContainer.style.overflow = '';
           contentContainer.style.transition = '';
           contentContainer.style.opacity = '';
-          
-          // Nielsen: Visibility - Asegurar que el título de la carpeta abierta sea visible
-          // Si el contenido es muy largo, hacer scroll para que el título quede visible en la parte superior
-          const newTitleRect = titleContainer.getBoundingClientRect();
-          const viewportHeight = window.innerHeight;
-          
-          // Si el título quedó fuera de la vista superior, hacer scroll suave
-          if (newTitleRect.top < 0) {
-            titleContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-          // Si el contenido de la carpeta no cabe y el título está muy arriba, ajustar
-          else if (newTitleRect.top < 60 && contentContainer.scrollHeight > viewportHeight * 0.5) {
-            titleContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }, 320);
+        }, 300);
       } else {
         // Cerrar
         const scrollHeight = contentContainer.scrollHeight;
@@ -5424,16 +5111,7 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
           contentContainer.style.overflow = '';
           contentContainer.style.transition = '';
           contentContainer.style.opacity = '';
-          
-          // Nielsen: User control - Mantener el contexto del usuario
-          // Al cerrar, asegurar que el título de la carpeta siga visible
-          const newTitleRect = titleContainer.getBoundingClientRect();
-          
-          // Si el título quedó fuera de la vista, hacer scroll para que sea visible
-          if (newTitleRect.top < 0 || newTitleRect.bottom > window.innerHeight) {
-            titleContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }, 320);
+        }, 300);
       }
       
     localStorage.setItem(collapseStateKey, (!newIsCollapsed).toString());
@@ -5448,51 +5126,10 @@ function renderCategory(category, parentElement, level = 0, roomId = null, categ
   parentElement.appendChild(categoryDiv);
 }
 
-// Función para inicializar el orden en toda la configuración si no existe
-// Esto asegura que siempre haya un order válido para mover elementos
-function initializeOrderRecursive(node, nodeName = 'root') {
-  if (!node) return;
-  
-  // Si no hay order, inicializarlo con el orden por defecto
-  if (!node.order || !Array.isArray(node.order)) {
-    const order = [];
-    const categories = node.categories || [];
-    const pages = node.pages || [];
-    
-    categories.forEach((cat, index) => {
-      order.push({ type: 'category', index });
-    });
-    
-    pages.forEach((page, index) => {
-      order.push({ type: 'page', index });
-    });
-    
-    if (order.length > 0) {
-      node.order = order;
-      console.log('✅ initializeOrderRecursive: Orden inicializado para', nodeName, order);
-    }
-  }
-  
-  // Recursivamente inicializar subcarpetas
-  if (node.categories && Array.isArray(node.categories)) {
-    node.categories.forEach((cat, idx) => initializeOrderRecursive(cat, cat.name || `category-${idx}`));
-  }
-}
-
 // Función auxiliar para obtener el orden combinado de elementos en un nivel
 // El orden se guarda en parent.order como array de {type: 'category'|'page', index: number}
 function getCombinedOrder(parent) {
-  if (!parent) {
-    console.log('⚠️ getCombinedOrder: parent es null/undefined');
-    return [];
-  }
-  
-  console.log('🔍 getCombinedOrder llamado con:', {
-    hasOrder: !!parent.order,
-    orderLength: parent.order?.length,
-    categoriesCount: parent.categories?.length || 0,
-    pagesCount: parent.pages?.length || 0
-  });
+  if (!parent) return [];
   
   // Si existe un orden guardado, usarlo
   if (parent.order && Array.isArray(parent.order)) {
@@ -5548,23 +5185,15 @@ function saveCombinedOrder(parent, order) {
 
 // Función para mover un elemento arriba en el orden combinado
 async function moveItemUp(itemType, itemIndex, parentPath, roomId) {
-  // Obtener config fresca
-  const freshConfig = getPagesJSON(roomId) || await getDefaultJSON();
-  const config = JSON.parse(JSON.stringify(freshConfig));
+  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
   const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
   
-  if (!parent) {
-    log('⚠️ moveItemUp: parent no encontrado para path:', parentPath);
-    return;
-  }
+  if (!parent) return;
   
   const order = getCombinedOrder(parent);
   const currentPos = order.findIndex(o => o.type === itemType && o.index === itemIndex);
   
-  if (currentPos <= 0) {
-    log('⚠️ moveItemUp: elemento ya en primera posición o no encontrado');
-    return;
-  }
+  if (currentPos <= 0) return; // Ya está en la primera posición
   
   // Intercambiar con el anterior
   const temp = order[currentPos];
@@ -5572,8 +5201,6 @@ async function moveItemUp(itemType, itemIndex, parentPath, roomId) {
   order[currentPos - 1] = temp;
   
   saveCombinedOrder(parent, order);
-  
-  log(`🔄 Orden actualizado para ${itemType} en posición ${itemIndex}. Sincronizando con jugadores...`);
   await savePagesJSON(config, roomId);
   
   // Track page move
@@ -5590,23 +5217,15 @@ async function moveItemUp(itemType, itemIndex, parentPath, roomId) {
 
 // Función para mover un elemento abajo en el orden combinado
 async function moveItemDown(itemType, itemIndex, parentPath, roomId) {
-  // Obtener config fresca
-  const freshConfig = getPagesJSON(roomId) || await getDefaultJSON();
-  const config = JSON.parse(JSON.stringify(freshConfig));
+  const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
   const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
   
-  if (!parent) {
-    log('⚠️ moveItemDown: parent no encontrado para path:', parentPath);
-    return;
-  }
+  if (!parent) return;
   
   const order = getCombinedOrder(parent);
   const currentPos = order.findIndex(o => o.type === itemType && o.index === itemIndex);
   
-  if (currentPos === -1 || currentPos >= order.length - 1) {
-    log('⚠️ moveItemDown: elemento ya en última posición o no encontrado');
-    return;
-  }
+  if (currentPos === -1 || currentPos >= order.length - 1) return; // Ya está en la última posición
   
   // Intercambiar con el siguiente
   const temp = order[currentPos];
@@ -5614,8 +5233,6 @@ async function moveItemDown(itemType, itemIndex, parentPath, roomId) {
   order[currentPos + 1] = temp;
   
   saveCombinedOrder(parent, order);
-  
-  log(`🔄 Orden actualizado para ${itemType} en posición ${itemIndex}. Sincronizando con jugadores...`);
   await savePagesJSON(config, roomId);
   
   // Track page move
@@ -5634,49 +5251,33 @@ async function moveItemDown(itemType, itemIndex, parentPath, roomId) {
 async function moveCategoryUp(category, categoryPath, roomId) {
   const index = categoryPath[categoryPath.length - 1];
   const parentPath = categoryPath.slice(0, -2);
-  log('📦 moveCategoryUp:', { category: category.name, categoryPath, parentPath, index });
   await moveItemUp('category', index, parentPath, roomId);
 }
 
 async function moveCategoryDown(category, categoryPath, roomId) {
   const index = categoryPath[categoryPath.length - 1];
   const parentPath = categoryPath.slice(0, -2);
-  log('📦 moveCategoryDown:', { category: category.name, categoryPath, parentPath, index });
   await moveItemDown('category', index, parentPath, roomId);
 }
 
 async function movePageUp(page, pageCategoryPath, roomId) {
-  // Obtener config fresca para asegurar consistencia
   const config = getPagesJSON(roomId) || await getDefaultJSON();
   const parent = navigateConfigPath(config, pageCategoryPath);
-  if (!parent || !parent.pages) {
-    log('⚠️ movePageUp: parent o pages no encontrado para path:', pageCategoryPath);
-    return;
-  }
+  if (!parent || !parent.pages) return;
   
   const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
-  if (pageIndex === -1) {
-    log('⚠️ movePageUp: página no encontrada:', page.name);
-    return;
-  }
+  if (pageIndex === -1) return;
   
   await moveItemUp('page', pageIndex, pageCategoryPath, roomId);
 }
 
 async function movePageDown(page, pageCategoryPath, roomId) {
-  // Obtener config fresca para asegurar consistencia
   const config = getPagesJSON(roomId) || await getDefaultJSON();
   const parent = navigateConfigPath(config, pageCategoryPath);
-  if (!parent || !parent.pages) {
-    log('⚠️ movePageDown: parent o pages no encontrado para path:', pageCategoryPath);
-    return;
-  }
+  if (!parent || !parent.pages) return;
   
   const pageIndex = parent.pages.findIndex(p => p.name === page.name && p.url === page.url);
-  if (pageIndex === -1) {
-    log('⚠️ movePageDown: página no encontrada:', page.name);
-    return;
-  }
+  if (pageIndex === -1) return;
   
   await moveItemDown('page', pageIndex, pageCategoryPath, roomId);
 }
@@ -5713,23 +5314,13 @@ async function addCategoryToPageList(categoryPath, roomId) {
       if (categoryPath.length === 0) {
         // Agregar al nivel raíz
         if (!config.categories) config.categories = [];
-        const newIndex = config.categories.length;
-        config.categories.push(newCategory);
-        
-        // Actualizar el orden combinado para incluir la nueva carpeta al final
-        if (!config.order) config.order = [];
-        config.order.push({ type: 'category', index: newIndex });
+        config.categories.push(newCategory); // Agregar al final
       } else {
         // Agregar dentro de una categoría
         const parent = navigateConfigPath(config, categoryPath);
         if (parent) {
           if (!parent.categories) parent.categories = [];
-          const newIndex = parent.categories.length;
-          parent.categories.push(newCategory);
-          
-          // Actualizar el orden combinado del parent
-          if (!parent.order) parent.order = [];
-          parent.order.push({ type: 'category', index: newIndex });
+          parent.categories.push(newCategory); // Agregar al final
         }
       }
       
@@ -5757,18 +5348,17 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
   // Buscar el valor correcto del parentPath en las opciones disponibles
   let parentPathValue = '';
   if (parentPath.length > 0) {
-    const parentPathStr = JSON.stringify(parentPath);
-    // Buscar la opción que coincida exactamente con el parentPath
-    const matchingOption = categoryOptions.find(opt => opt.value === parentPathStr);
+    // Buscar en las opciones el path que coincida con el parentPath
+    const matchingOption = categoryOptions.find(opt => {
+      const optPath = JSON.parse(opt.value);
+      return JSON.stringify(optPath) === JSON.stringify(parentPath);
+    });
     if (matchingOption) {
       parentPathValue = matchingOption.value;
     } else {
       // Si no se encuentra, usar el parentPath directamente
-      parentPathValue = parentPathStr;
+      parentPathValue = JSON.stringify(parentPath);
     }
-  } else {
-    // Si no hay parentPath, significa que está en root, usar cadena vacía
-    parentPathValue = '';
   }
   
   const fields = [
@@ -5838,29 +5428,12 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
               const newParent = navigateConfigPath(config, newParentPath);
               
               if (newParent && JSON.stringify(newParentPath) !== JSON.stringify(parentPath)) {
-                // Remover del order del parent original
-                if (parent.order) {
-                  parent.order = parent.order.filter(o => !(o.type === 'category' && o.index === index));
-                  // Reajustar índices en el order del parent original
-                  parent.order = parent.order.map(o => {
-                    if (o.type === 'category' && o.index > index) {
-                      return { ...o, index: o.index - 1 };
-                    }
-                    return o;
-                  });
-                }
-                
                 // Remover de la ubicación actual
                 parent[key].splice(index, 1);
                 
                 // Agregar a la nueva ubicación
                 if (!newParent.categories) newParent.categories = [];
-                const newIndex = newParent.categories.length;
                 newParent.categories.push(currentCategory);
-                
-                // Actualizar order del nuevo parent
-                if (!newParent.order) newParent.order = [];
-                newParent.order.push({ type: 'category', index: newIndex });
               }
             }
           } catch (e) {
@@ -5869,26 +5442,10 @@ async function editCategoryFromPageList(category, categoryPath, roomId) {
             alert('Error changing parent folder. The folder was updated but remains in its current location.');
           }
         } else if (data.parentCategory === '' && parentPath.length > 0) {
-          // Remover del order del parent original
-          if (parent.order) {
-            parent.order = parent.order.filter(o => !(o.type === 'category' && o.index === index));
-            parent.order = parent.order.map(o => {
-              if (o.type === 'category' && o.index > index) {
-                return { ...o, index: o.index - 1 };
-              }
-              return o;
-            });
-          }
-          
           // Mover a raíz
           parent[key].splice(index, 1);
           if (!config.categories) config.categories = [];
-          const newIndex = config.categories.length;
           config.categories.push(currentCategory);
-          
-          // Actualizar order del config (raíz)
-          if (!config.order) config.order = [];
-          config.order.push({ type: 'category', index: newIndex });
         }
       }
       
@@ -5911,22 +5468,7 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
   const currentConfig = getPagesJSONFromLocalStorage(roomId) || await getDefaultJSON();
   const categoryOptions = getCategoryOptions(currentConfig);
   
-  // Buscar la opción que coincida exactamente con el path actual de la página
-  let defaultValue = '';
-  if (pageCategoryPath.length > 0) {
-    const pageCategoryPathStr = JSON.stringify(pageCategoryPath);
-    // Buscar la opción que coincida exactamente
-    const matchingOption = categoryOptions.find(opt => opt.value === pageCategoryPathStr);
-    if (matchingOption) {
-      defaultValue = matchingOption.value;
-    } else {
-      // Si no se encuentra, usar el valor stringificado directamente
-      defaultValue = pageCategoryPathStr;
-    }
-  } else if (categoryOptions.length > 0) {
-    // Si no hay path, usar la primera opción (root)
-    defaultValue = categoryOptions[0].value;
-  }
+  const pageCategoryPathValue = pageCategoryPath.length > 0 ? JSON.stringify(pageCategoryPath) : '';
   
   const fields = [
     { name: 'name', label: 'Name', type: 'text', required: true, value: page.name, placeholder: 'Page name' },
@@ -5935,6 +5477,7 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
   
   // Agregar selector de carpeta si hay carpetas disponibles
   if (categoryOptions.length > 0) {
+    const defaultValue = pageCategoryPathValue || categoryOptions[0].value;
     fields.push({
       name: 'category',
       label: 'Folder',
@@ -6009,28 +5552,12 @@ async function editPageFromPageList(page, pageCategoryPath, roomId) {
             const newParent = navigateConfigPath(config, newCategoryPath);
             
             if (newParent && JSON.stringify(newCategoryPath) !== JSON.stringify(pageCategoryPath)) {
-              // Remover del order del parent original
-              if (parent.order) {
-                parent.order = parent.order.filter(o => !(o.type === 'page' && o.index === pageIndex));
-                parent.order = parent.order.map(o => {
-                  if (o.type === 'page' && o.index > pageIndex) {
-                    return { ...o, index: o.index - 1 };
-                  }
-                  return o;
-                });
-              }
-              
               // Remover de la ubicación actual
               parent.pages.splice(pageIndex, 1);
               
               // Agregar a la nueva ubicación
               if (!newParent.pages) newParent.pages = [];
-              const newPageIndex = newParent.pages.length;
               newParent.pages.push(currentPage);
-              
-              // Actualizar order del nuevo parent
-              if (!newParent.order) newParent.order = [];
-              newParent.order.push({ type: 'page', index: newPageIndex });
             }
           }
         } catch (e) {
@@ -6144,28 +5671,12 @@ async function editPageFromHeader(page, pageCategoryPath, roomId, currentUrl, cu
             const newParent = navigateConfigPath(config, newCategoryPath);
             
             if (newParent && JSON.stringify(newCategoryPath) !== JSON.stringify(pageCategoryPath)) {
-              // Remover del order del parent original
-              if (parent.order) {
-                parent.order = parent.order.filter(o => !(o.type === 'page' && o.index === pageIndex));
-                parent.order = parent.order.map(o => {
-                  if (o.type === 'page' && o.index > pageIndex) {
-                    return { ...o, index: o.index - 1 };
-                  }
-                  return o;
-                });
-              }
-              
               // Remover de la ubicación actual
               parent.pages.splice(pageIndex, 1);
               
               // Agregar a la nueva ubicación
               if (!newParent.pages) newParent.pages = [];
-              const newPageIndex = newParent.pages.length;
               newParent.pages.push(currentPage);
-              
-              // Actualizar order del nuevo parent
-              if (!newParent.order) newParent.order = [];
-              newParent.order.push({ type: 'page', index: newPageIndex });
             }
           }
         } catch (e) {
@@ -6247,27 +5758,11 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
     
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
     
-    // Función helper para actualizar el orden después de eliminar
-    const updateOrderAfterDelete = (parent, deletedType, deletedIndex) => {
-      if (parent && parent.order) {
-        // Eliminar el item del order
-        parent.order = parent.order.filter(o => !(o.type === deletedType && o.index === deletedIndex));
-        // Reajustar índices de elementos del mismo tipo que venían después
-        parent.order = parent.order.map(o => {
-          if (o.type === deletedType && o.index > deletedIndex) {
-            return { ...o, index: o.index - 1 };
-          }
-          return o;
-        });
-      }
-    };
-    
     if (path.length === 0) {
       // Si el path está vacío (no debería pasar, pero por si acaso)
       const index = config.categories.findIndex(cat => cat.name === category.name);
       if (index !== -1) {
         config.categories.splice(index, 1);
-        updateOrderAfterDelete(config, 'category', index);
       } else {
         console.error('No se encontró la carpeta en el nivel raíz');
         alert('Error: Could not find folder to delete');
@@ -6279,7 +5774,6 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
       const index = parseInt(path[1]);
       if (config[key] && config[key][index] !== undefined) {
         config[key].splice(index, 1);
-        updateOrderAfterDelete(config, 'category', index);
       } else {
         console.error('No se encontró la carpeta en el nivel raíz:', key, index);
         alert('Error: Could not find folder to delete');
@@ -6293,7 +5787,6 @@ async function deleteCategoryFromPageList(category, categoryPath, roomId) {
       const parent = navigateConfigPath(config, parentPath);
       if (parent && parent[key] && parent[key][index] !== undefined) {
         parent[key].splice(index, 1);
-        updateOrderAfterDelete(parent, 'category', index);
       } else {
         console.error('No se encontró la carpeta en el path:', path);
         alert('Error: Could not find folder to delete');
@@ -6340,17 +5833,6 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
     
     parent.pages.splice(pageIndex, 1);
     
-    // Actualizar el orden después de eliminar
-    if (parent.order) {
-      parent.order = parent.order.filter(o => !(o.type === 'page' && o.index === pageIndex));
-      parent.order = parent.order.map(o => {
-        if (o.type === 'page' && o.index > pageIndex) {
-          return { ...o, index: o.index - 1 };
-        }
-        return o;
-      });
-    }
-    
     await savePagesJSON(config, roomId);
     trackPageDeleted(page.name);
     
@@ -6369,34 +5851,6 @@ async function deletePageFromPageList(page, pageCategoryPath, roomId) {
 }
 
 /**
- * Hace scroll suave a un elemento y lo resalta temporalmente
- * Aplica principios de Nielsen: Visibility of system status
- * @param {HTMLElement} element - Elemento al que hacer scroll
- * @param {Object} options - Opciones de scroll y highlight
- */
-function scrollToAndHighlight(element, options = {}) {
-  const {
-    behavior = 'smooth',
-    block = 'center',
-    highlightDuration = 1500,
-    highlightClass = 'highlight-new-item'
-  } = options;
-  
-  if (!element) return;
-  
-  // Hacer scroll al elemento
-  element.scrollIntoView({ behavior, block });
-  
-  // Agregar clase de highlight para feedback visual
-  element.classList.add(highlightClass);
-  
-  // Remover highlight después de un tiempo
-  setTimeout(() => {
-    element.classList.remove(highlightClass);
-  }, highlightDuration);
-}
-
-/**
  * Duplicar una carpeta completa (incluyendo páginas y subcarpetas)
  */
 async function duplicateCategoryFromPageList(category, categoryPath, roomId) {
@@ -6404,8 +5858,7 @@ async function duplicateCategoryFromPageList(category, categoryPath, roomId) {
     const config = JSON.parse(JSON.stringify(getPagesJSON(roomId) || await getDefaultJSON()));
     
     // Encontrar la carpeta en la configuración
-    const parentPath = categoryPath.slice(0, -2);
-    const parent = parentPath.length === 0 ? config : navigateConfigPath(config, parentPath);
+    const parent = navigateConfigPath(config, categoryPath.slice(0, -2));
     const categoryIndex = categoryPath[categoryPath.length - 1];
     
     if (!parent || !parent.categories || !parent.categories[categoryIndex]) {
@@ -6428,26 +5881,8 @@ async function duplicateCategoryFromPageList(category, categoryPath, roomId) {
     }
     duplicatedCategory.name = newName;
     
-    // El nuevo índice será el siguiente al final del array
-    const newCategoryIndex = parent.categories.length;
-    
-    // Insertar la carpeta duplicada al final del array
-    parent.categories.push(duplicatedCategory);
-    
-    // Actualizar el orden combinado para insertar justo después de la original
-    const order = getCombinedOrder(parent);
-    const originalPosInOrder = order.findIndex(o => o.type === 'category' && o.index === categoryIndex);
-    
-    // Insertar el nuevo item en el orden justo después del original
-    if (originalPosInOrder !== -1) {
-      order.splice(originalPosInOrder + 1, 0, { type: 'category', index: newCategoryIndex });
-    } else {
-      // Si no se encontró en el orden, agregarlo al final
-      order.push({ type: 'category', index: newCategoryIndex });
-    }
-    
-    // Guardar el orden actualizado
-    parent.order = order;
+    // Insertar la carpeta duplicada justo después de la original
+    parent.categories.splice(categoryIndex + 1, 0, duplicatedCategory);
     
     await savePagesJSON(config, roomId);
     
@@ -6455,15 +5890,6 @@ async function duplicateCategoryFromPageList(category, categoryPath, roomId) {
     const pageList = document.getElementById("page-list");
     if (pageList) {
       await renderPagesByCategories(config, pageList, roomId);
-      
-      // Nielsen: Visibility of system status - scroll al elemento duplicado y resaltarlo
-      // Buscar el elemento duplicado por su nombre
-      requestAnimationFrame(() => {
-        const duplicatedElement = pageList.querySelector(`[data-category-name="${newName}"]`);
-        if (duplicatedElement) {
-          scrollToAndHighlight(duplicatedElement, { block: 'center' });
-        }
-      });
     }
     
     return true;
@@ -6510,26 +5936,8 @@ async function duplicatePageFromPageList(page, pageCategoryPath, roomId) {
     }
     duplicatedPage.name = newName;
     
-    // El nuevo índice será el siguiente al final del array
-    const newPageIndex = parent.pages.length;
-    
-    // Insertar la página duplicada al final del array
-    parent.pages.push(duplicatedPage);
-    
-    // Actualizar el orden combinado para insertar justo después de la original
-    const order = getCombinedOrder(parent);
-    const originalPosInOrder = order.findIndex(o => o.type === 'page' && o.index === pageIndex);
-    
-    // Insertar el nuevo item en el orden justo después del original
-    if (originalPosInOrder !== -1) {
-      order.splice(originalPosInOrder + 1, 0, { type: 'page', index: newPageIndex });
-    } else {
-      // Si no se encontró en el orden, agregarlo al final
-      order.push({ type: 'page', index: newPageIndex });
-    }
-    
-    // Guardar el orden actualizado
-    parent.order = order;
+    // Insertar la página duplicada justo después de la original
+    parent.pages.splice(pageIndex + 1, 0, duplicatedPage);
     
     await savePagesJSON(config, roomId);
     
@@ -6537,19 +5945,6 @@ async function duplicatePageFromPageList(page, pageCategoryPath, roomId) {
     const pageList = document.getElementById("page-list");
     if (pageList) {
       await renderPagesByCategories(config, pageList, roomId);
-      
-      // Nielsen: Visibility of system status - scroll al elemento duplicado y resaltarlo
-      // Buscar el botón de página por su nombre (usando el texto del .page-name)
-      requestAnimationFrame(() => {
-        const allPageButtons = pageList.querySelectorAll('.page-button');
-        for (const btn of allPageButtons) {
-          const nameEl = btn.querySelector('.page-name');
-          if (nameEl && nameEl.textContent === newName) {
-            scrollToAndHighlight(btn, { block: 'center' });
-            break;
-          }
-        }
-      });
     }
     
     return true;
@@ -6769,28 +6164,15 @@ async function addPageToPageListWithCategorySelector(defaultCategoryPath, roomId
         // Si no hay carpetas, crear una
         if (!config.categories || config.categories.length === 0) {
           config.categories = [{ name: 'General', pages: [], categories: [] }];
-          // Actualizar order del config para incluir la nueva categoría
-          if (!config.order) config.order = [];
-          config.order.push({ type: 'category', index: 0 });
         }
         if (!config.categories[0].pages) config.categories[0].pages = [];
-        const newPageIndex = config.categories[0].pages.length;
-        config.categories[0].pages.push(newPage);
-        
-        // Actualizar el orden de la primera categoría
-        if (!config.categories[0].order) config.categories[0].order = [];
-        config.categories[0].order.push({ type: 'page', index: newPageIndex });
+        config.categories[0].pages.unshift(newPage); // Agregar al final
       } else {
         // Agregar dentro de la carpeta seleccionada
         const parent = navigateConfigPath(config, targetCategoryPath);
         if (parent) {
           if (!parent.pages) parent.pages = [];
-          const newPageIndex = parent.pages.length;
-          parent.pages.push(newPage);
-          
-          // Actualizar el orden del parent
-          if (!parent.order) parent.order = [];
-          parent.order.push({ type: 'page', index: newPageIndex });
+          parent.pages.push(newPage); // Agregar al final
         }
       }
       
@@ -6851,28 +6233,15 @@ async function addPageToPageListSimple(categoryPath, roomId) {
         // Si no hay carpetas, crear una
         if (!config.categories || config.categories.length === 0) {
           config.categories = [{ name: 'General', pages: [], categories: [] }];
-          // Actualizar order del config
-          if (!config.order) config.order = [];
-          config.order.push({ type: 'category', index: 0 });
         }
         if (!config.categories[0].pages) config.categories[0].pages = [];
-        const newPageIndex = config.categories[0].pages.length;
-        config.categories[0].pages.push(newPage);
-        
-        // Actualizar order de la categoría
-        if (!config.categories[0].order) config.categories[0].order = [];
-        config.categories[0].order.push({ type: 'page', index: newPageIndex });
+        config.categories[0].pages.unshift(newPage); // Agregar al final
       } else {
         // Agregar dentro de una categoría
         const parent = navigateConfigPath(config, categoryPath);
         if (parent) {
           if (!parent.pages) parent.pages = [];
-          const newPageIndex = parent.pages.length;
-          parent.pages.push(newPage);
-          
-          // Actualizar order del parent
-          if (!parent.order) parent.order = [];
-          parent.order.push({ type: 'page', index: newPageIndex });
+          parent.pages.push(newPage); // Agregar al final
         }
       }
       
@@ -6901,9 +6270,6 @@ async function addPageToPageListSimple(categoryPath, roomId) {
 
 // Función para renderizar páginas agrupadas por carpetas
 async function renderPagesByCategories(pagesConfig, pageList, roomId = null) {
-  // Inicializar orden si no existe (para datos importados o existentes sin order)
-  initializeOrderRecursive(pagesConfig);
-  
   // Mostrar loading
   pageList.innerHTML = `
     <div class="notion-waiting">
@@ -7511,10 +6877,9 @@ async function loadVideoThumbnailContent(url, container, name, videoType) {
   const videoId = extractVideoId(url, videoType);
   if (!videoId) {
     contentDiv.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state notion-loading">
         <div class="empty-state-icon">❌</div>
         <p class="empty-state-text">Could not extract video ID</p>
-        <p class="empty-state-hint">The video URL format is not supported</p>
       </div>
     `;
     return;
@@ -8025,8 +7390,7 @@ async function loadDemoHtmlContent(url, container) {
   contentDiv.innerHTML = `
     <div class="empty-state notion-loading">
       <div class="empty-state-icon">⏳</div>
-      <p class="empty-state-text">Loading content</p>
-      <p class="empty-state-hint">Fetching demo content...</p>
+      <p class="empty-state-text">Loading content...</p>
     </div>
   `;
   // No usar estilos inline - la clase show-content ya está añadida por setNotionDisplayMode
@@ -8069,10 +7433,9 @@ async function loadDemoHtmlContent(url, container) {
   } catch (error) {
     console.error('Error al cargar contenido HTML de demo:', error);
     contentDiv.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state notion-loading">
         <div class="empty-state-icon">❌</div>
-        <p class="empty-state-text">Error loading demo content</p>
-        <p class="empty-state-hint">${error.message}</p>
+        <p class="empty-state-text">Error loading demo content: ${error.message}</p>
       </div>
     `;
   }
@@ -8877,19 +8240,16 @@ async function showSettings() {
     if (notionTokenForm) notionTokenForm.style.display = 'none';
     if (exportVaultForm) exportVaultForm.style.display = 'none';
     if (feedbackForm) feedbackForm.style.display = '';
-    if (settingsContainer) settingsContainer.classList.add('settings--player');
   } else if (isCoGMGlobal) {
     // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
     if (notionTokenForm) notionTokenForm.style.display = 'none';
     if (exportVaultForm) exportVaultForm.style.display = '';
     if (feedbackForm) feedbackForm.style.display = '';
-    if (settingsContainer) settingsContainer.classList.remove('settings--player');
   } else {
     // Master GM: mostrar todas las secciones
     allForms.forEach(form => {
       form.style.display = '';
     });
-    if (settingsContainer) settingsContainer.classList.remove('settings--player');
   }
   
   // ============================================
@@ -8936,13 +8296,22 @@ async function showSettings() {
       `;
     }
     
-    // Inyectar vault status como primer hijo de .settings__content
-    const settingsContent = document.querySelector('#settings-container .settings__content');
-    if (settingsContent) {
-      settingsContent.insertBefore(vaultStatusBox, settingsContent.firstChild);
-    }
-    // Actualizar descripción del export según rol
+    // Insertar vault status antes de la descripción
     const exportDescription = exportVaultForm.querySelector('.settings__description');
+    
+    if (exportDescription) {
+      exportDescription.insertAdjacentElement('beforebegin', vaultStatusBox);
+    } else {
+      // Fallback: insertar después del label si no hay descripción
+      const exportLabel = exportVaultForm.querySelector('.form__label');
+      if (exportLabel) {
+        exportLabel.insertAdjacentElement('afterend', vaultStatusBox);
+      } else {
+        exportVaultForm.insertBefore(vaultStatusBox, exportVaultForm.firstChild);
+      }
+    }
+    
+    // Actualizar descripción del export según rol
     if (exportDescription) {
       if (isCoGMGlobal) {
         exportDescription.textContent = 'You can download a copy of the vault. Share content with players using the eye button on pages.';
