@@ -11,11 +11,10 @@ import {
   FULL_CONFIG_KEY,
   VAULT_OWNER_KEY,
   ROOM_CONTENT_CACHE_KEY,
-  ROOM_HTML_CACHE_KEY,
-  VAULT_SUMMARY_FOR_GM_IA
+  ROOM_HTML_CACHE_KEY
 } from '../utils/constants.js';
 import { log, logError, getUserRole } from '../utils/logger.js';
-import { compressJson, getJsonSize, filterVisiblePages, buildVaultSummaryForGMIA } from '../utils/helpers.js';
+import { compressJson, validateTotalMetadataSize, filterVisiblePages } from '../utils/helpers.js';
 
 /**
  * Servicio para gestionar el almacenamiento de configuración
@@ -220,29 +219,29 @@ export class StorageService {
       // Crear versión filtrada para players (solo estructura, sin contenido)
       const visibleConfig = filterVisiblePages(config);
       
-      // Resumen compacto para GM AI (cross-extension via room metadata)
-      const vaultSummaryForGMIA = compressJson(buildVaultSummaryForGMIA(config));
+      // Validar tamaño de config visible
+      const visibleValidation = validateTotalMetadataSize(ROOM_METADATA_KEY, visibleConfig, metadata);
       
-      // Preparar metadata actualizado (merge para no pisar otras extensiones)
-      const newMetadata = { ...metadata };
-      newMetadata[ROOM_METADATA_KEY] = compressJson(visibleConfig);
-      newMetadata[VAULT_SUMMARY_FOR_GM_IA] = vaultSummaryForGMIA;
-      if (metadata[FULL_CONFIG_KEY] !== undefined) {
-        newMetadata[FULL_CONFIG_KEY] = null;
-      }
-      
-      // Validar tamaño total
-      const totalSize = getJsonSize(newMetadata);
-      const ROOM_METADATA_SIZE_LIMIT = 16 * 1024;
-      if (totalSize > ROOM_METADATA_SIZE_LIMIT - 1024) {
-        logError('⚠️ La configuración excede el límite de metadata');
+      if (!visibleValidation.fits) {
+        logError('⚠️ La configuración visible excede el límite de metadata');
         return false;
       }
 
-      await this.OBR.room.setMetadata(newMetadata);
+      // Guardar SOLO config visible (estructura de páginas para players)
+      // El contenido completo está en localStorage del GM y se comparte via broadcast
+      await this.OBR.room.setMetadata({
+        [ROOM_METADATA_KEY]: compressJson(visibleConfig)
+      });
+
+      // Limpiar FULL_CONFIG_KEY si existe (no debería estar según arquitectura)
+      if (metadata[FULL_CONFIG_KEY]) {
+        await this.OBR.room.setMetadata({
+          [FULL_CONFIG_KEY]: null
+        });
+        log('🧹 Limpiado FULL_CONFIG_KEY del room metadata (debe estar solo en localStorage)');
+      }
 
       log('💾 Configuración visible guardada en room metadata para players');
-      log('💾 Resumen para GM AI guardado en room metadata');
       return true;
     } catch (e) {
       logError('Error al guardar en room metadata:', e);

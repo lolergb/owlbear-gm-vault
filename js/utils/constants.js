@@ -40,9 +40,6 @@ export const BROADCAST_CHANNEL_SHOW_IMAGE = 'com.dmscreen/showImage';
 export const BROADCAST_CHANNEL_REQUEST_FULL_VAULT = 'com.dmscreen/requestFullVault';
 export const BROADCAST_CHANNEL_RESPONSE_FULL_VAULT = 'com.dmscreen/responseFullVault';
 
-/** Room metadata key for GM AI: compact vault summary (titles only) for cross-extension use */
-export const VAULT_SUMMARY_FOR_GM_IA = 'com.dmscreen/vaultSummaryForGMIA';
-
 // ============================================
 // TIMEOUTS Y LÍMITES
 // ============================================
