@@ -8,7 +8,7 @@
   "icon": "https://deploy-preview-6--owlbear-gm-vault.netlify.app/img/icon-store-beta.svg",
   "action": {
     "title": "GM vault - Beta",
-    "icon": "https://owlbear-gm-vault.netlify.app/icon.svg",
+    "icon": "https://deploy-preview-6--owlbear-gm-vault.netlify.app/img/icon-beta.svg",
     "popover": "/index.html",
     "height": 2000,
     "width": 600
