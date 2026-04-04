@@ -7,6 +7,22 @@
 /* ==========================================================================
    Estilos para renderizar contenido de Notion
    ========================================================================== */
+
+/* Bloques con tag 🔒 GM: ocultos solo para players (clase aplicada por JS en body) */
+body.role-player .notion-gm-only {
+  display: none !important;
+}
+
+/* Bloques con tag 🔒 HIDDEN: ocultos para todos (GM y players) */
+.notion-hidden {
+  display: none !important;
+}
+
+/* Tags 🔒 GM y 🔒 HIDDEN: ocultos visualmente en todo el contenido */
+.notion-tag-hidden {
+  display: none !important;
+}
+
 .notion-content {
   padding: 0 var(--spacing-xl) var(--spacing-xl);
   max-width: 800px;
@@ -21,30 +37,41 @@
 .notion-page-cover {
   width: calc(100% + var(--spacing-xl)*2);
   max-width: calc(100% + var(--spacing-xl)*2);
+  min-height: var(--max-height-image-container);
   margin: calc(var(--spacing-xl) * -1) calc(var(--spacing-xl) * -1) var(--spacing-xl);
   margin-top: calc(var(--spacing-xl) * -1);
   overflow: hidden;
   border-radius: 0;
   position: relative;
+  flex-shrink: 0;
+  margin-bottom: 0;
 }
 
 .notion-page-cover .notion-image-container {
   position: relative;
   width: 100%;
+  min-height: var(--max-height-image-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.notion-page-cover .notion-image-container img,
 .notion-cover-image {
   width: 100%;
   height: auto;
   display: block;
   object-fit: cover;
-  max-height: 400px;
+  object-position: center center;
+  max-height: var(--max-height-image-container);
   cursor: pointer;
+  opacity: 1 !important;
   transition: opacity 0.2s ease;
+  margin: 0 auto;
 }
 
 .notion-cover-image:hover {
-  opacity: 0.9;
+  opacity: 0.9 !important;
 }
 
 /* Título de página de Notion (después del cover) */
@@ -93,6 +120,14 @@
   margin-bottom: calc(var(--font-size-base) * 0.5);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Ocultar párrafos vacíos (bases de datos inline convertidas a páginas) */
+.notion-content .notion-paragraph:empty,
+.notion-content .notion-paragraph:has(> br:only-child) {
+  display: none;
+  margin: 0;
+  padding: 0;
 }
 
 .notion-content .notion-text {
@@ -219,14 +254,15 @@
 .notion-content .notion-numbered-list-item {
   margin: var(--spacing-xs) 0;
   padding-left: var(--radius-sm);
+  margin-left: var(--spacing-xl);
 }
 
 .notion-content .notion-bulleted-list-item::marker {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .notion-content .notion-numbered-list-item::marker {
-  color: var(--color-text-muted);
+  color: var(--color-text-primary);
 }
 
 .notion-content .notion-callout {
@@ -279,11 +315,18 @@
   white-space: pre;
 }
 
+.notion-table-wrapper {
+  overflow-y: visible;
+  margin: var(--font-size-base) 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--border-radius-md);
+}
+
 .notion-content .notion-table {
   width: 100%;
-  margin: var(--font-size-base) 0;
+  margin: 0;
   border-collapse: collapse;
-  border: 1px solid var(--color-border-subtle);
+  border: none;
 }
 
 .notion-content .notion-table th,
@@ -334,8 +377,21 @@
 .notion-content .notion-toggle-heading summary h3 {
   display: inline;
   margin: 0;
-  font-size: inherit;
-  font-weight: inherit;
+  /* Mantener el tamaño original de los headings */
+  font-weight: var(--font-weight-bold);
+}
+
+/* Tamaños específicos para cada nivel de heading en toggles */
+.notion-content .notion-toggle-heading summary h1 {
+  font-size: calc(var(--font-size-xl) * 1.4);
+}
+
+.notion-content .notion-toggle-heading summary h2 {
+  font-size: var(--font-size-xl);
+}
+
+.notion-content .notion-toggle-heading summary h3 {
+  font-size: var(--font-size-lg);
 }
 
 .notion-content .notion-loading {
@@ -417,6 +473,10 @@
 
 .notion-container-dark .notion-content .notion-divider {
   border-top-color: var(--color-border-subtle);
+}
+
+.notion-container-dark .notion-table-wrapper {
+  border-color: var(--color-border-subtle);
 }
 
 .notion-container-dark .notion-content .notion-table {

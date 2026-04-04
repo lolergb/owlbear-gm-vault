@@ -9,6 +9,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Permanent+Marker&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/notion-markdown.css">
+  <!-- Preload iconos críticos -->
+  <link rel="preload" href="img/icon-add.svg" as="image" type="image/svg+xml">
+  <link rel="preload" href="img/icon-arrow.svg" as="image" type="image/svg+xml">
+  <link rel="preload" href="img/folder-open.svg" as="image" type="image/svg+xml">
+  <link rel="preload" href="img/folder-close.svg" as="image" type="image/svg+xml">
+  <link rel="preload" href="img/icon-eye-open.svg" as="image" type="image/svg+xml">
+  <link rel="preload" href="img/icon-eye-close.svg" as="image" type="image/svg+xml">
   <script>
     // Detección temprana del modo modal para ocultar elementos innecesarios antes de que se cargue el JS
     (function() {
@@ -73,11 +80,11 @@
         
         <div class="form">
           <div class="form__field">
-            <label class="form__label" for="token-input">Notion Token</label>
+            <label class="form__label" for="token-input"><h3 class="form__title">Notion</h3></label>
             <p class="settings__description">
               Configure your Notion token <a href="https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion" class="link">following this tutorial</a> to use your own pages. This token is global for the entire extension (all rooms). 
             </p>
-            <input type="password" id="token-input" placeholder="ntn_... or secret_..." class="input input--mono">
+            <input type="password" id="token-input" placeholder="ntn_... or secret_..." class="input input--mono" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" spellcheck="false">
             <p id="token-masked" class="form__help"></p>
           </div>
           
@@ -87,13 +94,24 @@
             <button id="clear-token" class="btn btn--ghost btn--flex">Delete Token</button>
             <button id="save-token" class="btn btn--primary btn--flex">Save Token</button>
           </div>
+          <div class="form__actions form__actions--double">
+            <button id="import-notion-btn" class="btn btn--primary btn--flex">📥 Import from Notion</button>
+          </div>
         </div>
 
         <div class="form form--separated">
-          <label class="form__label">Export vault</label>
+          <h3 class="form__title">Vault</h3>
           <p class="settings__description">
-            Save and reuse your GM Vault. Import a setup shared by another GM or export yours as a backup.
+            Save and reuse your vault. Import a setup shared by another GM or export yours as a backup.
           </p>
+          <div class="form__field">
+            <label class="form__label" for="vault-url-input">Load from URL</label>
+            <input type="url" id="vault-url-input" placeholder="https://example.com/gm-vault" class="input input--mono" autocomplete="off" spellcheck="false">
+            <div class="form__actions form__actions--single" style="margin-top: 8px;">
+              <button id="load-url-btn" class="btn btn--primary btn--flex">Load from URL</button>
+            </div>
+          </div>
+          <label class="form__label" style="margin-top: var(--spacing-lg);">Load from file</label>
           <div class="form__actions form__actions--single">
             <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">View JSON</button>
           </div>
@@ -104,19 +122,32 @@
         </div>
 
         <div class="form form--separated">
-          <label class="form__label">Feedback & Suggestions</label>
+          <label class="form__label"><h3 class="form__title">Feedback & Suggestions</h3></label>
           <p class="settings__description">
-            GM Vault is built and maintained in my spare time. If you find it useful, consider supporting the project on Patreon to help fund ongoing maintenance, bug fixes, and improvements. You can also share your ideas through our roadmap page.
+            GM Vault is built and maintained in my spare time. If you find it useful, consider supporting the project on Patreon to help fund ongoing maintenance, bug fixes, and improvements. You can also share your ideas through our roadmap page. Special thanks to the Patreon supporters!
           </p>
           <div class="form__actions form__actions--double">
             <button id="patreon-btn" class="btn btn--primary btn--flex">Support on Patreon</button>
             <button id="feedback-btn" class="btn btn--ghost btn--flex">Give Feedback</button>
           </div>
         </div>
+
+        <div class="form form--separated">
+          <label class="form__label"><h3 class="form__title">Clear Local Data</h3></label>
+          <p class="settings__description">
+            If you're experiencing issues with the vault, clearing local data can help resolve problems with corrupted or outdated cached data.
+          </p>
+          <div class="form__actions form__actions--single">
+            <button id="clear-local-data-btn" class="btn btn--ghost btn--flex">🗑️ Clear Local Data</button>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
-  <script type="module" src="js/index.js"></script>
+  <!-- Usar js/index.js (original) o js/main.js (modular) -->
+  <!-- Para probar la versión modular, cambiar a: src="js/main.js" -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
 

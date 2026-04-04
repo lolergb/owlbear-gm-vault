@@ -227,12 +227,15 @@
               // Mostrar feedback
               const feedback = document.getElementById('feedback');
               feedback.classList.add('visible');
-              setTimeout(() => {
-                feedback.classList.remove('visible');
-              }, 2000);
               
               // Cambiar el botón a estado compartido
               shareButton.classList.add('shared');
+              
+              // Quitar el estado compartido cuando desaparezca el feedback
+              setTimeout(() => {
+                feedback.classList.remove('visible');
+                shareButton.classList.remove('shared');
+              }, 2000);
               
             } catch (error) {
               console.error('Error al compartir video:', error);

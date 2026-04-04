@@ -1,0 +1,41 @@
+{
+  "categories": [
+    {
+      "name": "Session Notes",
+      "pages": [
+        {
+          "name": "Episode 1",
+          "url": "https://www.notion.so/Episode-1-abc123def456",
+          "visibleToPlayers": true
+        },
+        {
+          "name": "Episode 2",
+          "url": "https://www.notion.so/Episode-2-xyz789ghi012"
+        }
+      ],
+      "categories": [
+        {
+          "name": "NPCs",
+          "pages": [
+            {
+              "name": "Gandalf",
+              "url": "https://www.notion.so/Gandalf-npc123456",
+              "blockTypes": ["quote", "callout"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Maps",
+      "pages": [
+        {
+          "name": "World Map",
+          "url": "https://example.com/map.pdf"
+        }
+      ],
+      "collapsed": true
+    }
+  ]
+}
+
