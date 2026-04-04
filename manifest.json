@@ -5,10 +5,10 @@
   "author": "lolergb",
   "description": "Refactor & Get Notion's page",
   "homepage_url": "https://www.notion.so/Quick-Start-2d8d4856c90e80f1b4e4ecff59e61dd5?source=manifes",
-  "icon": "https://deploy-preview-6--owlbear-gm-vault.netlify.app/img/icon-store-beta.svg",
+  "icon": "https://deploy-preview-9--owlbear-gm-vault.netlify.app/img/icon-store-beta.svg",
   "action": {
     "title": "GM vault - Beta",
-    "icon": "https://deploy-preview-6--owlbear-gm-vault.netlify.app/img/icon-beta.svg",
+    "icon": "https://deploy-preview-9--owlbear-gm-vault.netlify.app/img/icon-beta.svg",
     "popover": "/index.html",
     "height": 2000,
     "width": 600
