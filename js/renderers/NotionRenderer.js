@@ -112,6 +112,7 @@ export class NotionRenderer {
       case 'heading_1': richText = block.heading_1?.rich_text; break;
       case 'heading_2': richText = block.heading_2?.rich_text; break;
       case 'heading_3': richText = block.heading_3?.rich_text; break;
+      case 'heading_4': richText = block.heading_4?.rich_text; break;
       case 'callout': richText = block.callout?.rich_text; break;
       case 'toggle': richText = block.toggle?.rich_text; break;
       case 'quote': richText = block.quote?.rich_text; break;
@@ -122,6 +123,7 @@ export class NotionRenderer {
       case 'toggle_heading_1': richText = block.heading_1?.rich_text; break;
       case 'toggle_heading_2': richText = block.heading_2?.rich_text; break;
       case 'toggle_heading_3': richText = block.heading_3?.rich_text; break;
+      case 'toggle_heading_4': richText = block.heading_4?.rich_text; break;
       default: break;
     }
     if (!richText || !Array.isArray(richText)) return false;
@@ -145,6 +147,7 @@ export class NotionRenderer {
       case 'heading_1': richText = block.heading_1?.rich_text; break;
       case 'heading_2': richText = block.heading_2?.rich_text; break;
       case 'heading_3': richText = block.heading_3?.rich_text; break;
+      case 'heading_4': richText = block.heading_4?.rich_text; break;
       case 'callout': richText = block.callout?.rich_text; break;
       case 'toggle': richText = block.toggle?.rich_text; break;
       case 'quote': richText = block.quote?.rich_text; break;
@@ -155,6 +158,7 @@ export class NotionRenderer {
       case 'toggle_heading_1': richText = block.heading_1?.rich_text; break;
       case 'toggle_heading_2': richText = block.heading_2?.rich_text; break;
       case 'toggle_heading_3': richText = block.heading_3?.rich_text; break;
+      case 'toggle_heading_4': richText = block.heading_4?.rich_text; break;
       default: break;
     }
     if (!richText || !Array.isArray(richText)) return false;
@@ -607,7 +611,10 @@ export class NotionRenderer {
       
       case 'heading_3':
         return this._renderHeading(block, 3);
-      
+
+      case 'heading_4':
+        return this._renderHeading(block, 4);
+
       case 'bulleted_list_item':
         return `<li class="notion-bulleted-list-item">${this.renderRichText(block.bulleted_list_item?.rich_text)}</li>`;
       
@@ -1047,7 +1054,7 @@ export class NotionRenderer {
       }
 
       // Manejar toggle headings (heading_1, heading_2, heading_3 con is_toggleable)
-      if ((type === 'heading_1' || type === 'heading_2' || type === 'heading_3') && block.has_children) {
+      if ((type === 'heading_1' || type === 'heading_2' || type === 'heading_3' || type === 'heading_4') && block.has_children) {
         const headingData = block[type];
         if (headingData?.is_toggleable) {
           html += await this._renderToggleHeading(block, type, typesArray, headingLevelOffset);

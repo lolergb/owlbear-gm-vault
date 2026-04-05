@@ -828,7 +828,7 @@ export class NotionService {
         }
 
         // Headings con texto
-        if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+        if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3' || block.type === 'heading_4') {
           const headingData = block[block.type];
           const text = headingData?.rich_text;
           if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {

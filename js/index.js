@@ -2372,7 +2372,10 @@ function renderBlock(block) {
       // Los headings pueden tener hijos (contenido anidado debajo del heading)
       // Se manejan en renderBlocks de forma especial si tienen hijos
       return `<h3>${renderRichText(block.heading_3?.rich_text)}</h3>`;
-    
+
+    case 'heading_4':
+      return `<h4>${renderRichText(block.heading_4?.rich_text)}</h4>`;
+
     case 'bulleted_list_item':
       // Los elementos de lista pueden tener hijos (listas anidadas)
       // Se manejan en renderBlocks de forma especial si tienen hijos
@@ -2660,7 +2663,7 @@ async function renderToggleHeading(toggleHeadingBlock, headingLevel, blockTypes 
   if (blockTypes) {
     const typesArray = Array.isArray(blockTypes) ? blockTypes : [blockTypes];
     const toggleHeadingType = `toggle_heading_${headingLevel}`;
-    if (!typesArray.includes(toggleHeadingType) && !typesArray.includes('heading_1') && !typesArray.includes('heading_2') && !typesArray.includes('heading_3') && toggleContent.trim()) {
+    if (!typesArray.includes(toggleHeadingType) && !typesArray.includes('heading_1') && !typesArray.includes('heading_2') && !typesArray.includes('heading_3') && !typesArray.includes('heading_4') && toggleContent.trim()) {
       // El toggle heading no coincide con el filtro, pero tiene contenido filtrado
       return toggleContent;
     }
@@ -2869,9 +2872,9 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     }
     
     // Manejar toggle headings de forma especial (tienen hijos que se cargan dinámicamente)
-    if (type === 'toggle_heading_1' || type === 'toggle_heading_2' || type === 'toggle_heading_3') {
+    if (type === 'toggle_heading_1' || type === 'toggle_heading_2' || type === 'toggle_heading_3' || type === 'toggle_heading_4') {
       try {
-        const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : 3;
+        const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : type === 'toggle_heading_3' ? 3 : 4;
         const toggleHeadingHtml = await renderToggleHeading(block, headingLevel, blockTypes, headingLevelOffset, useCache);
         html += toggleHeadingHtml;
         log(`    ✅ Toggle heading ${headingLevel} renderizado`);
@@ -2879,7 +2882,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       } catch (error) {
         console.error(`Error al renderizar toggle_heading:`, error);
         // Fallback: renderizar sin contenido
-        const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : 3;
+        const headingLevel = type === 'toggle_heading_1' ? 1 : type === 'toggle_heading_2' ? 2 : type === 'toggle_heading_3' ? 3 : 4;
         const adjustedLevel = Math.min(headingLevel + headingLevelOffset, 6);
         const headingTag = `h${adjustedLevel}`;
         const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text || block.toggle?.rich_text);
@@ -2950,9 +2953,9 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
     }
     
     // Manejar headings normales que tienen hijos (contenido anidado)
-    if ((type === 'heading_1' || type === 'heading_2' || type === 'heading_3') && block.has_children) {
+    if ((type === 'heading_1' || type === 'heading_2' || type === 'heading_3' || type === 'heading_4') && block.has_children) {
       try {
-        const baseHeadingLevel = type === 'heading_1' ? 1 : type === 'heading_2' ? 2 : 3;
+        const baseHeadingLevel = type === 'heading_1' ? 1 : type === 'heading_2' ? 2 : type === 'heading_3' ? 3 : 4;
         const headingLevel = Math.min(baseHeadingLevel + headingLevelOffset, 6); // Máximo h6
         const headingTag = `h${headingLevel}`;
         const headingText = renderRichText(block[`heading_${baseHeadingLevel}`]?.rich_text);
@@ -2997,7 +3000,7 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
       } catch (error) {
         console.error(`Error al renderizar heading con hijos:`, error);
         // Fallback: renderizar solo el heading sin hijos
-        const headingLevel = type === 'heading_1' ? 1 : type === 'heading_2' ? 2 : 3;
+        const headingLevel = type === 'heading_1' ? 1 : type === 'heading_2' ? 2 : type === 'heading_3' ? 3 : 4;
         const headingTag = `h${headingLevel}`;
         const headingText = renderRichText(block[`heading_${headingLevel}`]?.rich_text);
         html += `<${headingTag}>${headingText}</${headingTag}>`;
