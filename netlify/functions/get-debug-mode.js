@@ -3,7 +3,7 @@
  * Controlado por variable de entorno DEBUG_MODE (solo tú puedes configurarla)
  */
 
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   // Manejar CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -70,4 +70,3 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
