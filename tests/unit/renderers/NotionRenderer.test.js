@@ -92,6 +92,21 @@ describe('NotionRenderer page mentions', () => {
     expect(html).not.toContain('target="_blank"');
   });
 
+  it('deja como texto un href de Notion cuyo destino no está en el vault', () => {
+    const renderer = rendererWithPage(null);
+    const html = renderer.renderRichText([{
+      type: 'text',
+      text: { content: 'Missing page', link: { url: PAGE_URL } },
+      plain_text: 'Missing page',
+      href: PAGE_URL,
+      annotations: {}
+    }]);
+
+    expect(html).toContain('class="notion-mention notion-mention--plain"');
+    expect(html).not.toContain('notion-mention--link');
+    expect(html).not.toContain('target="_blank"');
+  });
+
   it('mantiene como enlace web los href que no apuntan a Notion', () => {
     const renderer = rendererWithPage(null);
     const html = renderer.renderRichText([{
