@@ -5,6 +5,7 @@
  */
 
 import { log, logWarn } from '../utils/logger.js';
+import { extractNotionPageId } from '../utils/helpers.js';
 import { resolvePageTitle } from '../utils/pageTitle.js';
 
 /** Tag en bloques code que marca contenido solo para GM/coGM (oculto para players) */
@@ -217,6 +218,18 @@ export class NotionRenderer {
       // Detectar mentions de página
       if (text.type === 'mention' && text.mention?.type === 'page') {
         return this._renderPageMention(text);
+      }
+
+      // Los enlaces internos creados como rich_text.href deben comportarse
+      // igual que una mention: abren la página dentro de GM Vault y respetan
+      // los permisos de visibilidad configurados.
+      const linkedPageId = extractNotionPageId(text.href || text.text?.link?.url);
+      if (linkedPageId) {
+        return this._renderPageMention({
+          ...text,
+          type: 'mention',
+          mention: { type: 'page', page: { id: linkedPageId } }
+        });
       }
       
       let content = text.plain_text || '';

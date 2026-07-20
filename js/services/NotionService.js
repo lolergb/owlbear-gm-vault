@@ -949,11 +949,6 @@ export class NotionService {
       if (item.type === 'mention') {
         continue;
       }
-      // Un enlace interno de Notion es navegación, no texto de contenido.
-      const linkedPageId = extractNotionPageId(item.href || item.text?.link?.url);
-      if (linkedPageId) {
-        continue;
-      }
       // Si hay texto que no es solo espacios en blanco
       if (item.type === 'text' && item.plain_text?.trim()) {
         return true;
@@ -974,9 +969,6 @@ export class NotionService {
     let hasMentions = false;
     for (const item of richText) {
       if (item.type === 'mention' && item.mention?.type === 'page') {
-        hasMentions = true;
-      } else if (extractNotionPageId(item.href || item.text?.link?.url)) {
-        // Notion también representa enlaces internos como rich_text de tipo text.
         hasMentions = true;
       } else if (item.type === 'text' && item.plain_text?.trim()) {
         // Tiene texto real además de mentions

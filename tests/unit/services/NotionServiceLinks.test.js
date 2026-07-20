@@ -45,12 +45,12 @@ describe('NotionService internal page links', () => {
     }]);
   });
 
-  it('trata una lista de enlaces internos como navegación', () => {
+  it('conserva visible una página cuyo contenido incluye enlaces internos', () => {
     const service = new NotionService();
     const richText = [linkedText()];
 
-    expect(service._hasOnlyMentions(richText)).toBe(true);
-    expect(service._hasRealTextContent(richText)).toBe(false);
+    expect(service._hasOnlyMentions(richText)).toBe(false);
+    expect(service._hasRealTextContent(richText)).toBe(true);
   });
 
   it('extrae enlaces internos de propiedades de bases de datos', () => {

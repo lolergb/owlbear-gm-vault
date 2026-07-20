@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { NotionRenderer } from '../../../js/renderers/NotionRenderer.js';
 
 const PAGE_ID = '12345678-1234-1234-1234-1234567890ab';
+const PAGE_URL = `https://app.notion.com/p/Internal-page-${PAGE_ID.replace(/-/g, '')}`;
 
 function mention(plainText) {
   return {
@@ -74,5 +75,34 @@ describe('NotionRenderer page mentions', () => {
 
     expect(renderer._renderPageMention(mention('Secret'))).toContain('notion-mention--locked');
   });
-});
 
+  it('convierte rich_text.href de Notion en navegación interna del vault', () => {
+    const renderer = rendererWithPage({ name: 'Internal page', url: PAGE_URL });
+    const html = renderer.renderRichText([{
+      type: 'text',
+      text: { content: 'Open page', link: { url: PAGE_URL } },
+      plain_text: 'Open page',
+      href: PAGE_URL,
+      annotations: {}
+    }]);
+
+    expect(html).toContain('class="notion-mention notion-mention--link"');
+    expect(html).toContain(`data-mention-page-id="${PAGE_ID}"`);
+    expect(html).toContain('data-mention-page-name="Open page"');
+    expect(html).not.toContain('target="_blank"');
+  });
+
+  it('mantiene como enlace web los href que no apuntan a Notion', () => {
+    const renderer = rendererWithPage(null);
+    const html = renderer.renderRichText([{
+      type: 'text',
+      text: { content: 'External', link: { url: 'https://example.com' } },
+      plain_text: 'External',
+      href: 'https://example.com',
+      annotations: {}
+    }]);
+
+    expect(html).toContain('class="notion-text-link"');
+    expect(html).toContain('target="_blank"');
+  });
+});
