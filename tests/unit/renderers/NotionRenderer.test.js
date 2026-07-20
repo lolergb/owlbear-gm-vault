@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { NotionRenderer } from '../../../js/renderers/NotionRenderer.js';
+import { Config } from '../../../js/models/Config.js';
+import { Page } from '../../../js/models/Page.js';
 
 const PAGE_ID = '12345678-1234-1234-1234-1234567890ab';
 const PAGE_URL = `https://app.notion.com/p/Internal-page-${PAGE_ID.replace(/-/g, '')}`;
@@ -119,5 +121,46 @@ describe('NotionRenderer page mentions', () => {
 
     expect(html).toContain('class="notion-text-link"');
     expect(html).toContain('target="_blank"');
+  });
+
+  it('renderiza link_to_page como navegación sin crear un nodo estructural', () => {
+    const renderer = rendererWithPage({ name: 'Internal page', url: PAGE_URL });
+    const html = renderer.renderBlock({
+      type: 'link_to_page',
+      link_to_page: { type: 'page_id', page_id: PAGE_ID }
+    });
+
+    expect(html).toContain('class="notion-mention notion-mention--link"');
+    expect(html).toContain(`data-mention-page-id="${PAGE_ID}"`);
+    expect(html).toContain('data-mention-page-name="Internal page"');
+  });
+
+  it('deja link_to_page como texto si el destino no está en el vault', () => {
+    const renderer = rendererWithPage(null);
+    const html = renderer.renderBlock({
+      type: 'link_to_page',
+      link_to_page: { type: 'page_id', page_id: PAGE_ID }
+    });
+
+    expect(html).toContain('notion-mention--plain');
+    expect(html).not.toContain('notion-mention--link');
+  });
+
+  it('encuentra destinos importados como páginas raíz', () => {
+    const page = new Page('Root destination', PAGE_URL);
+    const renderer = new NotionRenderer();
+    renderer.setDependencies({
+      config: new Config({ pages: [page] }),
+      isGM: true
+    });
+
+    const html = renderer.renderRichText([{
+      type: 'mention',
+      mention: { type: 'page', page: { id: PAGE_ID } },
+      plain_text: 'Root destination'
+    }]);
+
+    expect(html).toContain('notion-mention--link');
+    expect(html).toContain('data-mention-page-name="Root destination"');
   });
 });

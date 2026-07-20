@@ -337,7 +337,7 @@ function recalculateOrderAfterFilter(originalOrder, originalItems, filteredItems
  * @returns {Object} - Configuración filtrada
  */
 export function filterVisiblePages(config) {
-  if (!config || !config.categories) {
+  if (!config) {
     return { categories: [] };
   }
   
@@ -381,15 +381,23 @@ export function filterVisiblePages(config) {
   }
   
   const originalCategories = config.categories || [];
+  const originalPages = config.pages || [];
   const filtered = originalCategories
     .map(filterCategory)
     .filter(c => (c.pages && c.pages.length > 0) || (c.categories && c.categories.length > 0));
+  const filteredPages = originalPages.filter(page => page.visibleToPlayers === true);
   
   // Recalcular el orden del nivel raíz
   let rootOrder = null;
   if (config.order && Array.isArray(config.order)) {
-    rootOrder = recalculateOrderAfterFilter(
+    const pagesOrder = recalculateOrderAfterFilter(
       config.order,
+      originalPages,
+      filteredPages,
+      'page'
+    );
+    rootOrder = recalculateOrderAfterFilter(
+      pagesOrder,
       originalCategories,
       filtered,
       'category'
@@ -398,6 +406,7 @@ export function filterVisiblePages(config) {
   
   return { 
     categories: filtered,
+    ...(filteredPages.length > 0 ? { pages: filteredPages } : {}),
     ...(rootOrder && rootOrder.length > 0 ? { order: rootOrder } : {})
   };
 }

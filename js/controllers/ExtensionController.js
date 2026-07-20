@@ -3834,7 +3834,7 @@ export class ExtensionController {
    * @private
    */
   _countPagesInConfig(config) {
-    let count = 0;
+    let count = Array.isArray(config?.pages) ? config.pages.length : 0;
     
     const countInCategory = (cat) => {
       if (!cat) return;

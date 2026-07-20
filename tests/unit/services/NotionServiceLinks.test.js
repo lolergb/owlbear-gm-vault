@@ -1,224 +1,298 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
+import { NotionRenderer } from '../../../js/renderers/NotionRenderer.js';
 import { NotionService } from '../../../js/services/NotionService.js';
 
 const ROOT_ID = '3a3d4856-c90e-8019-9267-dff41d1609a1';
-const LINKED_ID = '3a3d4856-c90e-812c-abe5-d9dd50ed3333';
-const NESTED_ID = '4b4d4856-c90e-812c-abe5-d9dd50ed4444';
-const CHILD_ID = '5c5d4856-c90e-812c-abe5-d9dd50ed5555';
-const LINKED_URL = 'https://app.notion.com/p/Monstruos-y-criaturas-3a3d4856c90e812cabe5d9dd50ed3333?source=copy_link';
+const A_ID = '3a3d4856-c90e-812c-abe5-d9dd50ed3333';
+const B_ID = '4b4d4856-c90e-812c-abe5-d9dd50ed4444';
+const GROUP_ID = '5c5d4856-c90e-812c-abe5-d9dd50ed5555';
+const A1_ID = '6d6d4856-c90e-812c-abe5-d9dd50ed6666';
+const DATABASE_ID = '7e7d4856-c90e-812c-abe5-d9dd50ed7777';
+const GOBLIN_ID = '8f8d4856-c90e-812c-abe5-d9dd50ed8888';
+const OGRE_ID = '9a9d4856-c90e-812c-abe5-d9dd50ed9999';
 
-function linkedText(text = 'Monstruos y criaturas') {
+function childPage(id, title, hasChildren = false) {
   return {
-    type: 'text',
-    text: { content: text, link: { url: LINKED_URL } },
-    plain_text: text,
-    href: LINKED_URL
+    id,
+    type: 'child_page',
+    has_children: hasChildren,
+    child_page: { title }
   };
 }
 
-describe('NotionService internal page links', () => {
-  it('ignora href para la estructura y conserva las mentions reales', async () => {
-    const service = new NotionService();
-    const blocks = [{
-      id: 'block-1',
-      type: 'paragraph',
-      has_children: false,
-      paragraph: {
-        rich_text: [
-          linkedText(),
-          {
-            type: 'mention',
-            mention: { type: 'page', page: { id: LINKED_ID } },
-            plain_text: 'Nombre duplicado'
-          },
-          {
-            type: 'text',
-            text: { content: 'Web', link: { url: 'https://example.com' } },
-            plain_text: 'Web',
-            href: 'https://example.com'
-          }
+function linkToPage(id) {
+  return {
+    id: `link-${id}`,
+    type: 'link_to_page',
+    has_children: false,
+    link_to_page: { type: 'page_id', page_id: id }
+  };
+}
+
+function linkToDatabase(id) {
+  return {
+    id: `link-db-${id}`,
+    type: 'link_to_page',
+    has_children: false,
+    link_to_page: { type: 'database_id', database_id: id }
+  };
+}
+
+function childDatabase(id, title) {
+  return {
+    id,
+    type: 'child_database',
+    has_children: true,
+    child_database: { title }
+  };
+}
+
+function paragraph(richText) {
+  return {
+    id: 'paragraph',
+    type: 'paragraph',
+    has_children: false,
+    paragraph: { rich_text: richText }
+  };
+}
+
+function plainText(value) {
+  return { type: 'text', text: { content: value }, plain_text: value };
+}
+
+function pageMention(id, title) {
+  return {
+    type: 'mention',
+    mention: { type: 'page', page: { id } },
+    plain_text: title
+  };
+}
+
+function createService({ childrenByPage = {}, blocksByPage = {}, databasePages = [] } = {}) {
+  const service = new NotionService();
+  service.storageService = { getUserToken: () => 'test-token' };
+  service._fetchWithRetry = jest.fn(async url => {
+    const request = new URL(url, 'https://gm-vault.test');
+    const pageId = request.searchParams.get('pageId');
+    return {
+      ok: true,
+      json: async () => ({ results: childrenByPage[pageId] || [] })
+    };
+  });
+  service.fetchBlocks = jest.fn(async id => blocksByPage[id] || []);
+  service.fetchDatabasePages = jest.fn().mockResolvedValue(databasePages);
+  service.fetchPageInfo = jest.fn().mockResolvedValue({ properties: {} });
+  return service;
+}
+
+function collectPagePaths(config) {
+  const paths = [];
+
+  const visit = (items = [], parent = []) => {
+    for (const item of items) {
+      const path = [...parent, item.name];
+      if (item.type === 'page') paths.push(path.join('/'));
+      if (item.type === 'category') visit(item.items, path);
+    }
+  };
+
+  for (const category of config.categories || []) {
+    visit(category.items, [category.name]);
+  }
+  for (const page of config.pages || []) {
+    paths.push(page.name);
+  }
+
+  return paths;
+}
+
+describe('NotionService hierarchy and internal navigation', () => {
+  it('ignora link_to_page de página y base de datos al calcular hijos', async () => {
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [
+          linkToPage(B_ID),
+          linkToDatabase(DATABASE_ID),
+          childPage(A_ID, 'A')
         ]
       }
-    }];
-
-    await expect(service._extractMentionsFromBlocks(blocks)).resolves.toEqual([{
-      pageId: LINKED_ID,
-      text: 'Nombre duplicado'
-    }]);
-  });
-
-  it('no sube referencias atravesando el límite de una child_page', async () => {
-    const service = new NotionService();
-    service.fetchChildBlocks = jest.fn().mockResolvedValue([{
-      id: 'nested-mention',
-      type: 'paragraph',
-      has_children: false,
-      paragraph: {
-        rich_text: [{
-          type: 'mention',
-          mention: { type: 'page', page: { id: LINKED_ID } },
-          plain_text: 'Nested page'
-        }]
-      }
-    }]);
-
-    const references = await service._extractMentionsFromBlocks([{
-      id: 'child-page-block',
-      type: 'child_page',
-      has_children: true,
-      child_page: { title: 'Child' }
-    }]);
-
-    expect(references).toEqual([]);
-    expect(service.fetchChildBlocks).not.toHaveBeenCalled();
-  });
-
-  it('conserva visible una página cuyo contenido incluye enlaces internos', () => {
-    const service = new NotionService();
-    const richText = [linkedText()];
-
-    expect(service._hasOnlyMentions(richText)).toBe(false);
-    expect(service._hasRealTextContent(richText)).toBe(true);
-  });
-
-  it('no convierte href de propiedades en páginas del árbol', () => {
-    const service = new NotionService();
-    const mentions = service._extractMentionsFromPageProperties({
-      Notes: { type: 'rich_text', rich_text: [linkedText()] }
     });
 
-    expect(mentions).toEqual([]);
+    await expect(service.fetchChildPages(ROOT_ID)).resolves.toEqual([
+      expect.objectContaining({ id: A_ID, title: 'A', type: 'child_page' })
+    ]);
+    expect(service.fetchPageInfo).not.toHaveBeenCalled();
+    expect(service.fetchDatabasePages).not.toHaveBeenCalled();
   });
 
-  it('no convierte rich_text.href en una relación padre-hijo', async () => {
-    const service = new NotionService();
-    service.storageService = { getUserToken: () => 'test-token' };
-    // Reproduce la respuesta real de `action=children`: el proxy excluye los
-    // párrafos y solo devuelve bloques estructurales.
-    service._fetchWithRetry = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ results: [] })
-    });
-    const contentBlocks = [{
-      id: 'block-1',
-      type: 'bulleted_list_item',
-      has_children: false,
-      bulleted_list_item: { rich_text: [linkedText()] }
-    }];
-    service.fetchBlocks = jest.fn().mockResolvedValue(contentBlocks);
-    service.fetchPageInfo = jest.fn().mockResolvedValue({
-      properties: {
-        Name: {
-          type: 'title',
-          title: [{ plain_text: 'Monstruos y criaturas' }]
-        }
+  it('mantiene B bajo su padre real aunque A contenga link_to_page hacia B', async () => {
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [
+          childPage(A_ID, 'A'),
+          childPage(GROUP_ID, 'Group', true)
+        ],
+        [A_ID]: [linkToPage(B_ID)],
+        [GROUP_ID]: [childPage(B_ID, 'B')]
+      },
+      blocksByPage: {
+        [ROOT_ID]: [],
+        [A_ID]: [linkToPage(B_ID)],
+        [GROUP_ID]: [],
+        [B_ID]: [paragraph([plainText('B content')])]
       }
     });
 
-    const children = await service.fetchChildPages(ROOT_ID);
+    const { config, stats } = await service.generateVaultFromPage(ROOT_ID, 'Root');
 
-    expect(children).toEqual([]);
-    expect(service.fetchBlocks).not.toHaveBeenCalled();
+    expect(collectPagePaths(config)).toEqual([
+      'Root/A',
+      'Root/Group/B'
+    ]);
+    expect(stats.pagesImported).toBe(2);
     expect(service.fetchPageInfo).not.toHaveBeenCalled();
   });
 
-  it('mantiene hermanos estructurales aunque uno enlace al otro', async () => {
-    const service = new NotionService();
-    const blocksByPage = {
-      [ROOT_ID]: [{
-        id: 'root-content',
-        type: 'paragraph',
-        has_children: false,
-        paragraph: {
-          rich_text: [{ type: 'text', text: { content: 'Intro' }, plain_text: 'Intro' }]
-        }
-      }],
-      [LINKED_ID]: [{
-        id: 'sibling-link',
-        type: 'paragraph',
-        has_children: false,
-        paragraph: { rich_text: [{ ...linkedText('Abrir hermano'), href: `https://app.notion.com/p/Sibling-${NESTED_ID.replace(/-/g, '')}`, text: { content: 'Abrir hermano', link: { url: `https://app.notion.com/p/Sibling-${NESTED_ID.replace(/-/g, '')}` } } }] }
-      }],
-      [NESTED_ID]: [{
-        id: 'sibling-content',
-        type: 'paragraph',
-        has_children: false,
-        paragraph: {
-          rich_text: [{ type: 'text', text: { content: 'Sibling content' }, plain_text: 'Sibling content' }]
-        }
-      }],
-      [CHILD_ID]: [{
-        id: 'child-content',
-        type: 'paragraph',
-        has_children: false,
-        paragraph: {
-          rich_text: [{ type: 'text', text: { content: 'Child content' }, plain_text: 'Child content' }]
-        }
-      }]
-    };
-
-    service.storageService = { getUserToken: () => 'test-token' };
-    service._fetchWithRetry = jest.fn(async url => {
-      const requestedId = new URL(url, 'https://gm-vault.test').searchParams.get('pageId');
-      const results = requestedId === ROOT_ID
-        ? [
-            { id: LINKED_ID, type: 'child_page', has_children: true, child_page: { title: 'Section A' } },
-            { id: NESTED_ID, type: 'child_page', has_children: false, child_page: { title: 'Sibling B' } }
-          ]
-        : requestedId === LINKED_ID
-          ? [{ id: CHILD_ID, type: 'child_page', has_children: false, child_page: { title: 'Child A1' } }]
-          : [];
-      return { ok: true, json: async () => ({ results }) };
-    });
-    service.fetchBlocks = jest.fn(async id => blocksByPage[id] || []);
-    service._getMentionedPageInfo = jest.fn().mockResolvedValue({
-      id: NESTED_ID,
-      title: 'Sibling B',
-      url: `https://www.notion.so/Sibling-B-${NESTED_ID.replace(/-/g, '')}`,
-      parentDbId: null,
-      parentDbTitle: null
+  it('no duplica ni mueve B cuando A contiene una @mention hacia B', async () => {
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [
+          childPage(A_ID, 'A', true),
+          childPage(B_ID, 'B')
+        ],
+        [A_ID]: [childPage(A1_ID, 'A1')]
+      },
+      blocksByPage: {
+        [ROOT_ID]: [],
+        [A_ID]: [paragraph([plainText('See '), pageMention(B_ID, 'B')])],
+        [A1_ID]: [paragraph([plainText('A1 content')])],
+        [B_ID]: [paragraph([plainText('B content')])]
+      }
     });
 
-    const { config, stats } = await service.generateVaultFromPage(
-      ROOT_ID,
-      'Bajo el Hielo Carmesí'
-    );
+    const { config, stats } = await service.generateVaultFromPage(ROOT_ID, 'Root');
+    const paths = collectPagePaths(config);
 
-    const rootItems = config.categories[0].items;
-    expect(rootItems.map(item => [item.type, item.name])).toEqual([
-      ['page', 'Bajo el Hielo Carmesí'],
-      ['category', 'Section A'],
-      ['page', 'Sibling B']
+    expect(paths).toEqual([
+      'Root/A/A',
+      'Root/A/A1',
+      'Root/B'
     ]);
-    expect(rootItems[1].items.map(item => [item.type, item.name])).toEqual([
-      ['page', 'Section A'],
-      ['page', 'Child A1']
-    ]);
-    expect(JSON.stringify(rootItems[1])).not.toContain('Sibling B');
-    expect(JSON.stringify(config).match(/Sibling B/g)).toHaveLength(1);
-    expect(stats.pagesImported).toBe(4);
-    expect(service._getMentionedPageInfo).not.toHaveBeenCalled();
+    expect(paths.filter(path => path.endsWith('/B'))).toHaveLength(1);
+    expect(JSON.stringify(config.categories[0].items[0])).not.toContain('"name":"B"');
+    expect(stats.pagesImported).toBe(3);
   });
 
-  it('evita ciclos en bloques estructurales link_to_page', async () => {
-    const service = new NotionService();
-    service.fetchChildPages = jest.fn(async id => {
-      if (id === ROOT_ID) {
-        return [{ id: LINKED_ID, title: 'Monstruos y criaturas', type: 'link_to_page' }];
+  it('mantiene hermanos estructurales y resuelve un href entre ellos al renderizar', async () => {
+    const targetUrl = `https://app.notion.com/p/B-${B_ID.replace(/-/g, '')}`;
+    const internalLink = {
+      type: 'text',
+      text: { content: 'Open B', link: { url: targetUrl } },
+      plain_text: 'Open B',
+      href: targetUrl,
+      annotations: {}
+    };
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [childPage(A_ID, 'A'), childPage(B_ID, 'B')]
+      },
+      blocksByPage: {
+        [ROOT_ID]: [],
+        [A_ID]: [paragraph([internalLink])],
+        [B_ID]: [paragraph([plainText('B content')])]
       }
-      return [{ id: ROOT_ID, title: 'Bajo el Hielo Carmesí', type: 'link_to_page' }];
     });
-    service.hasRealContent = jest.fn().mockResolvedValue(true);
-    service.fetchBlocks = jest.fn().mockResolvedValue([]);
 
-    const { config, stats } = await service.generateVaultFromPage(
-      ROOT_ID,
-      'Bajo el Hielo Carmesí'
+    const { config: generatedConfig } = await service.generateVaultFromPage(ROOT_ID, 'Root');
+    const config = new ConfigParser().parse(generatedConfig);
+    const renderer = new NotionRenderer();
+    renderer.setDependencies({ config, isGM: true });
+
+    expect(collectPagePaths(generatedConfig)).toEqual(['Root/A', 'Root/B']);
+    expect(renderer.renderRichText([internalLink])).toContain(
+      `data-mention-page-id="${B_ID}"`
     );
+  });
 
-    expect(service.fetchChildPages).toHaveBeenCalledTimes(2);
-    expect(stats.pagesImported).toBe(2);
-    expect(config.categories[0].name).toBe('Bajo el Hielo Carmesí');
-    expect(JSON.stringify(config).match(/Monstruos y criaturas/g)).toHaveLength(2);
+  it('mantiene visible una página cuyo único contenido es navegación', async () => {
+    const mentionService = createService({
+      blocksByPage: {
+        [A_ID]: [paragraph([pageMention(B_ID, 'B')])]
+      }
+    });
+    const linkBlockService = createService({
+      blocksByPage: {
+        [A_ID]: [linkToPage(B_ID)]
+      }
+    });
+
+    await expect(mentionService.hasRealContent(A_ID)).resolves.toBe(true);
+    await expect(linkBlockService.hasRealContent(A_ID)).resolves.toBe(true);
+  });
+
+  it('conserva todas las filas de una child_database aunque tengan relations', async () => {
+    const databasePages = [
+      {
+        id: GOBLIN_ID,
+        title: 'Goblin',
+        url: `https://www.notion.so/Goblin-${GOBLIN_ID.replace(/-/g, '')}`,
+        labels: ['NPC'],
+        properties: {
+          Related: { type: 'relation', relation: [{ id: OGRE_ID }] }
+        }
+      },
+      {
+        id: OGRE_ID,
+        title: 'Ogre',
+        url: `https://www.notion.so/Ogre-${OGRE_ID.replace(/-/g, '')}`,
+        labels: [],
+        properties: {}
+      }
+    ];
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [
+          childDatabase(DATABASE_ID, 'Bestiary'),
+          childPage(GROUP_ID, 'NPCs', true)
+        ],
+        [GROUP_ID]: [childPage(A1_ID, 'A1')]
+      },
+      blocksByPage: {
+        [ROOT_ID]: [],
+        [GROUP_ID]: [],
+        [A1_ID]: [paragraph([plainText('A1 content')])]
+      },
+      databasePages
+    });
+
+    const { config, stats } = await service.generateVaultFromPage(ROOT_ID, 'Root');
+
+    expect(collectPagePaths(config)).toEqual([
+      'Root/Bestiary/Goblin',
+      'Root/Bestiary/Ogre',
+      'Root/NPCs/A1'
+    ]);
+    expect(stats.pagesImported).toBe(3);
+    expect(service.fetchDatabasePages).toHaveBeenCalledTimes(1);
+  });
+
+  it('conserva la carpeta de una child_database aunque se llame como su página padre', async () => {
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [childDatabase(DATABASE_ID, 'Root')]
+      },
+      blocksByPage: { [ROOT_ID]: [] },
+      databasePages: [{
+        id: GOBLIN_ID,
+        title: 'Goblin',
+        url: `https://www.notion.so/Goblin-${GOBLIN_ID.replace(/-/g, '')}`,
+        labels: []
+      }]
+    });
+
+    const { config } = await service.generateVaultFromPage(ROOT_ID, 'Root');
+
+    expect(collectPagePaths(config)).toEqual(['Root/Root/Goblin']);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { extractNotionPageId, isNotionUrl } from '../../../js/utils/helpers.js';
+import { extractNotionPageId, filterVisiblePages, isNotionUrl } from '../../../js/utils/helpers.js';
 
 const ROOT_ID = '3a3d4856-c90e-8019-9267-dff41d1609a1';
 const LINKED_ID = '3a3d4856-c90e-812c-abe5-d9dd50ed3333';
@@ -30,5 +30,17 @@ describe('Notion URL helpers', () => {
     expect(extractNotionPageId(
       'https://app.notion.com/p/3a3d4856c90e812cabe5d9dd50ed3333'
     )).toBe(LINKED_ID);
+  });
+});
+
+describe('root page visibility', () => {
+  it('conserva las páginas raíz visibles al preparar el vault de jugadores', () => {
+    const visible = { name: 'Visible', visibleToPlayers: true };
+    const hidden = { name: 'Hidden', visibleToPlayers: false };
+
+    expect(filterVisiblePages({ categories: [], pages: [visible, hidden] })).toEqual({
+      categories: [],
+      pages: [visible]
+    });
   });
 });

@@ -660,6 +660,9 @@ export class NotionRenderer {
       
       case 'child_database':
         return '<div class="notion-database-placeholder">[Base de datos - Requiere implementación adicional]</div>';
+
+      case 'link_to_page':
+        return this._renderLinkToPage(block);
       
       case 'column_list':
         return '<div class="notion-column-list">[Columnas - Procesando...]</div>';
@@ -699,6 +702,35 @@ export class NotionRenderer {
         logWarn('Tipo de bloque no soportado:', type);
         return '';
     }
+  }
+
+  /**
+   * Renderiza un bloque link_to_page como navegación interna sin convertirlo
+   * en parte de la jerarquía del vault.
+   * @param {Object} block - Bloque link_to_page de Notion
+   * @returns {string}
+   * @private
+   */
+  _renderLinkToPage(block) {
+    const linkInfo = block?.link_to_page;
+    if (!linkInfo) return '';
+
+    if (linkInfo.type === 'page_id' && linkInfo.page_id) {
+      const pageInVault = this.config?.findPageByNotionId(linkInfo.page_id) || null;
+      return this._renderPageMention({
+        type: 'mention',
+        plain_text: resolvePageTitle(pageInVault?.name, 'Linked page'),
+        mention: { type: 'page', page: { id: linkInfo.page_id } }
+      });
+    }
+
+    // Las bases de datos no tienen una Page equivalente en Config; mantener el
+    // bloque como texto en vez de crear una carpeta artificial.
+    if (linkInfo.type === 'database_id') {
+      return '<span class="notion-mention notion-mention--plain">Linked database</span>';
+    }
+
+    return '';
   }
 
   /**

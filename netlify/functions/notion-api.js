@@ -140,9 +140,11 @@ export const handler = async (event, context) => {
         startCursor = data.next_cursor;
       }
 
-      // Filtrar child_page, link_to_page y child_database blocks manteniendo el orden original
+      // La jerarquía solo se deriva de contención real. `link_to_page` es una
+      // referencia de navegación y se renderiza dentro del contenido, pero no
+      // debe convertirse en una página hija del vault.
       const pageBlocks = allBlocks.filter(block => 
-        block.type === 'child_page' || block.type === 'link_to_page' || block.type === 'child_database'
+        block.type === 'child_page' || block.type === 'child_database'
       );
       
       return {
