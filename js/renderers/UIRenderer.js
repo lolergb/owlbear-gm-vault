@@ -5,7 +5,7 @@
  * Compatible con el CSS existente (app.css)
  */
 
-import { generateColorFromString, getInitial, extractNotionPageId } from '../utils/helpers.js';
+import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
 import { log } from '../utils/logger.js';
 import { iconHtml } from '../utils/iconHelper.js';
 
@@ -377,7 +377,7 @@ export class UIRenderer {
     // Primero verificar si es contenido embebido (local-first de Obsidian)
     if (page.htmlContent) {
       linkIconHtml = ico('img/icon-notion.svg', 'Local');
-    } else if (url.includes('notion.so') || url.includes('notion.site')) {
+    } else if (isNotionUrl(url)) {
       linkIconHtml = ico('img/icon-notion.svg', 'Notion');
     } else if (url.includes('dndbeyond.com')) {
       linkIconHtml = ico('img/icon-dnd.svg', 'D&D Beyond');

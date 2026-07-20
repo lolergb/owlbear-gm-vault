@@ -5,6 +5,7 @@
  */
 
 import { ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
+import { extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
 import { log, logError, logWarn } from '../utils/logger.js';
 import { resolvePageTitle } from '../utils/pageTitle.js';
 
@@ -607,6 +608,7 @@ export class NotionService {
       
       // Extraer mentions del contenido para filtrar bases de datos
       const mentionsInContent = await this._extractMentionsFromBlocks(pageBlocks);
+      const linkedPageReferences = [...mentionsInContent];
       const mentionedPageIds = new Set(mentionsInContent.map(m => {
         // Normalizar ID para comparación
         let id = m.pageId;
@@ -652,6 +654,7 @@ export class NotionService {
                   for (const mention of propertyMentions) {
                     const normalizedId = this._normalizeId(mention.pageId);
                     mentionedPageIds.add(normalizedId);
+                    linkedPageReferences.push({ ...mention, pageId: normalizedId });
                   }
                 }
               }
@@ -728,6 +731,7 @@ export class NotionService {
                 for (const mention of propertyMentions) {
                   const normalizedId = this._normalizeId(mention.pageId);
                   mentionedPageIds.add(normalizedId);
+                  linkedPageReferences.push({ ...mention, pageId: normalizedId });
                 }
               }
             }
@@ -771,6 +775,35 @@ export class NotionService {
           } catch (e) {
             logWarn('No se pudo obtener páginas de base de datos:', databaseId, e);
           }
+        }
+      }
+
+      // Los enlaces internos escritos como texto enriquecido no aparecen como
+      // child_page ni link_to_page en la API. Incorporarlos aquí hace que el
+      // generador los recorra igual que cualquier otra página hija.
+      const includedIds = new Set(results.map(result => this._normalizeId(result.id)));
+      includedIds.add(this._normalizeId(pageId));
+
+      for (const reference of linkedPageReferences) {
+        const linkedPageId = this._normalizeId(reference.pageId);
+        if (!linkedPageId || includedIds.has(linkedPageId)) continue;
+
+        try {
+          const pageInfo = await this.fetchPageInfo(linkedPageId, false);
+          const title = resolvePageTitle(
+            this._extractPageTitleFromInfo(pageInfo),
+            reference.text
+          );
+
+          results.push({
+            id: linkedPageId,
+            title,
+            url: this._buildNotionUrl(title, linkedPageId),
+            type: 'linked_text_page'
+          });
+          includedIds.add(linkedPageId);
+        } catch (e) {
+          logWarn('No se pudo obtener info de enlace interno:', linkedPageId, e);
         }
       }
 
@@ -916,6 +949,11 @@ export class NotionService {
       if (item.type === 'mention') {
         continue;
       }
+      // Un enlace interno de Notion es navegación, no texto de contenido.
+      const linkedPageId = extractNotionPageId(item.href || item.text?.link?.url);
+      if (linkedPageId) {
+        continue;
+      }
       // Si hay texto que no es solo espacios en blanco
       if (item.type === 'text' && item.plain_text?.trim()) {
         return true;
@@ -936,6 +974,9 @@ export class NotionService {
     let hasMentions = false;
     for (const item of richText) {
       if (item.type === 'mention' && item.mention?.type === 'page') {
+        hasMentions = true;
+      } else if (extractNotionPageId(item.href || item.text?.link?.url)) {
+        // Notion también representa enlaces internos como rich_text de tipo text.
         hasMentions = true;
       } else if (item.type === 'text' && item.plain_text?.trim()) {
         // Tiene texto real además de mentions
@@ -987,6 +1028,15 @@ export class NotionService {
           mentions.push({
             pageId: item.mention.page.id,
             text: item.plain_text || 'Untitled'
+          });
+          continue;
+        }
+
+        const linkedPageId = extractNotionPageId(item.href || item.text?.link?.url);
+        if (linkedPageId) {
+          mentions.push({
+            pageId: linkedPageId,
+            text: item.plain_text?.trim() || 'Untitled'
           });
         }
       }
@@ -1040,9 +1090,10 @@ export class NotionService {
     const uniqueMentions = [];
     const seenIds = new Set();
     for (const mention of mentions) {
-      if (!seenIds.has(mention.pageId)) {
-        seenIds.add(mention.pageId);
-        uniqueMentions.push(mention);
+      const normalizedId = this._normalizeId(mention.pageId);
+      if (!seenIds.has(normalizedId)) {
+        seenIds.add(normalizedId);
+        uniqueMentions.push({ ...mention, pageId: normalizedId });
       }
     }
     
@@ -1073,6 +1124,19 @@ export class NotionService {
           });
           if (pageTitle) {
             log(`  🔗 Mention detectado en "${pageTitle}": ${mentionText || item.mention.page.id}`);
+          }
+          continue;
+        }
+
+        const linkedPageId = extractNotionPageId(item.href || item.text?.link?.url);
+        if (linkedPageId) {
+          const linkText = item.plain_text?.trim() || null;
+          mentions.push({
+            pageId: linkedPageId,
+            text: linkText
+          });
+          if (pageTitle) {
+            log(`  🔗 Enlace interno detectado en "${pageTitle}": ${linkText || linkedPageId}`);
           }
         }
       }
@@ -1107,9 +1171,10 @@ export class NotionService {
     const uniqueMentions = [];
     const seenIds = new Set();
     for (const mention of mentions) {
-      if (!seenIds.has(mention.pageId)) {
-        seenIds.add(mention.pageId);
-        uniqueMentions.push(mention);
+      const normalizedId = this._normalizeId(mention.pageId);
+      if (!seenIds.has(normalizedId)) {
+        seenIds.add(normalizedId);
+        uniqueMentions.push({ ...mention, pageId: normalizedId });
       }
     }
     
@@ -1225,6 +1290,7 @@ export class NotionService {
       dbPagesFiltered: 0,   // Páginas de DB filtradas intencionalmente (no es error)
       unsupportedTypes: new Set()
     };
+    const visitedPageIds = new Set();
 
     /**
      * Procesa una página y devuelve un item (page o category con items[])
@@ -1234,6 +1300,13 @@ export class NotionService {
         stats.pagesSkipped++;
         return null;
       }
+
+      const normalizedId = this._normalizeId(id);
+      if (visitedPageIds.has(normalizedId)) {
+        log(`↪️ Saltando página ya recorrida: ${title}`);
+        return null;
+      }
+      visitedPageIds.add(normalizedId);
 
       try {
         // Reportar progreso
@@ -1717,7 +1790,7 @@ export class NotionService {
     }
     
     // Fallback: extraer título desde page.url (la API a veces devuelve propiedades solo con ID)
-    if (page.url && (page.url.includes('notion.so') || page.url.includes('notion.site'))) {
+    if (page.url && isNotionUrl(page.url)) {
       const titleFromUrl = this._extractTitleFromNotionUrl(page.url);
       if (titleFromUrl) return titleFromUrl;
     }
@@ -1825,7 +1898,7 @@ export class NotionService {
         const title = this._extractPageTitle(page);
         const labels = this._extractLabelsFromPage(page);
         // Usar page.url de la API cuando exista y sea de Notion (formato correcto con slug)
-        const url = (page.url && (page.url.includes('notion.so') || page.url.includes('notion.site')))
+        const url = (page.url && isNotionUrl(page.url))
           ? page.url
           : this._buildNotionUrl(title, page.id);
         

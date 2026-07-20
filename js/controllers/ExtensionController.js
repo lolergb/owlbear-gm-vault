@@ -5,7 +5,7 @@
  */
 
 import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
-import { filterVisiblePages } from '../utils/helpers.js';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
 import {
@@ -4318,7 +4318,7 @@ export class ExtensionController {
    */
   _detectPageType(url) {
     if (!url) return 'unknown';
-    if (url.includes('notion.so') || url.includes('notion.site')) return 'notion';
+    if (isNotionUrl(url)) return 'notion';
     if (/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)) return 'image';
     if (/\.(mp4|webm|mov)$/i.test(url) || url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com')) return 'video';
     if (url.includes('docs.google.com')) return 'google_doc';

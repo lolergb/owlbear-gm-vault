@@ -104,7 +104,17 @@ export function validateTotalMetadataSize(metadataKey, newValue, currentMetadata
  */
 export function isNotionUrl(url) {
   if (!url || typeof url !== 'string') return false;
-  return url.includes('notion.so') || url.includes('notion.site');
+
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname === 'notion.so'
+      || hostname.endsWith('.notion.so')
+      || hostname === 'notion.site'
+      || hostname.endsWith('.notion.site')
+      || hostname === 'app.notion.com';
+  } catch (_) {
+    return false;
+  }
 }
 
 /**
@@ -138,8 +148,9 @@ export function extractNotionPageId(url) {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
     
-    // Buscar un ID de 32 caracteres hexadecimales en el pathname
-    const idMatch = pathname.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
+    // Buscar un ID de 32 caracteres hexadecimales en cualquier segmento.
+    // Soporta tanto notion.so/slug-id como app.notion.com/p/slug-id y /p/id.
+    const idMatch = pathname.match(/(?:^|[-/])([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
     
     if (idMatch && idMatch[1]) {
       const pageId = idMatch[1];
@@ -425,4 +436,3 @@ export function throttle(func, limit) {
     }
   };
 }
-
