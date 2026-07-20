@@ -5,6 +5,7 @@
  */
 
 import { log, logWarn } from '../utils/logger.js';
+import { resolvePageTitle } from '../utils/pageTitle.js';
 
 /** Tag en bloques code que marca contenido solo para GM/coGM (oculto para players) */
 const GM_ONLY_CODE_TAG = '🔒 GM';
@@ -262,29 +263,27 @@ export class NotionRenderer {
    */
   _renderPageMention(text) {
     const mentionedPageId = text.mention?.page?.id;
-    const apiDisplayName = text.plain_text || 'Page';
+    const pageInVault = this.config?.findPageByNotionId(mentionedPageId) || null;
+    // El texto de la mention es el dato más reciente disponible en este punto.
+    // Si Notion devuelve un placeholder, usar el nombre persistido del vault.
+    const displayName = resolvePageTitle(text.plain_text, pageInVault?.name);
+    const escapedDisplayName = this._escapeHtml(displayName);
+    const escapedPageId = this._escapeHtml(mentionedPageId || '');
     
     // Si estamos dentro de un modal, los mentions NO son clickeables (evita navegación infinita)
     if (this.isRenderingInModal) {
-      return `<span class="notion-mention notion-mention--disabled" aria-disabled="true">${apiDisplayName}</span>`;
+      return `<span class="notion-mention notion-mention--disabled" aria-disabled="true">${escapedDisplayName}</span>`;
     }
     
     // Si no hay config, renderizar como texto plano (pero con data-mention-page-id para actualización posterior)
     if (!this.config) {
-      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${mentionedPageId}" data-mention-page-name="${apiDisplayName.replace(/"/g, '&quot;')}">${apiDisplayName}</span>`;
+      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${escapedPageId}" data-mention-page-name="${escapedDisplayName}">${escapedDisplayName}</span>`;
     }
-    
-    // Buscar si la página está en el vault
-    const pageInVault = this.config.findPageByNotionId(mentionedPageId);
     
     // Si la página no está en el vault, renderizar como texto plano (pero con data para actualización posterior)
     if (!pageInVault) {
-      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${mentionedPageId}" data-mention-page-name="${apiDisplayName.replace(/"/g, '&quot;')}">${apiDisplayName}</span>`;
+      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${escapedPageId}" data-mention-page-name="${escapedDisplayName}">${escapedDisplayName}</span>`;
     }
-    
-    // Usar el nombre del vault si está disponible, ya que la API a veces devuelve "Untitled"
-    // especialmente en tablas y otros bloques anidados
-    const displayName = pageInVault.name || apiDisplayName;
     
     // Para players: verificar si la página es visible
     // GM Master y Co-GM pueden ver todo, solo players tienen restricciones
@@ -300,13 +299,13 @@ export class NotionRenderer {
     // Página en vault: renderizar como enlace clickeable (incluso si no visible, para mostrar mensaje)
     return `<span 
       class="notion-mention notion-mention--link${lockedClass}" 
-      data-mention-page-id="${mentionedPageId}"
-      data-mention-page-name="${displayName.replace(/"/g, '&quot;')}"
-      data-mention-page-url="${pageInVault.url || ''}"
+      data-mention-page-id="${escapedPageId}"
+      data-mention-page-name="${escapedDisplayName}"
+      data-mention-page-url="${this._escapeHtml(pageInVault.url || '')}"
       role="button"
       tabindex="0"
-      aria-label="Open ${displayName}"
-    >${displayName}</span>`;
+      aria-label="Open ${escapedDisplayName}"
+    >${escapedDisplayName}</span>`;
   }
 
   /**
@@ -1362,4 +1361,3 @@ export class NotionRenderer {
 }
 
 export default NotionRenderer;
-

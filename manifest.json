@@ -1,5 +1,5 @@
 {
-  "name": "GM vault",
+  "name": "GM Vault Beta",
   "version": "2.0.0",
   "manifest_version": 1,
   "author": "lolergb",
@@ -7,7 +7,7 @@
   "homepage_url": "https://www.notion.so/Quick-Start-2d8d4856c90e80f1b4e4ecff59e61dd5?source=manifes",
   "icon": "https://owlbear-gm-vault.netlify.app/img/icon-store.svg",
   "action": {
-    "title": "GM vault",
+    "title": "GM Vault Beta",
     "icon": "https://owlbear-gm-vault.netlify.app/icon.svg",
     "popover": "/index.html",
     "height": 2000,

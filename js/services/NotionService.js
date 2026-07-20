@@ -6,6 +6,7 @@
 
 import { ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
 import { log, logError, logWarn } from '../utils/logger.js';
+import { resolvePageTitle } from '../utils/pageTitle.js';
 
 /**
  * Servicio para interactuar con Notion
@@ -1541,11 +1542,9 @@ export class NotionService {
                   continue;
                 }
                 
-                // Usar el título del mention si está disponible y pageInfo.title es "Untitled"
-                // El mention.text ya contiene el título correcto desde la API de Notion
-                const finalTitle = (pageInfo.title === 'Untitled' && mention.text && mention.text !== 'Untitled') 
-                  ? mention.text 
-                  : pageInfo.title;
+                // Prioridad: título real de la página > texto de la mention > fallback.
+                // El resolvedor común descarta placeholders, espacios y variantes de mayúsculas.
+                const finalTitle = resolvePageTitle(pageInfo.title, mention.text);
                 
                 // Crear la página
                 const newPage = {
@@ -1846,4 +1845,3 @@ export class NotionService {
 }
 
 export default NotionService;
-

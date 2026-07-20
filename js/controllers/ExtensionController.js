@@ -8,6 +8,12 @@ import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebug
 import { filterVisiblePages } from '../utils/helpers.js';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
+import {
+  PAGE_TITLE_FALLBACK,
+  getUsablePageTitle,
+  repairPageTitle,
+  resolvePageTitle
+} from '../utils/pageTitle.js';
 
 // Models
 import { Page } from '../models/Page.js';
@@ -447,7 +453,7 @@ export class ExtensionController {
     if (pageTitle) {
       // Añadir indicador de visibilidad si está compartida con players
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      pageTitle.innerHTML = page.name + visibilityIndicator;
+      pageTitle.innerHTML = resolvePageTitle(page.name) + visibilityIndicator;
     }
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
@@ -5397,6 +5403,8 @@ export class ExtensionController {
     // Obtener info de la página (cover, título, icono) y bloques
     // Si forceRefresh, no usar caché para ninguno
     const pageInfo = await this.notionService.fetchPageInfo(pageId, !forceRefresh);
+    const notionTitle = this._extractNotionPageTitle(pageInfo);
+    const notionPageTitle = await this._repairStoredPageTitle(page, notionTitle);
     const blocks = await this.notionService.fetchBlocks(pageId, !forceRefresh);
     const blocksHtml = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
     
@@ -5433,9 +5441,6 @@ export class ExtensionController {
       }
     }
     
-    // Extraer título de Notion (solo usar datos de Notion, no del vault)
-    const notionTitle = this._extractNotionPageTitle(pageInfo);
-    
     // Icono de Notion
     let notionIconMarkup = '';
     if (pageInfo?.icon) {
@@ -5451,8 +5456,7 @@ export class ExtensionController {
     // Indicador de visibilidad para players - fácil de personalizar
     const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
     
-    // Usar título de Notion para el contenido interno, o "Untitled" si no existe
-    const notionPageTitle = notionTitle || 'Untitled';
+    // Usar el mismo título reparado en el contenido y en la configuración.
     headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${notionPageTitle}${visibilityIndicator}</h1>`;
     
     // Renderizar propiedades de base de datos (si las hay)
@@ -5485,11 +5489,62 @@ export class ExtensionController {
       const prop = pageInfo.properties[key];
       if (prop && prop.type === 'title' && prop.title && prop.title.length > 0) {
         // Renderizar rich text del título
-        return prop.title.map(t => t.plain_text || '').join('');
+        return getUsablePageTitle(prop.title.map(t => t.plain_text || '').join(''));
       }
     }
     
     return null;
+  }
+
+  /**
+   * Repara y persiste un nombre placeholder cuando Notion ofrece un título real.
+   * No llama a saveConfig para evitar un segundo renderizado durante la carga.
+   * @private
+   * @param {Page} page - Página que se está mostrando
+   * @param  {...string} candidates - Títulos en orden de prioridad
+   * @returns {Promise<string>} - Título resuelto
+   */
+  async _repairStoredPageTitle(page, ...candidates) {
+    const storedPage = this.config?.findPageByNotionId?.(page?.getNotionPageId?.())
+      || this.config?.findPageById?.(page?.id)
+      || this.config?.pages?.find?.(candidate => candidate.id === page?.id)
+      || null;
+    const resolvedTitle = resolvePageTitle(...candidates, storedPage?.name, page?.name);
+    let changed = false;
+
+    for (const target of new Set([page, storedPage].filter(Boolean))) {
+      const repair = repairPageTitle(target, resolvedTitle);
+      changed = repair.changed || changed;
+    }
+
+    if (!changed || !this.config) return resolvedTitle;
+
+    const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
+    this.configBuilder = new ConfigBuilder(this.config);
+    this.storageService.saveLocalConfig(configToSave);
+
+    // Compartir la reparación con la sala solo desde el Master GM.
+    if (this.isGM && !this.isCoGM) {
+      try {
+        await this.storageService.saveRoomConfig(configToSave);
+        this.broadcastService.broadcastVisiblePages(filterVisiblePages(configToSave));
+        await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
+          config: configToSave
+        });
+      } catch (error) {
+        // La página debe seguir abriéndose aunque falle la persistencia remota.
+        logWarn('No se pudo compartir la reparación del título con la sala:', error);
+      }
+    }
+
+    const pageTitle = document.getElementById('page-title');
+    if (pageTitle && this.currentPage?.id === page?.id) {
+      const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
+      pageTitle.innerHTML = resolvedTitle + visibilityIndicator;
+    }
+
+    log(`📝 Título reparado y guardado: "${resolvedTitle}"`);
+    return resolvedTitle;
   }
 
   /**
@@ -5507,7 +5562,7 @@ export class ExtensionController {
   async _generateNotionHtmlWithHeader(pageId, options = {}) {
     const {
       includeShareButtons = false,
-      fallbackTitle = 'Untitled',
+      fallbackTitle = PAGE_TITLE_FALLBACK,
       blockTypes = null,
       useCache = true
     } = options;
@@ -5570,7 +5625,7 @@ export class ExtensionController {
       }
       
       // Título (usar de Notion o fallback)
-      const pageTitle = notionTitle || fallbackTitle;
+      const pageTitle = resolvePageTitle(notionTitle, fallbackTitle);
       headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${pageTitle}</h1>`;
       
       // Renderizar propiedades de base de datos (si las hay)
@@ -6125,7 +6180,7 @@ export class ExtensionController {
       
       // Agregar título con indicador de visibilidad si aplica
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      const pageName = page.name || 'Untitled';
+      const pageName = resolvePageTitle(page.name);
       const titleHtml = `<h1 class="notion-page-title">${pageName}${visibilityIndicator}</h1>`;
       notionContent.insertAdjacentHTML('afterbegin', titleHtml);
       
@@ -6252,10 +6307,13 @@ export class ExtensionController {
       }
       if (!pageInVault) return;
 
-      // Convertir a mention clickeable
-      // Priorizar nombre del vault sobre el textContent ya que la API a veces devuelve "Untitled"
-      const apiDisplayName = mention.textContent || mention.dataset.mentionPageName || 'Page';
-      const displayName = pageInVault.name || apiDisplayName;
+      // Convertir a mention clickeable con la misma regla que el renderer.
+      const apiDisplayName = resolvePageTitle(mention.textContent, mention.dataset.mentionPageName);
+      const displayName = resolvePageTitle(
+        mention.textContent,
+        mention.dataset.mentionPageName,
+        pageInVault.name
+      );
       const pageUrl = pageInVault.url || '';
       
       // Verificar visibilidad solo para players (GM Master y Co-GM pueden ver todo)
@@ -6381,8 +6439,9 @@ export class ExtensionController {
         }
       }
       
-      // Abrir el modal con la página
-      await this._showMentionPageModal(page, pageName);
+      // Abrir el modal con la misma regla usada al renderizar la mention.
+      const bestName = resolvePageTitle(pageName, page.name);
+      await this._showMentionPageModal(page, bestName);
       
     } catch (error) {
       logError('Error al abrir página mencionada:', error);
@@ -6434,6 +6493,10 @@ export class ExtensionController {
           fallbackTitle: displayName,
           useCache: false // Forzar recarga sin caché
         });
+        const refreshedTitle = this._extractNotionPageTitle(result?.pageInfo);
+        const repairedTitle = await this._repairStoredPageTitle(page, refreshedTitle, displayName);
+        overlay.dataset.displayName = repairedTitle;
+        overlay.querySelector('.mention-modal__title')?.replaceChildren(repairedTitle);
         htmlContent = result?.html;
       } else {
         // CoGM y Players: solicitar contenido al GM
@@ -6678,6 +6741,10 @@ export class ExtensionController {
             fallbackTitle: displayName,
             useCache: true
           });
+          const refreshedTitle = this._extractNotionPageTitle(result?.pageInfo);
+          displayName = await this._repairStoredPageTitle(page, refreshedTitle, displayName);
+          title.textContent = displayName;
+          overlay.dataset.displayName = displayName;
           htmlContent = result?.html;
         } else {
           // CoGM y Players: solicitar contenido al GM
@@ -7587,4 +7654,3 @@ export class ExtensionController {
 }
 
 export default ExtensionController;
-
