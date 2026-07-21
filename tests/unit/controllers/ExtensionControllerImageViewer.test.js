@@ -126,19 +126,24 @@ describe('image-viewer.html contract', () => {
     );
   });
 
-  it('usa el patrón de botones de cabecera de la ventana principal', () => {
+  it('usa el cierre cuadrado común de los modales', () => {
     expect(source).toMatch(
-      /\.toolbar-button\s*\{[^}]*background:\s*transparent[^}]*border:\s*none[^}]*border-radius:\s*var\(--radius-full\)/s
+      /\.close-button\s*\{[^}]*background:\s*transparent[^}]*border:\s*none[^}]*border-radius:\s*var\(--radius-sm\)/s
     );
     expect(source).toMatch(
-      /\.toolbar-button:hover[\s\S]{0,200}background:\s*var\(--color-bg-hover\)/
+      /\.close-button:hover\s*\{[^}]*background:\s*var\(--color-bg-hover\)/s
+    );
+    expect(source).toMatch(/title=["']Close \(Escape\)["']/);
+  });
+
+  it('superpone compartir y tamaño sobre la imagen con su estilo original', () => {
+    expect(source).toMatch(
+      /\.image-toolbar\s*\{[^}]*position:\s*absolute[^}]*top:\s*var\(--image-toolbar-top[^}]*right:\s*var\(--image-toolbar-right/s
     );
     expect(source).toMatch(
-      /\.toolbar-button:active\s*\{[^}]*background:\s*var\(--color-bg-active\)/s
+      /\.image-action-button\s*\{[^}]*background:\s*var\(--toolbar-button-bg\)[^}]*border:\s*1px solid var\(--toolbar-button-border\)[^}]*border-radius:\s*var\(--radius-md\)/s
     );
-    expect(source).toMatch(
-      /\.toolbar-button (?:img|svg),[\s\S]{0,100}width:\s*var\(--icon-size-md\)/
-    );
+    expect(source).toMatch(/const positionImageToolbar\s*=\s*\(\)\s*=>/);
   });
 
   it('ofrece un modo explícito de tamaño real sin límites de fit', () => {
@@ -148,7 +153,9 @@ describe('image-viewer.html contract', () => {
 
   it('oculta compartir cuando share=false', () => {
     expect(source).toMatch(/shareParam\s*!==\s*['"]false['"]/);
-    expect(source).toMatch(/if\s*\(\s*showShareButton[^)]*\)[\s\S]{0,300}toolbar/);
+    expect(source).toMatch(
+      /if\s*\(\s*showShareButton[^)]*\)[\s\S]{0,300}shareButton\.hidden\s*=\s*false/
+    );
   });
 
   it('cierra el modal de Owlbear mediante su API', () => {

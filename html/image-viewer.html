@@ -17,6 +17,7 @@
       --spacing-sm: 8px;
       --spacing-md: 12px;
       --spacing-lg: 16px;
+      --radius-sm: 4px;
       --radius-md: 6px;
       --radius-lg: 12px;
       --font-size-sm: 14px;
@@ -25,11 +26,16 @@
       --transition-slow: 0.3s;
       --color-bg-hover: rgba(0, 0, 0, 0.24);
       --color-bg-active: rgba(187, 153, 255, 0.12);
+      --color-accent-primary: #967acc;
+      --toolbar-button-bg: rgba(0, 0, 0, 0.58);
+      --toolbar-button-bg-hover: rgba(0, 0, 0, 0.88);
+      --toolbar-button-bg-active: rgba(0, 0, 0, 1);
+      --toolbar-button-border: rgba(255, 255, 255, 0.2);
+      --toolbar-button-border-hover: rgba(255, 255, 255, 0.42);
       --feedback-bg: #2d4a2d;
       --feedback-border: #4a6a4a;
       --feedback-text: #a6e7a6;
-      --radius-full: 50%;
-      --icon-size-md: 20px;
+      --icon-size-sm: 16px;
     }
 
     * {
@@ -77,15 +83,59 @@
       box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
     }
 
-    .toolbar {
+    .header-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-height: 32px;
+    }
+
+    .close-button {
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      padding: 0;
+      color: var(--color-text-muted);
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 24px;
+      line-height: 1;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .close-button:hover {
+      color: var(--color-text-primary);
+      background: var(--color-bg-hover);
+    }
+
+    .close-button:active {
+      background: var(--color-bg-active);
+    }
+
+    .close-button:focus-visible {
+      color: var(--color-text-primary);
+      background: var(--color-bg-hover);
+      outline: 2px solid var(--color-accent-primary);
+      outline-offset: -2px;
+    }
+
+    .image-toolbar {
+      position: absolute;
+      top: var(--image-toolbar-top, var(--spacing-md));
+      right: var(--image-toolbar-right, var(--spacing-md));
+      z-index: 2;
       display: flex;
       align-items: center;
       justify-content: flex-end;
       gap: var(--spacing-sm);
-      min-height: 32px;
     }
 
-    .toolbar-button {
+    .image-action-button {
       width: 32px;
       height: 32px;
       display: inline-flex;
@@ -94,59 +144,56 @@
       flex: 0 0 auto;
       padding: 0;
       color: var(--color-text-secondary);
-      background: transparent;
-      border: none;
-      border-radius: var(--radius-full);
+      background: var(--toolbar-button-bg);
+      border: 1px solid var(--toolbar-button-border);
+      border-radius: var(--radius-md);
       cursor: pointer;
       font-size: var(--font-size-sm);
       font-weight: 650;
       line-height: 1;
       transition:
         background var(--transition-normal),
+        border-color var(--transition-normal),
         color var(--transition-normal),
         opacity var(--transition-normal);
     }
 
-    .toolbar-button:hover,
-    .toolbar-button:focus-visible {
+    .image-action-button:hover,
+    .image-action-button:focus-visible {
       color: var(--color-text-primary);
-      background: var(--color-bg-hover);
+      background: var(--toolbar-button-bg-hover);
+      border-color: var(--toolbar-button-border-hover);
       outline: none;
     }
 
-    .toolbar-button:active {
-      background: var(--color-bg-active);
+    .image-action-button:active {
+      background: var(--toolbar-button-bg-active);
     }
 
-    .toolbar-button:focus-visible {
-      box-shadow: 0 0 0 2px #7c83ff;
+    .image-action-button:focus-visible {
+      box-shadow: 0 0 0 2px var(--color-accent-primary);
     }
 
-    .toolbar-button:disabled {
+    .image-action-button:disabled {
       opacity: 0.42;
       cursor: not-allowed;
     }
 
-    .toolbar-button.shared {
+    .image-action-button.shared {
       color: var(--feedback-text);
       background: var(--feedback-bg);
+      border-color: var(--feedback-border);
     }
 
-    .toolbar-button--size {
+    .image-action-button--size {
       width: auto;
       min-width: 52px;
       padding: 0 var(--spacing-sm);
-      border-radius: 999px;
     }
 
-    .toolbar-button--close {
-      color: var(--color-text-secondary);
-    }
-
-    .toolbar-button img,
-    .toolbar-button svg {
-      width: var(--icon-size-md);
-      height: var(--icon-size-md);
+    .image-action-button img {
+      width: var(--icon-size-sm);
+      height: var(--icon-size-sm);
       display: block;
       flex-shrink: 0;
     }
@@ -157,13 +204,24 @@
       height: 100%;
       min-width: 0;
       min-height: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: block;
       overflow: hidden;
       background: transparent;
       border: 0;
       border-radius: var(--radius-lg);
+    }
+
+    .image-viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: inherit;
     }
 
     .image-stage img {
@@ -184,11 +242,14 @@
     }
 
     .image-stage.actual-size {
+      background: var(--color-stage);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .image-stage.actual-size .image-viewport {
       align-items: flex-start;
       justify-content: flex-start;
       overflow: auto;
-      background: var(--color-stage);
-      border: 1px solid rgba(255, 255, 255, 0.06);
       scrollbar-gutter: stable;
     }
 
@@ -277,43 +338,44 @@
 </head>
 <body>
   <section class="viewer-shell" aria-label="Image viewer">
-    <div class="toolbar" aria-label="Image controls">
-      <button
-        id="size-toggle"
-        class="toolbar-button toolbar-button--size"
-        type="button"
-        title="View at actual size"
-        aria-label="View at actual size"
-        aria-pressed="false"
-        disabled
-      >100%</button>
-      <button
-        id="share-button"
-        class="toolbar-button"
-        type="button"
-        title="Show this image to all players"
-        aria-label="Show this image to all players"
-        hidden
-      >
-        <img src="../img/icon-players.svg" alt="" />
-      </button>
+    <div class="header-toolbar" aria-label="Modal controls">
       <button
         id="close-button"
-        class="toolbar-button toolbar-button--close"
+        class="close-button"
         type="button"
-        title="Close image"
+        title="Close (Escape)"
         aria-label="Close image"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-        </svg>
-      </button>
+      >&times;</button>
     </div>
 
     <main id="image-stage" class="image-stage">
-      <div id="image-loading" class="image-status" role="status">Loading image…</div>
-      <div id="image-error" class="image-status" role="alert" hidden>Could not load this image.</div>
-      <img id="viewer-image" src="" alt="" />
+      <div id="image-toolbar" class="image-toolbar" aria-label="Image controls" hidden>
+        <button
+          id="size-toggle"
+          class="image-action-button image-action-button--size"
+          type="button"
+          title="View at actual size"
+          aria-label="View at actual size"
+          aria-pressed="false"
+          disabled
+        >100%</button>
+        <button
+          id="share-button"
+          class="image-action-button"
+          type="button"
+          title="Show this image to all players"
+          aria-label="Show this image to all players"
+          hidden
+        >
+          <img src="../img/icon-players.svg" alt="" />
+        </button>
+      </div>
+
+      <div id="image-viewport" class="image-viewport">
+        <div id="image-loading" class="image-status" role="status">Loading image…</div>
+        <div id="image-error" class="image-status" role="alert" hidden>Could not load this image.</div>
+        <img id="viewer-image" src="" alt="" />
+      </div>
     </main>
 
     <footer id="viewer-caption" class="caption" hidden></footer>
@@ -344,8 +406,9 @@
     let imageUrl = safeDecode(urlParams.get('url'));
     const caption = safeDecode(urlParams.get('caption'));
 
-    const toolbar = document.querySelector('.toolbar');
     const imageStage = document.getElementById('image-stage');
+    const imageViewport = document.getElementById('image-viewport');
+    const imageToolbar = document.getElementById('image-toolbar');
     const viewerImage = document.getElementById('viewer-image');
     const captionElement = document.getElementById('viewer-caption');
     const loadingElement = document.getElementById('image-loading');
@@ -355,6 +418,25 @@
     const closeButton = document.getElementById('close-button');
     const feedback = document.getElementById('feedback');
 
+    const positionImageToolbar = () => {
+      if (imageToolbar.hidden || !viewerImage.classList.contains('loaded')) {
+        return;
+      }
+
+      const viewportRect = imageViewport.getBoundingClientRect();
+      const imageRect = viewerImage.getBoundingClientRect();
+      const inset = 12;
+      const maxTop = Math.max(inset, viewportRect.height - imageToolbar.offsetHeight - inset);
+      const maxRight = Math.max(inset, viewportRect.width - imageToolbar.offsetWidth - inset);
+      const imageTop = imageRect.top - viewportRect.top + inset;
+      const imageRight = viewportRect.right - imageRect.right + inset;
+      const top = Math.min(maxTop, Math.max(inset, imageTop));
+      const right = Math.min(maxRight, Math.max(inset, imageRight));
+
+      imageStage.style.setProperty('--image-toolbar-top', `${top}px`);
+      imageStage.style.setProperty('--image-toolbar-right', `${right}px`);
+    };
+
     const setActualSize = (actualSize) => {
       imageStage.classList.toggle('actual-size', actualSize);
       sizeToggle.setAttribute('aria-pressed', String(actualSize));
@@ -363,8 +445,10 @@
       sizeToggle.setAttribute('aria-label', sizeToggle.title);
 
       if (!actualSize) {
-        imageStage.scrollTo({ top: 0, left: 0 });
+        imageViewport.scrollTo({ top: 0, left: 0 });
       }
+
+      requestAnimationFrame(positionImageToolbar);
     };
 
     const closeViewer = async () => {
@@ -404,6 +488,8 @@
       errorElement.hidden = true;
       viewerImage.classList.add('loaded');
       sizeToggle.disabled = false;
+      imageToolbar.hidden = false;
+      requestAnimationFrame(positionImageToolbar);
     });
 
     viewerImage.addEventListener('error', () => {
@@ -411,7 +497,16 @@
       errorElement.hidden = false;
       viewerImage.classList.remove('loaded');
       sizeToggle.disabled = true;
+      imageToolbar.hidden = true;
     });
+
+    window.addEventListener('resize', positionImageToolbar);
+
+    if ('ResizeObserver' in window) {
+      const imageResizeObserver = new ResizeObserver(positionImageToolbar);
+      imageResizeObserver.observe(imageViewport);
+      imageResizeObserver.observe(viewerImage);
+    }
 
     if (imageUrl) {
       if (!/^https?:\/\//i.test(imageUrl)) {
@@ -435,8 +530,8 @@
         const playerId = await OBR.player.getId();
 
         if (showShareButton && imageUrl) {
-          toolbar.hidden = false;
           shareButton.hidden = false;
+          requestAnimationFrame(positionImageToolbar);
 
           shareButton.addEventListener('click', async (event) => {
             event.preventDefault();
