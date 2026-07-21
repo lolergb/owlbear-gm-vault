@@ -117,6 +117,15 @@ describe('image-viewer.html contract', () => {
     expect(source).toMatch(/object-fit:\s*contain/);
   });
 
+  it('deja el modo fit sin fondo ni borde', () => {
+    expect(source).toMatch(
+      /\.image-stage\s*\{[^}]*background:\s*transparent[^}]*border:\s*0/s
+    );
+    expect(source).toMatch(
+      /\.image-stage\.actual-size\s*\{[^}]*background:\s*var\(--color-stage\)[^}]*border:\s*1px/s
+    );
+  });
+
   it('ofrece un modo explícito de tamaño real sin límites de fit', () => {
     expect(source).toMatch(/id=["'](?:actual-size|size-toggle|fit-toggle)["']/);
     expect(source).toMatch(/(?:actual-size|full-size)[^{]*\{[^}]*max-width:\s*none[^}]*max-height:\s*none/s);
