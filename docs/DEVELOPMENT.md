@@ -83,12 +83,10 @@ If you want it to work without users configuring anything (shared pages):
 1. **Local server:**
    ```bash
    npm run serve
-   # or
-   npx http-server -p 8000
    ```
 
 2. **Use in Owlbear:**
-   - `http://localhost:8000/manifest.json`
+   - `http://127.0.0.1:8000/manifest.local.json`
 
 3. **Configure your token:**
    - Open the extension in Owlbear

@@ -1536,16 +1536,42 @@ export class ExtensionController {
           </div>
         `;
       } else if (field.type === 'select') {
+        const options = field.options || [];
+        const searchId = `field-${field.name}-search`;
+        const statusId = `field-${field.name}-search-status`;
+        const visibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
+
         return `
           <div class="form__field" data-field-name="${field.name}">
-            <label class="form__label">${field.label}${field.required ? ' *' : ''}</label>
+            ${field.searchable ? `
+              <label class="form__label" for="${searchId}">${field.searchLabel || `Search ${field.label}`}</label>
+              <input
+                type="search"
+                id="${searchId}"
+                class="input"
+                placeholder="${field.searchPlaceholder || 'Search options...'}"
+                aria-label="${field.searchLabel || `Search ${field.label}`}"
+                aria-controls="field-${field.name}"
+                aria-describedby="${statusId}"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <span
+                id="${statusId}"
+                class="form__help form__search-status"
+                role="status"
+                aria-live="polite"
+              ></span>
+            ` : ''}
+            <label class="form__label" for="field-${field.name}">${field.label}${field.required ? ' *' : ''}</label>
             <select 
               id="field-${field.name}" 
               name="${field.name}"
-              class="select"
+              class="select${field.searchable ? ' select--searchable' : ''}"
+              ${field.searchable ? `data-searchable-select="true" size="${visibleOptions}"` : ''}
               ${field.required ? 'required' : ''}
             >
-              ${(field.options || []).map(opt => 
+              ${options.map(opt =>
                 `<option value="${opt.value}" ${field.value === opt.value ? 'selected' : ''}>${opt.label}</option>`
               ).join('')}
             </select>
@@ -1599,6 +1625,12 @@ export class ExtensionController {
     const form = modal.querySelector('#modal-form');
     const cancelBtn = modal.querySelector('#modal-cancel');
 
+    fields.forEach(field => {
+      if (field.type === 'select' && field.searchable) {
+        this._setupSearchableSelect(modal, field);
+      }
+    });
+
     const close = () => {
       overlay.remove();
       if (onCancel) onCancel();
@@ -1631,10 +1663,97 @@ export class ExtensionController {
     });
 
     // Focus en primer campo
-    const firstInput = modal.querySelector('input[type="text"], input[type="url"], textarea');
+    const firstInput = modal.querySelector('input[type="search"], input[type="text"], input[type="url"], textarea, select');
     if (firstInput) {
       setTimeout(() => firstInput.focus(), 100);
     }
+  }
+
+  /**
+   * Añade filtrado accesible a un campo select sin afectar al resto de formularios.
+   * Conserva el value original de cada opción para que el resultado siga apuntando
+   * al índice correcto aunque la lista visible esté filtrada.
+   *
+   * @param {HTMLElement} modal - Elemento modal que contiene el formulario
+   * @param {Object} field - Configuración del campo select
+   * @private
+   */
+  _setupSearchableSelect(modal, field) {
+    const select = modal.querySelector(`#field-${field.name}`);
+    const searchInput = modal.querySelector(`#field-${field.name}-search`);
+    const status = modal.querySelector(`#field-${field.name}-search-status`);
+    const submitButton = modal.querySelector('#modal-submit');
+
+    if (!select || !searchInput) return;
+
+    const options = (field.options || []).map(option => ({
+      label: String(option.label ?? ''),
+      value: String(option.value ?? ''),
+      searchText: String(option.searchText ?? option.label ?? '')
+    }));
+    const maxVisibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
+    const resultLabel = field.resultLabel || 'option';
+
+    const normalizeSearchText = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase();
+
+    const updateSubmitState = () => {
+      if (!submitButton) return;
+
+      const emptyRequiredSelect = Array.from(
+        modal.querySelectorAll('select[data-searchable-select="true"][required]')
+      ).some(requiredSelect => requiredSelect.disabled || requiredSelect.options.length === 0);
+
+      submitButton.disabled = emptyRequiredSelect;
+    };
+
+    const renderOptions = () => {
+      const query = normalizeSearchText(searchInput.value.trim());
+      const previousValue = select.value;
+      const matchingOptions = options.filter(option =>
+        normalizeSearchText(option.searchText).includes(query)
+      );
+
+      select.replaceChildren();
+      matchingOptions.forEach(option => {
+        const optionElement = document.createElement('option');
+        optionElement.value = option.value;
+        optionElement.textContent = option.label;
+        select.appendChild(optionElement);
+      });
+
+      if (matchingOptions.some(option => option.value === previousValue)) {
+        select.value = previousValue;
+      } else if (matchingOptions.length > 0) {
+        select.value = matchingOptions[0].value;
+      }
+
+      select.disabled = matchingOptions.length === 0;
+      select.size = Math.min(Math.max(matchingOptions.length, 2), maxVisibleOptions);
+
+      if (status) {
+        if (matchingOptions.length === 0) {
+          status.textContent = field.noResultsText || 'No options found';
+        } else {
+          const label = matchingOptions.length === 1 ? resultLabel : `${resultLabel}s`;
+          status.textContent = `${matchingOptions.length} ${label}`;
+        }
+      }
+
+      updateSubmitState();
+    };
+
+    searchInput.addEventListener('input', renderOptions);
+    searchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown' && !select.disabled) {
+        event.preventDefault();
+        select.focus();
+      }
+    });
+
+    renderOptions();
   }
 
   /**
@@ -7315,6 +7434,19 @@ export class ExtensionController {
     
     // Recopilar todas las páginas respetando el orden del vault
     const allPages = [];
+
+    const addPageToList = (pageData, path, pageIndex) => {
+      const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
+      allPages.push({
+        id: page.id,
+        name: page.name,
+        url: page.url,
+        icon: page.icon,
+        displayPath: path.join(' / '),
+        categoryPath: path,
+        pageIndex
+      });
+    };
     
     const collectPagesOrdered = (category, path = [], level = 0) => {
       if (!category) return;
@@ -7328,17 +7460,7 @@ export class ExtensionController {
           collectPagesOrdered(subcategory, currentPath, level + 1);
         } else if (item.type === 'page' && category.pages && category.pages[item.index]) {
           const pageData = category.pages[item.index];
-          // Asegurar que es una instancia de Page para tener acceso al id
-          const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
-          allPages.push({
-            id: page.id,
-            name: page.name,
-            url: page.url,
-            icon: page.icon,
-            displayPath: currentPath.join(' / '),
-            categoryPath: currentPath,
-            pageIndex: item.index
-          });
+          addPageToList(pageData, currentPath, item.index);
         }
       });
     };
@@ -7348,6 +7470,8 @@ export class ExtensionController {
     rootOrder.forEach(item => {
       if (item.type === 'category' && this.config.categories && this.config.categories[item.index]) {
         collectPagesOrdered(this.config.categories[item.index], [], 0);
+      } else if (item.type === 'page' && this.config.pages && this.config.pages[item.index]) {
+        addPageToList(this.config.pages[item.index], [], item.index);
       }
     });
     
@@ -7358,7 +7482,8 @@ export class ExtensionController {
     
     // Crear opciones para el select con indentación
     const pageOptions = allPages.map((page, index) => ({
-      label: `${page.displayPath} → ${page.name}`,
+      label: page.displayPath ? `${page.displayPath} → ${page.name}` : page.name,
+      searchText: `${page.displayPath} ${page.name}`.trim(),
       value: index.toString()
     }));
     
@@ -7374,6 +7499,12 @@ export class ExtensionController {
         label: 'Select a page',
         type: 'select',
         options: pageOptions,
+        searchable: true,
+        searchLabel: 'Search pages',
+        searchPlaceholder: 'Search by page or folder...',
+        resultLabel: 'page',
+        noResultsText: 'No pages found',
+        visibleOptions: 7,
         required: true
       }
     ], async (data) => {

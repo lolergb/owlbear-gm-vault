@@ -258,6 +258,12 @@
     background: var(--color-bg-active);
     border-color: var(--color-border-active);
   }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
   
   /* Botón primario */
   .btn--primary {
@@ -372,6 +378,16 @@
   .input--mono {
     font-family: var(--font-family-mono);
   }
+
+  .select--searchable {
+    min-height: 96px;
+    padding: var(--spacing-xs);
+  }
+
+  .select--searchable option {
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+  }
   
   /* Textarea específico */
   .textarea {
@@ -410,6 +426,11 @@
     color: var(--color-text-disabled);
     font-size: var(--font-size-sm);
     margin-top: var(--spacing-xs);
+  }
+
+  .form__search-status {
+    min-height: var(--font-line-sm);
+    margin-top: 0;
   }
   
   .form__checkbox-label {
