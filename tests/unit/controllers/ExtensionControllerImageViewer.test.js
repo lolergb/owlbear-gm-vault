@@ -136,14 +136,14 @@ describe('image-viewer.html contract', () => {
     expect(source).toMatch(/title=["']Close \(Escape\)["']/);
   });
 
-  it('superpone compartir y tamaño sobre la imagen con su estilo original', () => {
+  it('mantiene compartir y tamaño fijos en la cabecera', () => {
     expect(source).toMatch(
-      /\.image-toolbar\s*\{[^}]*position:\s*absolute[^}]*top:\s*var\(--image-toolbar-top[^}]*right:\s*var\(--image-toolbar-right/s
+      /<div class=["']header-toolbar["'][^>]*>[\s\S]*id=["']size-toggle["'][\s\S]*id=["']share-button["'][\s\S]*id=["']close-button["']/
     );
     expect(source).toMatch(
-      /\.image-action-button\s*\{[^}]*background:\s*var\(--toolbar-button-bg\)[^}]*border:\s*1px solid var\(--toolbar-button-border\)[^}]*border-radius:\s*var\(--radius-md\)/s
+      /\.header-action-button\s*\{[^}]*background:\s*transparent[^}]*border:\s*none[^}]*border-radius:\s*var\(--radius-full\)/s
     );
-    expect(source).toMatch(/const positionImageToolbar\s*=\s*\(\)\s*=>/);
+    expect(source).not.toMatch(/positionImageToolbar|id=["']image-toolbar["']/);
   });
 
   it('ofrece un modo explícito de tamaño real sin límites de fit', () => {
