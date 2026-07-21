@@ -4500,39 +4500,9 @@ export class ExtensionController {
       if (event.data && event.data.type === 'showImageModal') {
         const { imageUrl, caption } = event.data;
         log('🔍 Solicitud de mostrar imagen en modal OBR:', { imageUrl, caption });
-        log('🔍 OBR disponible:', !!this.OBR);
-        log('🔍 OBR.modal disponible:', !!(this.OBR && this.OBR.modal));
-        
+
         if (imageUrl) {
-          try {
-            // Usar directamente OBR.modal.open para asegurar que se abre en ventana de OBR
-            if (this.OBR && this.OBR.modal) {
-              const currentPath = window.location.pathname;
-              const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
-              const baseUrl = window.location.origin + baseDir;
-              
-              const viewerUrl = new URL('html/image-viewer.html', baseUrl);
-              viewerUrl.searchParams.set('url', encodeURIComponent(imageUrl));
-              if (caption) {
-                viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
-              }
-              
-              log('🔍 Abriendo OBR.modal con URL:', viewerUrl.toString());
-              await this.OBR.modal.open({
-                id: 'notion-image-viewer',
-                url: viewerUrl.toString(),
-                height: 800,
-                width: 1200
-              });
-              log('✅ Modal OBR abierto correctamente');
-            } else {
-              logError('❌ OBR.modal no disponible, abriendo en nueva ventana');
-              window.open(imageUrl, '_blank', 'noopener,noreferrer');
-            }
-          } catch (error) {
-            logError('❌ Error al abrir modal de imagen:', error);
-            window.open(imageUrl, '_blank', 'noopener,noreferrer');
-          }
+          await this._showImageModal(imageUrl, caption, true);
         }
         return;
       }
@@ -4968,12 +4938,12 @@ export class ExtensionController {
   _setupSharedContentListeners() {
     // Listener para recibir imágenes compartidas
     this.OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
-      const { url, caption, senderId, fullSize } = event.data;
+      const { url, caption, senderId } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (url) {
-        log('🖼️ Imagen recibida:', url.substring(0, 50), 'fullSize:', fullSize);
-        await this._showImageModal(url, caption, false, fullSize);
+        log('🖼️ Imagen recibida:', url.substring(0, 50));
+        await this._showImageModal(url, caption, false);
       }
     });
 
@@ -5802,22 +5772,6 @@ export class ExtensionController {
       </div>
     `;
     
-    // Handler para abrir en modal al hacer click
-    const img = notionContent.querySelector('img.notion-image-clickable');
-    if (img) {
-      img.addEventListener('click', () => {
-        this._showImageModal(absoluteImageUrl, caption);
-      });
-    }
-
-    // Handler para botón de share
-    const shareBtn = notionContent.querySelector('.notion-image-share-button');
-    if (shareBtn) {
-      shareBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._shareImageToPlayers(absoluteImageUrl, caption);
-      });
-    }
   }
 
   /**
@@ -6247,7 +6201,7 @@ export class ExtensionController {
       
       img.addEventListener('click', () => {
         const url = img.dataset.imageUrl || img.src;
-        const caption = img.dataset.imageCaption || img.alt || '';
+        const caption = img.dataset.imageCaption ?? '';
         if (url) this._showImageModal(url, caption);
       });
     });
@@ -6263,7 +6217,9 @@ export class ExtensionController {
         const container = btn.closest('.notion-image-container');
         const img = container ? container.querySelector('img') : null;
         const url = (img && (img.dataset.imageUrl || img.src)) || btn.dataset.imageUrl;
-        const caption = (img && (img.dataset.imageCaption || img.alt)) || btn.dataset.imageCaption || '';
+        const caption = img
+          ? (img.dataset.imageCaption ?? '')
+          : (btn.dataset.imageCaption ?? '');
         if (url) this._shareImageToPlayers(url, caption);
       });
     });
@@ -6908,7 +6864,7 @@ export class ExtensionController {
    * @param {boolean} showShareButton - Mostrar botón de compartir (default: true para GM)
    * @private
    */
-  async _showImageModal(imageUrl, caption, showShareButton = true, fullSize = false) {
+  async _showImageModal(imageUrl, caption, showShareButton = true) {
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
       // Fallback: abrir en nueva ventana
@@ -6938,22 +6894,14 @@ export class ExtensionController {
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
       }
-      // Mostrar botón de compartir solo si es GM y showShareButton es true
-      // El viewer usa el parámetro 'share' (default true si no se especifica)
-      if (!(showShareButton && this.isGM)) {
-        viewerUrl.searchParams.set('share', 'false');
-      }
-      // Pasar parámetro fullSize para mostrar imagen a tamaño completo cuando el GM comparte
-      if (fullSize) {
-        viewerUrl.searchParams.set('fullSize', 'true');
-      }
+      viewerUrl.searchParams.set('share', String(Boolean(showShareButton && this.isGM)));
       
       // Abrir modal usando Owlbear SDK
       await this.OBR.modal.open({
         id: 'notion-image-viewer',
         url: viewerUrl.toString(),
-        height: 800,
-        width: 1200
+        fullScreen: true,
+        hidePaper: true
       });
     } catch (error) {
       logError('Error al abrir modal de Owlbear:', error);
@@ -6983,15 +6931,11 @@ export class ExtensionController {
         }
       }
 
-      // Detectar si el sender es GM para mostrar tamaño completo
-      const isGM = this.isGM;
-
       // Usar el canal correcto como en el original
       const result = await this.broadcastService.sendMessage('com.dmscreen/showImage', {
         url: absoluteImageUrl,
         caption: caption || '',
-        senderId: this.playerId,
-        fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
+        senderId: this.playerId
       });
       
       if (result?.success) {
