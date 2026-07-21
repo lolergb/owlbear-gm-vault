@@ -23,14 +23,13 @@
       --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       --transition-normal: 0.2s;
       --transition-slow: 0.3s;
-      --toolbar-button-bg: rgba(0, 0, 0, 0.58);
-      --toolbar-button-bg-hover: rgba(0, 0, 0, 0.88);
-      --toolbar-button-border: rgba(255, 255, 255, 0.2);
-      --toolbar-button-border-hover: rgba(255, 255, 255, 0.42);
+      --color-bg-hover: rgba(0, 0, 0, 0.24);
+      --color-bg-active: rgba(187, 153, 255, 0.12);
       --feedback-bg: #2d4a2d;
       --feedback-border: #4a6a4a;
       --feedback-text: #a6e7a6;
-      --icon-size-sm: 16px;
+      --radius-full: 50%;
+      --icon-size-md: 20px;
     }
 
     * {
@@ -95,16 +94,15 @@
       flex: 0 0 auto;
       padding: 0;
       color: var(--color-text-secondary);
-      background: var(--toolbar-button-bg);
-      border: 1px solid var(--toolbar-button-border);
-      border-radius: var(--radius-md);
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-full);
       cursor: pointer;
       font-size: var(--font-size-sm);
       font-weight: 650;
       line-height: 1;
       transition:
         background var(--transition-normal),
-        border-color var(--transition-normal),
         color var(--transition-normal),
         opacity var(--transition-normal);
     }
@@ -112,9 +110,12 @@
     .toolbar-button:hover,
     .toolbar-button:focus-visible {
       color: var(--color-text-primary);
-      background: var(--toolbar-button-bg-hover);
-      border-color: var(--toolbar-button-border-hover);
+      background: var(--color-bg-hover);
       outline: none;
+    }
+
+    .toolbar-button:active {
+      background: var(--color-bg-active);
     }
 
     .toolbar-button:focus-visible {
@@ -129,24 +130,25 @@
     .toolbar-button.shared {
       color: var(--feedback-text);
       background: var(--feedback-bg);
-      border-color: var(--feedback-border);
     }
 
     .toolbar-button--size {
       width: auto;
       min-width: 52px;
       padding: 0 var(--spacing-sm);
+      border-radius: 999px;
     }
 
     .toolbar-button--close {
-      font-size: 22px;
-      font-weight: 400;
-      padding-bottom: 2px;
+      color: var(--color-text-secondary);
     }
 
-    .toolbar-button img {
-      width: var(--icon-size-sm);
-      height: var(--icon-size-sm);
+    .toolbar-button img,
+    .toolbar-button svg {
+      width: var(--icon-size-md);
+      height: var(--icon-size-md);
+      display: block;
+      flex-shrink: 0;
     }
 
     .image-stage {
@@ -301,7 +303,11 @@
         type="button"
         title="Close image"
         aria-label="Close image"
-      >&times;</button>
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
+      </button>
     </div>
 
     <main id="image-stage" class="image-stage">

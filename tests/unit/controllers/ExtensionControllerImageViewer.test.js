@@ -126,6 +126,21 @@ describe('image-viewer.html contract', () => {
     );
   });
 
+  it('usa el patrón de botones de cabecera de la ventana principal', () => {
+    expect(source).toMatch(
+      /\.toolbar-button\s*\{[^}]*background:\s*transparent[^}]*border:\s*none[^}]*border-radius:\s*var\(--radius-full\)/s
+    );
+    expect(source).toMatch(
+      /\.toolbar-button:hover[\s\S]{0,200}background:\s*var\(--color-bg-hover\)/
+    );
+    expect(source).toMatch(
+      /\.toolbar-button:active\s*\{[^}]*background:\s*var\(--color-bg-active\)/s
+    );
+    expect(source).toMatch(
+      /\.toolbar-button (?:img|svg),[\s\S]{0,100}width:\s*var\(--icon-size-md\)/
+    );
+  });
+
   it('ofrece un modo explícito de tamaño real sin límites de fit', () => {
     expect(source).toMatch(/id=["'](?:actual-size|size-toggle|fit-toggle)["']/);
     expect(source).toMatch(/(?:actual-size|full-size)[^{]*\{[^}]*max-width:\s*none[^}]*max-height:\s*none/s);
