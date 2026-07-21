@@ -7,13 +7,13 @@
  */
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
-import { ExtensionController } from './controllers/ExtensionController.js';
+import { ExtensionController } from './controllers/ExtensionController.js?v=20260721-1';
 import { initTheme } from './utils/themeManager.js';
 
 // Instancia global del controlador
 let extensionController = null;
 
-const BUILD_VERSION = '2.0.1-' + Date.now();
+const BUILD_VERSION = '2.0.0-beta.20260721-1';
 console.log('🚀 GM Vault: Cargando módulos... v' + BUILD_VERSION);
 
 // Esperar a que OBR SDK esté listo
@@ -113,6 +113,5 @@ window.gmVault = {
     });
     console.log(`✅ Limpiado todo el caché de Notion: ${total} entradas`);
   },
-  version: '2.0.0-modular'
+  version: BUILD_VERSION
 };
-

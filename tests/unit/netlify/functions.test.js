@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { readFileSync } from 'node:fs';
 import { handler as notionHandler } from '../../../netlify/functions/notion-api.js';
 import { handler as defaultTokenHandler } from '../../../netlify/functions/get-default-token.js';
 import { handler as debugModeHandler } from '../../../netlify/functions/get-debug-mode.js';
@@ -77,5 +78,44 @@ describe('Netlify function ES module exports', () => {
   ])('%s rejects unsupported methods without crashing', async (_name, handler) => {
     const response = await handler(event('POST'), {});
     expect(response.statusCode).toBe(405);
+  });
+});
+
+describe('Netlify static asset cache policy', () => {
+  const readProjectFile = relativePath => readFileSync(
+    new URL(`../../../${relativePath}`, import.meta.url),
+    'utf8'
+  );
+
+  it('obliga a revalidar JavaScript y CSS sin versionar', () => {
+    const netlifyConfig = readProjectFile('netlify.toml');
+
+    expect(netlifyConfig).toMatch(
+      /for = "\/js\/\*\.js"[\s\S]*?Cache-Control = "public, max-age=0, must-revalidate"/
+    );
+    expect(netlifyConfig).toMatch(
+      /for = "\/css\/\*\.css"[\s\S]*?Cache-Control = "public, max-age=0, must-revalidate"/
+    );
+  });
+
+  it('fuerza una URL nueva para los módulos que tuvieron caché de siete días', () => {
+    const buildTag = '20260721-1';
+    const indexHtml = readProjectFile('index.html');
+    const mainJs = readProjectFile('js/main.js');
+    const controllerJs = readProjectFile('js/controllers/ExtensionController.js');
+    const storageServiceJs = readProjectFile('js/services/StorageService.js');
+    const parserJs = readProjectFile('js/parsers/ConfigParser.js');
+    const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
+
+    expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
+    expect(mainJs).toContain(`2.0.0-beta.${buildTag}`);
+    expect(controllerJs).toContain(`../services/NotionService.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../services/StorageService.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../utils/helpers.js?v=${buildTag}`);
+    expect(storageServiceJs).toContain(`../utils/helpers.js?v=${buildTag}`);
+    expect(parserJs).toContain(`../models/Config.js?v=${buildTag}`);
+    expect(builderJs).toContain(`../models/Config.js?v=${buildTag}`);
   });
 });

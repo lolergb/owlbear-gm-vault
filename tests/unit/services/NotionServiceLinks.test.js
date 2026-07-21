@@ -154,6 +154,30 @@ describe('NotionService hierarchy and internal navigation', () => {
     expect(service.fetchPageInfo).not.toHaveBeenCalled();
   });
 
+  it('no vuelve a insertar la raíz dentro de una página que la enlaza', async () => {
+    const service = createService({
+      childrenByPage: {
+        [ROOT_ID]: [childPage(GROUP_ID, 'One-Shot ES')],
+        [GROUP_ID]: [linkToPage(ROOT_ID)]
+      },
+      blocksByPage: {
+        [ROOT_ID]: [paragraph([plainText('Root content')])],
+        [GROUP_ID]: [
+          paragraph([pageMention(ROOT_ID, 'Bajo el Hielo Carmesí')]),
+          linkToPage(ROOT_ID)
+        ]
+      }
+    });
+
+    const { config, stats } = await service.generateVaultFromPage(ROOT_ID, 'Root');
+    const serialized = JSON.stringify(config);
+    const rootUrlId = ROOT_ID.replace(/-/g, '');
+
+    expect(collectPagePaths(config)).toEqual(['Root/Root', 'Root/One-Shot ES']);
+    expect(serialized.split(rootUrlId)).toHaveLength(2);
+    expect(stats.pagesImported).toBe(2);
+  });
+
   it('no duplica ni mueve B cuando A contiene una @mention hacia B', async () => {
     const service = createService({
       childrenByPage: {

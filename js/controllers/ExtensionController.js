@@ -5,7 +5,7 @@
  */
 
 import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260721-1';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
 import {
@@ -21,19 +21,19 @@ import { Category } from '../models/Category.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js';
-import { StorageService } from '../services/StorageService.js';
-import { NotionService } from '../services/NotionService.js';
+import { StorageService } from '../services/StorageService.js?v=20260721-1';
+import { NotionService } from '../services/NotionService.js?v=20260721-1';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js';
 import { getImageCacheService } from '../services/ImageCacheService.js';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260721-1';
 import { UIRenderer } from '../renderers/UIRenderer.js';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=20260721-1';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260721-1';
 
 // UI
 import { ModalManager } from '../ui/ModalManager.js';

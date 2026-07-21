@@ -8,6 +8,7 @@
 [[headers]]
   for = "/manifest.json"
   [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
@@ -15,6 +16,7 @@
 [[headers]]
   for = "/index.html"
   [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
@@ -56,13 +58,13 @@
 [[headers]]
   for = "/css/*.css"
   [headers.values]
-    Cache-Control = "public, max-age=604800"
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
 
 [[headers]]
   for = "/js/*.js"
   [headers.values]
-    Cache-Control = "public, max-age=604800"
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
 
 # Configuración de build
@@ -87,4 +89,3 @@
 #   - Si OWNER_TOKEN NO está configurado, DEBUG_MODE funciona para todos (menos seguro)
 # GM_VAULT_DEFAULT_CONFIG: Token de Notion para default-config
 #   - Se usa para cargar páginas de Notion en la configuración por defecto
-

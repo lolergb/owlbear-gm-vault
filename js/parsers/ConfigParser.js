@@ -4,7 +4,7 @@
  * Parsea y valida configuraciones JSON del vault.
  */
 
-import { Config } from '../models/Config.js';
+import { Config } from '../models/Config.js?v=20260721-1';
 import { Category } from '../models/Category.js';
 import { Page } from '../models/Page.js';
 import { log, logWarn, logError } from '../utils/logger.js';
@@ -609,4 +609,3 @@ export class ConfigParser {
 }
 
 export default ConfigParser;
-
