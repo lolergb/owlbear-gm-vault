@@ -535,14 +535,14 @@ describe('Compartir imágenes GM → Players', () => {
     const imageUrl = 'https://example.com/map.png';
     
     await gmBroadcast.sendMessage('SHOW_IMAGE', {
-      imageUrl,
+      url: imageUrl,
       caption: 'Mapa del mundo'
     });
     
     expect(gmOBR.broadcast.sendMessage).toHaveBeenCalledWith(
       BROADCAST_CHANNEL_SHOW_IMAGE,
       expect.objectContaining({
-        imageUrl,
+        url: imageUrl,
         caption: 'Mapa del mundo'
       })
     );
@@ -559,7 +559,7 @@ describe('Compartir imágenes GM → Players', () => {
     
     // Simular que GM envía imagen
     playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_SHOW_IMAGE, {
-      imageUrl,
+      url: imageUrl,
       caption: 'Mapa del mundo',
       timestamp: Date.now()
     });
@@ -568,7 +568,7 @@ describe('Compartir imágenes GM → Players', () => {
     await new Promise(resolve => setTimeout(resolve, 10));
     
     expect(receivedImage).not.toBeNull();
-    expect(receivedImage.imageUrl).toBe(imageUrl);
+    expect(receivedImage.url).toBe(imageUrl);
   });
 });
 

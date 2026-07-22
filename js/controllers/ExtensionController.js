@@ -5,7 +5,7 @@
  */
 
 import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260721-1';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-1';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
 import {
@@ -21,19 +21,20 @@ import { Category } from '../models/Category.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js';
-import { StorageService } from '../services/StorageService.js?v=20260721-1';
-import { NotionService } from '../services/NotionService.js?v=20260721-1';
+import { StorageService } from '../services/StorageService.js?v=20260722-1';
+import { NotionService } from '../services/NotionService.js?v=20260722-1';
 import { BroadcastService } from '../services/BroadcastService.js';
+import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js';
 import { getImageCacheService } from '../services/ImageCacheService.js';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260721-1';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-1';
 import { UIRenderer } from '../renderers/UIRenderer.js';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=20260721-1';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260721-1';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-1';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-1';
 
 // UI
 import { ModalManager } from '../ui/ModalManager.js';
@@ -4585,13 +4586,38 @@ export class ExtensionController {
 
     // Escuchar mensajes postMessage de páginas cargadas en iframes (páginas de Obsidian)
     window.addEventListener('message', async (event) => {
+      const iframeCandidates = [
+        document.getElementById('notion-iframe'),
+        ...document.querySelectorAll('.mention-modal__iframe')
+      ].filter(Boolean);
+      const sourceIframe = iframeCandidates.find(
+        (iframe) => iframe.contentWindow && event.source === iframe.contentWindow
+      );
+      if (!sourceIframe) return;
+
+      let iframeOrigin;
+      try {
+        iframeOrigin = new URL(sourceIframe.src, window.location.href).origin;
+      } catch (_error) {
+        return;
+      }
+      if (event.origin !== iframeOrigin) return;
+
+      const normalizeImageUrl = (value) => {
+        try {
+          const parsed = new URL(value, event.origin);
+          return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+            ? parsed.toString()
+            : '';
+        } catch (_error) {
+          return '';
+        }
+      };
+
       // Log para debug de todos los mensajes recibidos
       if (event.data && typeof event.data === 'object' && event.data.type) {
         log('📬 Mensaje postMessage recibido:', event.data.type, event.data);
       }
-      
-      // Validar origen (opcional, pero recomendado para seguridad)
-      // Por ahora aceptamos cualquier origen ya que las URLs pueden variar
       
       // Responder a consulta de rol de usuario desde iframes de Obsidian Tunnel
       if (event.data && event.data.type === 'queryUserRole') {
@@ -4606,7 +4632,7 @@ export class ExtensionController {
               isPlayer: isPlayer,
               isGM: this.isGM,
               isCoGM: this.isCoGM
-            }, '*');
+            }, event.origin);
             log('✅ Rol enviado al iframe');
           } catch (error) {
             logError('❌ Error enviando rol al iframe:', error);
@@ -4619,9 +4645,10 @@ export class ExtensionController {
       if (event.data && event.data.type === 'showImageModal') {
         const { imageUrl, caption } = event.data;
         log('🔍 Solicitud de mostrar imagen en modal OBR:', { imageUrl, caption });
+        const safeImageUrl = normalizeImageUrl(imageUrl);
 
-        if (imageUrl) {
-          await this._showImageModal(imageUrl, caption, true);
+        if (safeImageUrl) {
+          await this._showImageModal(safeImageUrl, caption, true);
         }
         return;
       }
@@ -4630,14 +4657,16 @@ export class ExtensionController {
       if (event.data && event.data.type === 'shareImage') {
         const { imageUrl, caption } = event.data;
         log('🖼️ Solicitud de compartir imagen recibida:', { imageUrl, caption });
-        
-        // Permitir compartir a todos (GM, coGM y Players)
-        if (imageUrl) {
+        const safeImageUrl = normalizeImageUrl(imageUrl);
+
+        // Una página externa nunca puede emitir como GM por sí sola. Abrimos
+        // la UI propia de GM Vault y el GM confirma con el botón Share.
+        if (safeImageUrl && this.isGM) {
           try {
-            await this._shareImageToPlayers(imageUrl, caption || '');
-            log('✅ Imagen compartida con éxito');
+            await this._showImageModal(safeImageUrl, caption || '', true, true);
+            log('✅ Imagen preparada para compartir');
           } catch (error) {
-            logError('❌ Error al compartir imagen:', error);
+            logError('❌ Error preparando imagen para compartir:', error);
           }
         }
         return;
@@ -5055,16 +5084,8 @@ export class ExtensionController {
    * @private
    */
   _setupSharedContentListeners() {
-    // Listener para recibir imágenes compartidas
-    this.OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
-      const { url, caption, senderId } = event.data;
-      // Ignorar si soy quien lo envió
-      if (senderId === this.playerId) return;
-      if (url) {
-        log('🖼️ Imagen recibida:', url.substring(0, 50));
-        await this._showImageModal(url, caption, false);
-      }
-    });
+    // Las imágenes se reciben desde el background de la extensión. Mantener
+    // también este listener en el popover abriría el mismo modal dos veces.
 
     // Listener para recibir videos compartidos
     this.OBR.broadcast.onMessage('com.dmscreen/showVideo', async (event) => {
@@ -6331,15 +6352,25 @@ export class ExtensionController {
       if (btn.dataset.listenerAdded) return;
       btn.dataset.listenerAdded = 'true';
       
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (btn.disabled) return;
         const container = btn.closest('.notion-image-container');
         const img = container ? container.querySelector('img') : null;
         const url = (img && (img.dataset.imageUrl || img.src)) || btn.dataset.imageUrl;
         const caption = img
           ? (img.dataset.imageCaption ?? '')
           : (btn.dataset.imageCaption ?? '');
-        if (url) this._shareImageToPlayers(url, caption);
+        if (url) {
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+          try {
+            await this._shareImageToPlayers(url, caption);
+          } finally {
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+          }
+        }
       });
     });
     
@@ -6981,9 +7012,10 @@ export class ExtensionController {
    * @param {string} imageUrl - URL de la imagen
    * @param {string} caption - Texto del caption (opcional)
    * @param {boolean} showShareButton - Mostrar botón de compartir (default: true para GM)
+   * @param {boolean} promptShare - Explicar que el GM debe confirmar el envío
    * @private
    */
-  async _showImageModal(imageUrl, caption, showShareButton = true) {
+  async _showImageModal(imageUrl, caption, showShareButton = true, promptShare = false) {
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
       // Fallback: abrir en nueva ventana
@@ -7014,6 +7046,9 @@ export class ExtensionController {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
       }
       viewerUrl.searchParams.set('share', String(Boolean(showShareButton && this.isGM)));
+      if (promptShare) {
+        viewerUrl.searchParams.set('promptShare', 'true');
+      }
       
       // Abrir modal usando Owlbear SDK
       await this.OBR.modal.open({
@@ -7034,7 +7069,7 @@ export class ExtensionController {
    * @private
    */
   async _shareImageToPlayers(url, caption) {
-    if (!this.OBR || !this.OBR.broadcast) {
+    if (!this.OBR || !this.OBR.broadcast || !this.OBR.party) {
       logError('OBR.broadcast no disponible');
       return;
     }
@@ -7050,19 +7085,38 @@ export class ExtensionController {
         }
       }
 
-      // Usar el canal correcto como en el original
-      const result = await this.broadcastService.sendMessage('com.dmscreen/showImage', {
+      const result = await shareImageWithPlayers({
+        OBR: this.OBR,
         url: absoluteImageUrl,
         caption: caption || '',
-        senderId: this.playerId
+        onProgress: (progress) => {
+          const total = progress.total || 0;
+          const unresolved = (progress.missing || 0) + (progress.loading || 0);
+
+          if (progress.phase === 'sending') {
+            this._showFeedback(`📤 Sending image to ${total} player${total === 1 ? '' : 's'}...`);
+          } else if (progress.phase === 'retrying') {
+            this._showFeedback(`🔄 Checking delivery for ${progress.pending} player${progress.pending === 1 ? '' : 's'}...`);
+          } else if (progress.phase === 'progress' && progress.loaded > 0) {
+            this._showFeedback(`📸 Visible to ${progress.loaded}/${total} players...`);
+          } else if (progress.phase === 'no_recipients') {
+            this._showFeedback('⚠️ No players connected');
+          } else if (progress.phase === 'complete') {
+            const details = [];
+            if (progress.failed) details.push(`${progress.failed} could not display`);
+            if (unresolved) details.push(`${unresolved} did not confirm`);
+            this._showFeedback(
+              `${details.length ? '⚠️' : '📸'} Visible to ${progress.loaded}/${total} players${details.length ? ` · ${details.join(' · ')}` : ''}`
+            );
+          } else if (progress.phase === 'error') {
+            this._showFeedback('❌ Error sharing image');
+          }
+        }
       });
-      
-      if (result?.success) {
+
+      if (result.loaded > 0) {
         log('📤 Imagen compartida:', absoluteImageUrl.substring(0, 80));
-        this._showFeedback('📸 Image shared!');
         this.analyticsService.trackImageShare(absoluteImageUrl);
-      } else if (result?.error !== 'size_limit') {
-        this._showFeedback('❌ Error sharing image');
       }
     } catch (e) {
       logError('Error compartiendo imagen:', e);

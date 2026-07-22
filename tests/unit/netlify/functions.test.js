@@ -87,7 +87,7 @@ describe('Netlify static asset cache policy', () => {
     'utf8'
   );
 
-  it('obliga a revalidar JavaScript y CSS sin versionar', () => {
+  it('obliga a revalidar JavaScript, CSS y HTML sin versionar', () => {
     const netlifyConfig = readProjectFile('netlify.toml');
 
     expect(netlifyConfig).toMatch(
@@ -96,10 +96,13 @@ describe('Netlify static asset cache policy', () => {
     expect(netlifyConfig).toMatch(
       /for = "\/css\/\*\.css"[\s\S]*?Cache-Control = "public, max-age=0, must-revalidate"/
     );
+    expect(netlifyConfig).toMatch(
+      /for = "\/html\/\*\.html"[\s\S]*?Cache-Control = "public, max-age=0, must-revalidate"/
+    );
   });
 
   it('fuerza una URL nueva para los módulos que tuvieron caché de siete días', () => {
-    const buildTag = '20260721-1';
+    const buildTag = '20260722-1';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
     const controllerJs = readProjectFile('js/controllers/ExtensionController.js');
@@ -109,7 +112,7 @@ describe('Netlify static asset cache policy', () => {
 
     expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
     expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
-    expect(mainJs).toContain(`2.0.0-beta.${buildTag}`);
+    expect(mainJs).toContain(`2.1.0-beta.${buildTag}`);
     expect(controllerJs).toContain(`../services/NotionService.js?v=${buildTag}`);
     expect(controllerJs).toContain(`../services/StorageService.js?v=${buildTag}`);
     expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${buildTag}`);

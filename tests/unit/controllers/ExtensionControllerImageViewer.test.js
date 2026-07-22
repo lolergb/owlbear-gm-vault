@@ -6,6 +6,18 @@ import { ExtensionController } from '../../../js/controllers/ExtensionController
 const viewerPath = fileURLToPath(
   new URL('../../../html/image-viewer.html', import.meta.url)
 );
+const backgroundPath = fileURLToPath(
+  new URL('../../../js/background.js', import.meta.url)
+);
+const controllerPath = fileURLToPath(
+  new URL('../../../js/controllers/ExtensionController.js', import.meta.url)
+);
+const manifestPath = fileURLToPath(
+  new URL('../../../manifest.json', import.meta.url)
+);
+const localManifestPath = fileURLToPath(
+  new URL('../../../manifest.local.json', import.meta.url)
+);
 
 function bareController() {
   const controller = Object.create(ExtensionController.prototype);
@@ -161,5 +173,63 @@ describe('image-viewer.html contract', () => {
   it('cierra el modal de Owlbear mediante su API', () => {
     expect(source).toMatch(/OBR\.modal\.close\s*\(\s*['"]notion-image-viewer['"]\s*\)/);
     expect(source).not.toMatch(/window\.close\s*\(/);
+  });
+
+  it('confirma al GM si la imagen cargó o falló realmente', () => {
+    expect(source).toMatch(/reportImageLoadStatus\(IMAGE_SHARE_STATUS\.LOADED\)/);
+    expect(source).toMatch(
+      /reportImageLoadStatus\(IMAGE_SHARE_STATUS\.FAILED,\s*['"]image_load_failed['"]\)/
+    );
+    expect(source).toMatch(/reason:\s*['"]viewer_closed['"]/);
+    expect(source).toMatch(/referrerpolicy=["']no-referrer["']/);
+  });
+
+  it('usa el protocolo fiable también desde el botón del visor', () => {
+    expect(source).toMatch(/shareImageWithPlayers\s*\(\s*\{/);
+    expect(source).not.toMatch(
+      /OBR\.broadcast\.sendMessage\(\s*['"]com\.dmscreen\/showImage['"]/
+    );
+  });
+});
+
+describe('image share background contract', () => {
+  it('carga un receptor de background en producción y local', () => {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const localManifest = JSON.parse(readFileSync(localManifestPath, 'utf8'));
+
+    expect(manifest.background_url).toBe('/html/background.html');
+    expect(localManifest.background_url).toBe('/html/background.html');
+    expect(manifest.version).toBe('2.1.0');
+    expect(localManifest.version).toBe('2.1.0');
+  });
+
+  it('delega la recepción al listener único de background', () => {
+    const source = readFileSync(backgroundPath, 'utf8');
+    expect(source).toMatch(/listenForImageShares\s*\(\s*\{/);
+    expect(source).toMatch(/OBR\.modal\.open\s*\(\s*\{/);
+    expect(source).toMatch(/shareId/);
+    expect(source).toMatch(/senderConnectionId/);
+    expect(source).toMatch(/reason:\s*['"]replaced_by_new_share['"]/);
+    expect(source.indexOf("OBR.modal.close('notion-image-viewer')"))
+      .toBeLessThan(source.indexOf('OBR.modal.open({'));
+  });
+
+  it('no permite que una página externa emita directamente como GM', () => {
+    const source = readFileSync(controllerPath, 'utf8');
+    expect(source).toMatch(/event\.source\s*===\s*iframe\.contentWindow/);
+    expect(source).toMatch(/event\.origin\s*!==\s*iframeOrigin/);
+    expect(source).toMatch(/querySelectorAll\(['"]\.mention-modal__iframe['"]\)/);
+    expect(source).toMatch(
+      /type\s*===\s*['"]shareImage['"][\s\S]*?_showImageModal\(safeImageUrl, caption \|\| '', true, true\)/
+    );
+    expect(source).not.toMatch(
+      /type\s*===\s*['"]shareImage['"][\s\S]{0,800}?_shareImageToPlayers\(/
+    );
+  });
+
+  it('bloquea dobles clics mientras un share inline sigue pendiente', () => {
+    const source = readFileSync(controllerPath, 'utf8');
+    expect(source).toMatch(/if\s*\(btn\.disabled\)\s*return/);
+    expect(source).toMatch(/await\s+this\._shareImageToPlayers\(url, caption\)/);
   });
 });

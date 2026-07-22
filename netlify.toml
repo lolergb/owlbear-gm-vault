@@ -67,6 +67,12 @@
     Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
 
+[[headers]]
+  for = "/html/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
 # Configuración de build
 # No se necesita build step - los archivos son estáticos
 [build]
