@@ -5,9 +5,10 @@
  */
 
 import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-1';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-2';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-2';
 import {
   PAGE_TITLE_FALLBACK,
   getUsablePageTitle,
@@ -21,20 +22,20 @@ import { Category } from '../models/Category.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js';
-import { StorageService } from '../services/StorageService.js?v=20260722-1';
-import { NotionService } from '../services/NotionService.js?v=20260722-1';
+import { StorageService } from '../services/StorageService.js?v=20260722-2';
+import { NotionService } from '../services/NotionService.js?v=20260722-2';
 import { BroadcastService } from '../services/BroadcastService.js';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js';
 import { getImageCacheService } from '../services/ImageCacheService.js';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-1';
-import { UIRenderer } from '../renderers/UIRenderer.js';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-2';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260722-2';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-1';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-1';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-2';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-2';
 
 // UI
 import { ModalManager } from '../ui/ModalManager.js';
@@ -2252,7 +2253,17 @@ export class ExtensionController {
       // Remover listener anterior y agregar nuevo
       const newShareBtn = shareBtn.cloneNode(true);
       shareBtn.parentNode.replaceChild(newShareBtn, shareBtn);
-      newShareBtn.addEventListener('click', () => this._shareCurrentPageToPlayers(pageInstance));
+      newShareBtn.setAttribute('aria-label', newShareBtn.title);
+      newShareBtn.addEventListener('click', async () => {
+        try {
+          await runShareButtonAction(
+            newShareBtn,
+            () => this._shareCurrentPageToPlayers(pageInstance)
+          );
+        } catch (error) {
+          logError('Could not share page from header:', error);
+        }
+      });
     }
 
     // Botones solo para Master GM (no Co-GM)
@@ -2358,7 +2369,7 @@ export class ExtensionController {
    * @private
    */
   async _shareCurrentPageToPlayers(pageData) {
-    if (!pageData) return;
+    if (!pageData) return false;
 
     log('🔗 Compartiendo página:', pageData.name);
 
@@ -2374,12 +2385,14 @@ export class ExtensionController {
         const embedUrl = videoInfo.type === 'youtube'
           ? `https://www.youtube.com/embed/${videoInfo.id}?autoplay=1`
           : `https://player.vimeo.com/video/${videoInfo.id}?autoplay=1`;
-        await this._shareVideoToPlayers(embedUrl, page.name, videoInfo.type);
+        return this._shareVideoToPlayers(embedUrl, page.name, videoInfo.type);
       }
+      this._showFeedback('❌ Error sharing video');
+      return false;
     } else if (page.isGoogleDoc()) {
       // Para Google Docs, compartir la URL de embed
       const embedUrl = this._getGoogleDocEmbedUrl(page.url);
-      await this._shareGoogleDocToPlayers(embedUrl, page.name);
+      return this._shareGoogleDocToPlayers(embedUrl, page.name);
     } else if (page.hasEmbeddedHtml() && page.htmlContent) {
       // Para páginas con htmlContent embebido (local-first, ej: Obsidian)
       // Funciona igual que Notion: enviar el HTML directamente
@@ -2401,7 +2414,7 @@ export class ExtensionController {
         
         if (!htmlContent.trim()) {
           this._showFeedback('⚠️ No content to share');
-          return;
+          return false;
         }
         
         // Generar un pageId único para esta página embebida (para caché)
@@ -2427,9 +2440,11 @@ export class ExtensionController {
         } else if (result?.error !== 'size_limit') {
           this._showFeedback('❌ Error sharing page');
         }
+        return result?.success === true;
       } catch (e) {
         logError('Error compartiendo página con htmlContent:', e);
         this._showFeedback('❌ Error sharing page');
+        return false;
       }
     } else if (page.isNotionPage()) {
       // Para Notion, obtener el HTML renderizado y enviarlo directamente
@@ -2465,7 +2480,7 @@ export class ExtensionController {
           
           if (!htmlContent.trim()) {
             this._showFeedback('⚠️ No content to share');
-            return;
+            return false;
           }
           
           // Enviar el HTML renderizado directamente (incluir senderId para filtrar)
@@ -2482,11 +2497,15 @@ export class ExtensionController {
           } else if (result?.error !== 'size_limit') {
             this._showFeedback('❌ Error sharing page');
           }
+          return result?.success === true;
         } catch (e) {
           logError('Error compartiendo página Notion:', e);
           this._showFeedback('❌ Error sharing page');
+          return false;
         }
       }
+      this._showFeedback('❌ Error sharing page');
+      return false;
     } else {
       // Para otros tipos, intentar compartir URL genérica
       const result = await this.broadcastService.sendMessage('com.dmscreen/showContent', {
@@ -2500,6 +2519,7 @@ export class ExtensionController {
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing content');
       }
+      return result?.success === true;
     }
   }
 
@@ -4757,9 +4777,8 @@ export class ExtensionController {
       },
       onVisibilityChange: (page, categoryPath, pageIndex, visible) =>
         this._handleVisibilityChange(page, categoryPath, pageIndex, visible),
-      onPageShare: (page, categoryPath, pageIndex) => {
-        this._shareCurrentPageToPlayers(page);
-      },
+      onPageShare: (page, categoryPath, pageIndex) =>
+        this._shareCurrentPageToPlayers(page),
       onPageOpenModal: (page, categoryPath, pageIndex) => {
         this._openPageInModal(page);
       },
@@ -6282,7 +6301,7 @@ export class ExtensionController {
    * @private
    */
   async _shareVideoToPlayers(url, caption, videoType) {
-    if (!this.OBR || !this.OBR.broadcast) return;
+    if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
       const result = await this.broadcastService.sendMessage('com.dmscreen/showVideo', {
@@ -6298,9 +6317,11 @@ export class ExtensionController {
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing video');
       }
+      return result?.success === true;
     } catch (e) {
       logError('Error compartiendo video:', e);
       this._showFeedback('❌ Error sharing video');
+      return false;
     }
   }
 
@@ -6363,7 +6384,7 @@ export class ExtensionController {
    * @private
    */
   async _shareGoogleDocToPlayers(url, name) {
-    if (!this.OBR || !this.OBR.broadcast) return;
+    if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
       const result = await this.broadcastService.sendMessage('com.dmscreen/showGoogleDoc', {
@@ -6378,9 +6399,11 @@ export class ExtensionController {
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing document');
       }
+      return result?.success === true;
     } catch (e) {
       logError('Error compartiendo documento:', e);
       this._showFeedback('❌ Error sharing document');
+      return false;
     }
   }
 
@@ -6582,13 +6605,17 @@ export class ExtensionController {
           ? (img.dataset.imageCaption ?? '')
           : (btn.dataset.imageCaption ?? '');
         if (url) {
-          btn.disabled = true;
-          btn.setAttribute('aria-busy', 'true');
           try {
-            await this._shareImageToPlayers(url, caption);
-          } finally {
-            btn.disabled = false;
-            btn.removeAttribute('aria-busy');
+            await runShareButtonAction(
+              btn,
+              () => this._shareImageToPlayers(url, caption),
+              {
+                busyLabel: 'Sharing image…',
+                successLabel: 'Image shared with players'
+              }
+            );
+          } catch (error) {
+            logError('Could not share inline image:', error);
           }
         }
       });
@@ -7291,7 +7318,7 @@ export class ExtensionController {
   async _shareImageToPlayers(url, caption) {
     if (!this.OBR || !this.OBR.broadcast || !this.OBR.party) {
       logError('OBR.broadcast no disponible');
-      return;
+      return false;
     }
 
     try {
@@ -7338,9 +7365,11 @@ export class ExtensionController {
         log('📤 Imagen compartida:', absoluteImageUrl.substring(0, 80));
         this.analyticsService.trackImageShare(absoluteImageUrl);
       }
+      return result.loaded > 0;
     } catch (e) {
       logError('Error compartiendo imagen:', e);
       this._showFeedback('❌ Error sharing image');
+      return false;
     }
   }
 

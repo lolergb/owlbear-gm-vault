@@ -4,7 +4,7 @@
  * Construye y modifica configuraciones del vault.
  */
 
-import { Config } from '../models/Config.js?v=20260722-1';
+import { Config } from '../models/Config.js?v=20260722-2';
 import { Category } from '../models/Category.js';
 import { Page } from '../models/Page.js';
 import { log } from '../utils/logger.js';

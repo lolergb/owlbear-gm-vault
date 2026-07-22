@@ -14,7 +14,7 @@ import {
   ROOM_HTML_CACHE_KEY
 } from '../utils/constants.js';
 import { log, logError, getUserRole } from '../utils/logger.js';
-import { compressJson, validateTotalMetadataSize, filterVisiblePages } from '../utils/helpers.js?v=20260722-1';
+import { compressJson, validateTotalMetadataSize, filterVisiblePages } from '../utils/helpers.js?v=20260722-2';
 
 /**
  * Servicio para gestionar el almacenamiento de configuración

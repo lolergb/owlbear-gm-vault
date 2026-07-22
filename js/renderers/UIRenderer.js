@@ -8,6 +8,7 @@
 import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
 import { log } from '../utils/logger.js';
 import { iconHtml } from '../utils/iconHelper.js';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-2';
 
 /**
  * Renderizador de interfaz de usuario
@@ -478,14 +479,24 @@ export class UIRenderer {
     shareButton.className = 'page-share-button';
     shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
     shareButton.title = 'Share with players';
+    shareButton.setAttribute('aria-label', shareButton.title);
     
-    shareButton.addEventListener('click', (e) => {
+    shareButton.addEventListener('click', async (e) => {
       e.stopPropagation();
       console.log('🔗 Share button clicked for:', page.name, 'onPageShare:', !!this.onPageShare);
-      if (this.onPageShare) {
-        this.onPageShare(page, categoryPath, pageIndex);
-      } else {
+      if (!this.onPageShare) {
         console.warn('⚠️ onPageShare callback not defined');
+        return;
+      }
+
+      try {
+        await runShareButtonAction(
+          shareButton,
+          () => this.onPageShare(page, categoryPath, pageIndex),
+          { keepVisibleElement: button }
+        );
+      } catch (error) {
+        console.error('Could not share page:', error);
       }
     });
 

@@ -230,6 +230,8 @@ describe('image share background contract', () => {
   it('bloquea dobles clics mientras un share inline sigue pendiente', () => {
     const source = readFileSync(controllerPath, 'utf8');
     expect(source).toMatch(/if\s*\(btn\.disabled\)\s*return/);
-    expect(source).toMatch(/await\s+this\._shareImageToPlayers\(url, caption\)/);
+    expect(source).toMatch(
+      /await\s+runShareButtonAction\(\s*btn\s*,\s*\(\)\s*=>\s*this\._shareImageToPlayers\(url, caption\)/
+    );
   });
 });

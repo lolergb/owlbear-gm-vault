@@ -876,7 +876,9 @@
     z-index: 10; /* Por encima del page-link-icon */
   }
   
-  .page-button:hover .page-button-actions {
+  .page-button:hover .page-button-actions,
+  .page-button:focus-within .page-button-actions,
+  .page-button.share-state-visible .page-button-actions {
     opacity: 1;
   }
   
@@ -1947,6 +1949,104 @@
 .google-docs-share-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Stable share lifecycle across embedded browsers. The spinner is a pseudo
+   element so repainting never depends on swapping an SVG mask. */
+.page-share-button,
+#page-share-button-header {
+  position: relative;
+}
+
+.page-share-button > img,
+.page-share-button > .icon,
+#page-share-button-header > img,
+#page-share-button-header > .icon,
+.share-button > img,
+.share-button > .icon,
+.notion-image-share-button > img,
+.notion-image-share-button > .icon,
+.video-share-button > img,
+.video-share-button > .icon,
+.google-docs-share-button > img,
+.google-docs-share-button > .icon {
+  transition: opacity var(--transition-fast);
+}
+
+.page-share-button[aria-busy="true"],
+#page-share-button-header[aria-busy="true"],
+.share-button[aria-busy="true"],
+.notion-image-share-button[aria-busy="true"],
+.video-share-button[aria-busy="true"],
+.google-docs-share-button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 1;
+}
+
+.page-share-button[aria-busy="true"] > img,
+.page-share-button[aria-busy="true"] > .icon,
+#page-share-button-header[aria-busy="true"] > img,
+#page-share-button-header[aria-busy="true"] > .icon,
+.share-button[aria-busy="true"] > img,
+.share-button[aria-busy="true"] > .icon,
+.notion-image-share-button[aria-busy="true"] > img,
+.notion-image-share-button[aria-busy="true"] > .icon,
+.video-share-button[aria-busy="true"] > img,
+.video-share-button[aria-busy="true"] > .icon,
+.google-docs-share-button[aria-busy="true"] > img,
+.google-docs-share-button[aria-busy="true"] > .icon {
+  opacity: 0;
+}
+
+.page-share-button[aria-busy="true"]::after,
+#page-share-button-header[aria-busy="true"]::after,
+.share-button[aria-busy="true"]::after,
+.notion-image-share-button[aria-busy="true"]::after,
+.video-share-button[aria-busy="true"]::after,
+.google-docs-share-button[aria-busy="true"]::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform-origin: center;
+  animation: share-button-spin 0.7s linear infinite;
+  pointer-events: none;
+}
+
+.page-share-button.shared,
+.page-share-button.shared:hover,
+#page-share-button-header.shared,
+#page-share-button-header.shared:hover,
+.share-button.shared,
+.share-button.shared:hover,
+.notion-image-share-button.shared,
+.notion-image-share-button.shared:hover,
+.video-share-button.shared,
+.video-share-button.shared:hover,
+.google-docs-share-button.shared,
+.google-docs-share-button.shared:hover {
+  color: var(--feedback-text);
+  background: var(--feedback-bg);
+  border-color: var(--feedback-border);
+  opacity: 1;
+}
+
+@keyframes share-button-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-share-button[aria-busy="true"]::after,
+  #page-share-button-header[aria-busy="true"]::after,
+  .share-button[aria-busy="true"]::after,
+  .notion-image-share-button[aria-busy="true"]::after,
+  .video-share-button[aria-busy="true"]::after,
+  .google-docs-share-button[aria-busy="true"]::after {
+    animation: none;
+  }
 }
 
 /* Feedback para share buttons */
