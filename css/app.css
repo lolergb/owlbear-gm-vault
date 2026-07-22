@@ -380,15 +380,31 @@
   }
 
   .select--searchable {
-    appearance: base-select;
     min-height: 96px;
     padding: var(--spacing-xs);
+    overflow-y: auto;
   }
 
-  .select--searchable option {
+  .select--searchable__option {
     padding: var(--spacing-xs);
     border-radius: var(--radius-sm);
     margin: var(--radius-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    line-height: var(--font-line-base);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .select--searchable__option:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
+  }
+
+  .select--searchable__option[aria-selected="true"] {
+    background: var(--color-bg-active);
+    color: var(--color-text-primary);
   }
   
   /* Textarea específico */

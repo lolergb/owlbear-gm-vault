@@ -1538,8 +1538,11 @@ export class ExtensionController {
         `;
       } else if (field.type === 'select') {
         const options = field.options || [];
+        const selectId = `field-${field.name}`;
         const searchId = `field-${field.name}-search`;
         const statusId = `field-${field.name}-search-status`;
+        const listboxId = `field-${field.name}-listbox`;
+        const selectLabelId = `field-${field.name}-label`;
         const visibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
 
         return `
@@ -1552,7 +1555,7 @@ export class ExtensionController {
                 class="input"
                 placeholder="${field.searchPlaceholder || 'Search options...'}"
                 aria-label="${field.searchLabel || `Search ${field.label}`}"
-                aria-controls="field-${field.name}"
+                aria-controls="${listboxId}"
                 aria-describedby="${statusId}"
                 autocomplete="off"
                 spellcheck="false"
@@ -1564,18 +1567,33 @@ export class ExtensionController {
                 aria-live="polite"
               ></span>
             ` : ''}
-            <label class="form__label" for="field-${field.name}">${field.label}${field.required ? ' *' : ''}</label>
+            <label
+              class="form__label"
+              id="${selectLabelId}"
+              ${field.searchable ? '' : `for="${selectId}"`}
+            >${field.label}${field.required ? ' *' : ''}</label>
             <select 
-              id="field-${field.name}" 
+              id="${selectId}"
               name="${field.name}"
-              class="select${field.searchable ? ' select--searchable' : ''}"
-              ${field.searchable ? `data-searchable-select="true" size="${visibleOptions}"` : ''}
+              class="select${field.searchable ? ' select--searchable-source' : ''}"
+              ${field.searchable ? `data-searchable-select="true" size="${visibleOptions}" hidden aria-hidden="true" tabindex="-1"` : ''}
               ${field.required ? 'required' : ''}
             >
               ${options.map(opt =>
                 `<option value="${opt.value}" ${field.value === opt.value ? 'selected' : ''}>${opt.label}</option>`
               ).join('')}
             </select>
+            ${field.searchable ? `
+              <div
+                id="${listboxId}"
+                class="select select--searchable"
+                role="listbox"
+                tabindex="0"
+                aria-labelledby="${selectLabelId}"
+                aria-describedby="${statusId}"
+                ${field.required ? 'aria-required="true"' : ''}
+              ></div>
+            ` : ''}
           </div>
         `;
       } else if (field.type === 'textarea') {
@@ -1683,9 +1701,10 @@ export class ExtensionController {
     const select = modal.querySelector(`#field-${field.name}`);
     const searchInput = modal.querySelector(`#field-${field.name}-search`);
     const status = modal.querySelector(`#field-${field.name}-search-status`);
+    const listbox = modal.querySelector(`#field-${field.name}-listbox`);
     const submitButton = modal.querySelector('#modal-submit');
 
-    if (!select || !searchInput) return;
+    if (!select || !searchInput || !listbox) return;
 
     const options = (field.options || []).map(option => ({
       label: String(option.label ?? ''),
@@ -1701,13 +1720,59 @@ export class ExtensionController {
       .toLocaleLowerCase();
 
     const updateSubmitState = () => {
-      if (!submitButton) return;
-
-      const emptyRequiredSelect = Array.from(
+      const requiredSelects = Array.from(
         modal.querySelectorAll('select[data-searchable-select="true"][required]')
-      ).some(requiredSelect => requiredSelect.disabled || requiredSelect.options.length === 0);
+      );
+      const requiredSelectStates = requiredSelects.map(requiredSelect => {
+        const invalid = requiredSelect.disabled ||
+          requiredSelect.options.length === 0 ||
+          requiredSelect.value === '';
+        const relatedListbox = modal.querySelector(`#${requiredSelect.id}-listbox`);
+        relatedListbox?.setAttribute('aria-invalid', String(invalid));
+        return invalid;
+      });
+      const emptyRequiredSelect = requiredSelectStates.some(Boolean);
 
-      submitButton.disabled = emptyRequiredSelect;
+      if (submitButton) submitButton.disabled = emptyRequiredSelect;
+    };
+
+    const updateStatus = () => {
+      if (!status) return;
+
+      const matchingCount = listbox.children.length;
+      if (matchingCount === 0) {
+        status.textContent = field.noResultsText || 'No options found';
+      } else if (field.required && select.value === '') {
+        status.textContent = field.requiredSelectionText || 'Select an option';
+      } else {
+        const label = matchingCount === 1 ? resultLabel : `${resultLabel}s`;
+        status.textContent = `${matchingCount} ${label}`;
+      }
+    };
+
+    const syncSelectedOption = (value, emitChange = false, reveal = false) => {
+      select.value = value;
+      let selectedOption = null;
+
+      Array.from(listbox.children).forEach(optionElement => {
+        const isSelected = optionElement.dataset.value === value;
+        optionElement.setAttribute('aria-selected', String(isSelected));
+        if (isSelected) selectedOption = optionElement;
+      });
+
+      if (selectedOption) {
+        listbox.setAttribute('aria-activedescendant', selectedOption.id);
+        if (reveal) selectedOption.scrollIntoView?.({ block: 'nearest' });
+      } else {
+        listbox.removeAttribute('aria-activedescendant');
+      }
+
+      updateSubmitState();
+      updateStatus();
+
+      if (emitChange) {
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     };
 
     const renderOptions = () => {
@@ -1718,40 +1783,82 @@ export class ExtensionController {
       );
 
       select.replaceChildren();
-      matchingOptions.forEach(option => {
+      listbox.replaceChildren();
+      matchingOptions.forEach((option, optionIndex) => {
         const optionElement = document.createElement('option');
         optionElement.value = option.value;
         optionElement.textContent = option.label;
         select.appendChild(optionElement);
+
+        const listboxOption = document.createElement('div');
+        listboxOption.id = `field-${field.name}-option-${optionIndex}`;
+        listboxOption.className = 'select--searchable__option';
+        listboxOption.dataset.value = option.value;
+        listboxOption.setAttribute('role', 'option');
+        listboxOption.setAttribute('aria-selected', 'false');
+        listboxOption.textContent = option.label;
+        listboxOption.title = option.label;
+        listbox.appendChild(listboxOption);
       });
 
+      let selectedValue = null;
       if (matchingOptions.some(option => option.value === previousValue)) {
-        select.value = previousValue;
+        selectedValue = previousValue;
       } else if (matchingOptions.length > 0) {
-        select.value = matchingOptions[0].value;
+        selectedValue = matchingOptions[0].value;
       }
 
       select.disabled = matchingOptions.length === 0;
       select.size = Math.min(Math.max(matchingOptions.length, 2), maxVisibleOptions);
-
-      if (status) {
-        if (matchingOptions.length === 0) {
-          status.textContent = field.noResultsText || 'No options found';
-        } else {
-          const label = matchingOptions.length === 1 ? resultLabel : `${resultLabel}s`;
-          status.textContent = `${matchingOptions.length} ${label}`;
-        }
+      listbox.tabIndex = matchingOptions.length === 0 ? -1 : 0;
+      listbox.setAttribute('aria-disabled', String(matchingOptions.length === 0));
+      listbox.style.maxHeight = `${(maxVisibleOptions * 40) + 8}px`;
+      if (selectedValue !== null) {
+        syncSelectedOption(selectedValue, false, true);
+      } else {
+        listbox.removeAttribute('aria-activedescendant');
+        updateSubmitState();
+        updateStatus();
       }
-
-      updateSubmitState();
     };
 
     searchInput.addEventListener('input', renderOptions);
     searchInput.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowDown' && !select.disabled) {
         event.preventDefault();
-        select.focus();
+        listbox.focus();
       }
+    });
+
+    listbox.addEventListener('click', (event) => {
+      const optionElement = event.target.closest('[role="option"]');
+      if (!optionElement || !listbox.contains(optionElement)) return;
+      syncSelectedOption(optionElement.dataset.value, true);
+      listbox.focus();
+    });
+
+    listbox.addEventListener('keydown', (event) => {
+      const optionElements = Array.from(listbox.querySelectorAll('[role="option"]'));
+      if (optionElements.length === 0) return;
+
+      const currentIndex = Math.max(
+        0,
+        optionElements.findIndex(optionElement =>
+          optionElement.dataset.value === select.value
+        )
+      );
+      let nextIndex = currentIndex;
+
+      if (event.key === 'ArrowDown') nextIndex = Math.min(currentIndex + 1, optionElements.length - 1);
+      else if (event.key === 'ArrowUp') nextIndex = Math.max(currentIndex - 1, 0);
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = optionElements.length - 1;
+      else return;
+
+      event.preventDefault();
+      const nextOption = optionElements[nextIndex];
+      syncSelectedOption(nextOption.dataset.value, true);
+      nextOption.scrollIntoView?.({ block: 'nearest' });
     });
 
     renderOptions();
