@@ -4,7 +4,7 @@
  * Convierte los bloques de la API de Notion a HTML.
  */
 
-import { log, logWarn } from '../utils/logger.js';
+import { log, logWarn } from '../utils/logger.js?v=20260722-3';
 import { extractNotionPageId } from '../utils/helpers.js';
 import { resolvePageTitle } from '../utils/pageTitle.js';
 

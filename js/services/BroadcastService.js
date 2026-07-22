@@ -13,7 +13,7 @@ import {
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
   BROADCAST_CHANNEL_RESPONSE_FULL_VAULT
 } from '../utils/constants.js';
-import { log, logWarn, getUserRole } from '../utils/logger.js';
+import { log, logWarn, getUserRole } from '../utils/logger.js?v=20260722-3';
 
 /**
  * Servicio para gestionar la comunicación broadcast

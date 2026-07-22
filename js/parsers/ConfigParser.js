@@ -4,10 +4,10 @@
  * Parsea y valida configuraciones JSON del vault.
  */
 
-import { Config } from '../models/Config.js?v=20260722-2';
+import { Config } from '../models/Config.js?v=20260722-3';
 import { Category } from '../models/Category.js';
 import { Page } from '../models/Page.js';
-import { log, logWarn, logError } from '../utils/logger.js';
+import { log, logWarn, logError } from '../utils/logger.js?v=20260722-3';
 
 /**
  * Parser de configuración del vault

@@ -4,11 +4,11 @@
  * Orquesta todos los servicios, renderers y componentes de la aplicación.
  */
 
-import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-2';
+import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-3';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-3';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
-import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-2';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-3';
 import {
   PAGE_TITLE_FALLBACK,
   getUsablePageTitle,
@@ -21,25 +21,25 @@ import { Page } from '../models/Page.js';
 import { Category } from '../models/Category.js';
 
 // Services
-import { CacheService } from '../services/CacheService.js';
-import { StorageService } from '../services/StorageService.js?v=20260722-2';
-import { NotionService } from '../services/NotionService.js?v=20260722-2';
-import { BroadcastService } from '../services/BroadcastService.js';
+import { CacheService } from '../services/CacheService.js?v=20260722-3';
+import { StorageService } from '../services/StorageService.js?v=20260722-3';
+import { NotionService } from '../services/NotionService.js?v=20260722-3';
+import { BroadcastService } from '../services/BroadcastService.js?v=20260722-3';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js';
-import { getImageCacheService } from '../services/ImageCacheService.js';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260722-3';
+import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-3';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-2';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260722-2';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-3';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260722-3';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-2';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-2';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-3';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-3';
 
 // UI
-import { ModalManager } from '../ui/ModalManager.js';
-import { EventHandlers } from '../ui/EventHandlers.js';
+import { ModalManager } from '../ui/ModalManager.js?v=20260722-3';
+import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-3';
 
 /**
  * Controlador principal de la extensión
@@ -108,7 +108,6 @@ export class ExtensionController {
     
     // Configurar referencias
     setOBRReference(OBR);
-    setGetTokenFunction(() => this.storageService.getUserToken());
     
     // Configurar servicios
     this._setupServices();
@@ -3303,18 +3302,23 @@ export class ExtensionController {
 
     log('⚙️ Setup settings listeners - loadUrlBtn:', !!loadUrlBtn, 'vaultUrlInput:', !!vaultUrlInput);
 
-    // Mostrar token actual en el input y enmascarado
+    // Nunca volver a insertar el secreto guardado en el DOM. El campo vacío
+    // sirve únicamente para reemplazar la conexión actual.
     const currentToken = this.storageService.getUserToken() || '';
     const tokenMasked = document.getElementById('token-masked');
     
-    // Rellenar el input con el token actual
     if (tokenInput) {
-      tokenInput.value = currentToken;
+      tokenInput.value = '';
+      tokenInput.placeholder = currentToken
+        ? 'Enter a new token to replace the current one'
+        : 'ntn_... or secret_...';
     }
     
-    // Mostrar versión enmascarada
-    if (tokenMasked && currentToken) {
-      tokenMasked.textContent = `Current: ${currentToken.substring(0, 8)}...${currentToken.slice(-4)}`;
+    // Mostrar solo una referencia mínima, nunca el prefijo del secreto.
+    if (tokenMasked) {
+      tokenMasked.textContent = currentToken
+        ? `Notion connected · ending in ${currentToken.slice(-4)}`
+        : '';
     }
 
     // Guardar token
@@ -3345,9 +3349,11 @@ export class ExtensionController {
         // Actualizar texto del token enmascarado
         const tokenMasked = document.getElementById('token-masked');
         if (tokenMasked) {
-          tokenMasked.textContent = token.length > 10 
-            ? token.substring(0, 6) + '...' + token.substring(token.length - 4)
-            : '••••••••';
+          tokenMasked.textContent = `Notion connected · ending in ${token.slice(-4)}`;
+        }
+        if (tokenInput) {
+          tokenInput.value = '';
+          tokenInput.placeholder = 'Enter a new token to replace the current one';
         }
         
         // Mostrar toast de éxito (quedarse en settings)
@@ -3360,13 +3366,16 @@ export class ExtensionController {
       clearBtn.dataset.listenerAdded = 'true';
       clearBtn.addEventListener('click', async () => {
         const confirmed = await this.uiRenderer._showConfirmDialog(
-          'Delete token? You will go back to using the server token.',
+          'Delete token? Your personal Notion pages will stop loading until you connect another token.',
           { confirmText: 'Delete', isDangerous: true }
         );
         if (confirmed) {
           this.storageService.saveUserToken('');
           this.analyticsService.trackTokenRemoved();
-          if (tokenInput) tokenInput.value = '';
+          if (tokenInput) {
+            tokenInput.value = '';
+            tokenInput.placeholder = 'ntn_... or secret_...';
+          }
           if (tokenMasked) tokenMasked.textContent = '';
           
           // Ocultar botón Import from Notion cuando se borra el token
@@ -3382,7 +3391,7 @@ export class ExtensionController {
           }
           
           // Mostrar toast (quedarse en settings)
-          this.uiRenderer.showInfoToast('Token deleted', 'You will use the default server token.');
+          this.uiRenderer.showInfoToast('Token deleted', 'Your personal Notion connection has been removed.');
         }
       });
     }
@@ -5700,9 +5709,10 @@ export class ExtensionController {
 
     const hasUserToken = this.storageService.hasUserToken();
     
-    // Verificar si hay token de default disponible (para páginas del default-config)
-    const hasDefaultToken = await this.notionService._getDefaultToken();
-    const hasAnyToken = hasUserToken || hasDefaultToken;
+    // El navegador solo conoce si el proxy tiene acceso demo. La credencial
+    // permanece en Netlify y nunca forma parte de la respuesta.
+    const hasDefaultAccess = await this.notionService._hasDefaultAccess();
+    const hasAnyToken = hasUserToken || hasDefaultAccess;
     
     // Caso 1: Co-GM o Player - SIEMPRE solicitar contenido del GM master
     // No importa si hay token default, porque ese token es para demos, no para el vault del usuario

@@ -6,7 +6,7 @@
  * para no estropear las métricas históricas.
  */
 
-import { log, logWarn } from '../utils/logger.js';
+import { log, logWarn } from '../utils/logger.js?v=20260722-3';
 
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';

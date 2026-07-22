@@ -4,7 +4,7 @@
  * Gestiona la creación, apertura y cierre de modales en la aplicación.
  */
 
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.js?v=20260722-3';
 
 /**
  * Gestor de modales de la UI
@@ -437,4 +437,3 @@ export class ModalManager {
 }
 
 export default ModalManager;
-

@@ -4,7 +4,7 @@
  * Centraliza el manejo de eventos de la interfaz.
  */
 
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.js?v=20260722-3';
 
 /**
  * Clase para manejar eventos de la UI
@@ -425,4 +425,3 @@ export class EventHandlers {
 }
 
 export default EventHandlers;
-

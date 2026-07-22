@@ -6,7 +6,7 @@
 
 import { ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
 import { isNotionUrl } from '../utils/helpers.js';
-import { log, logError, logWarn } from '../utils/logger.js';
+import { log, logError, logWarn } from '../utils/logger.js?v=20260722-3';
 
 /**
  * Servicio para interactuar con Notion
@@ -19,9 +19,10 @@ export class NotionService {
     this.cacheService = null;
     // Referencia al StorageService
     this.storageService = null;
-    // Token de default cacheado
-    this._defaultToken = null;
-    this._defaultTokenFetched = false;
+    // El cliente solo conoce si existe acceso demo. La credencial permanece
+    // dentro de la Netlify Function y nunca se descarga en el navegador.
+    this._defaultAccessAvailable = false;
+    this._defaultAccessChecked = false;
     
     // Configuración de rate limiting y reintentos
     this._maxRetries = 3;
@@ -206,31 +207,57 @@ export class NotionService {
   }
 
   /**
-   * Obtiene el token de default desde Netlify (solo una vez)
+   * Comprueba si el proxy tiene acceso demo sin descargar ninguna credencial.
    * @private
-   * @returns {Promise<string|null>}
+   * @returns {Promise<boolean>}
    */
-  async _getDefaultToken() {
-    if (this._defaultTokenFetched) {
-      return this._defaultToken;
+  async _hasDefaultAccess() {
+    if (this._defaultAccessChecked) {
+      return this._defaultAccessAvailable;
     }
 
     try {
-      const response = await fetch('/.netlify/functions/get-default-token');
+      const response = await fetch('/.netlify/functions/get-default-token', {
+        method: 'GET',
+        cache: 'no-store'
+      });
       if (response.ok) {
         const data = await response.json();
-        this._defaultToken = data.token || null;
-        this._defaultTokenFetched = true;
-        if (this._defaultToken) {
-          log('🔑 Token de default-config obtenido');
-        }
-        return this._defaultToken;
+        this._defaultAccessAvailable = data.available === true;
       }
     } catch (e) {
-      logWarn('No se pudo obtener token de default:', e);
+      logWarn('No se pudo comprobar el acceso demo de Notion:', e);
     }
 
-    this._defaultTokenFetched = true;
+    this._defaultAccessChecked = true;
+    return this._defaultAccessAvailable;
+  }
+
+  /**
+   * Construye la autenticación para el proxy sin incluir secretos en la URL.
+   * Los flujos de importación pueden desactivar el acceso demo porque siempre
+   * deben operar con la conexión personal del usuario.
+   * @private
+   * @param {Object} [options]
+   * @param {boolean} [options.allowDefault=true]
+   * @returns {Promise<Object|null>}
+   */
+  async _getNotionAuthHeaders({ allowDefault = true } = {}) {
+    const userToken = this.storageService?.getUserToken();
+    if (userToken) {
+      return {
+        'Content-Type': 'application/json',
+        'X-Notion-Token': userToken
+      };
+    }
+
+    if (allowDefault && await this._hasDefaultAccess()) {
+      return {
+        'Content-Type': 'application/json',
+        'X-GM-Vault-Default': '1'
+      };
+    }
+
     return null;
   }
 
@@ -254,15 +281,9 @@ export class NotionService {
     }
 
     try {
-      // Obtener token del usuario
-      let tokenToUse = this.storageService?.getUserToken();
-      
-      // Si no hay token de usuario, intentar usar el token de default
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         // Sin token, intentar obtener del caché compartido
         const sharedBlocks = await this._getFromSharedCache(pageId);
         if (sharedBlocks) {
@@ -275,11 +296,11 @@ export class NotionService {
 
       log('🌐 Obteniendo bloques desde la API para:', pageId);
       
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(tokenToUse)}`;
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}`;
       
       const response = await this._fetchWithRetry(apiUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -339,21 +360,17 @@ export class NotionService {
     }
 
     try {
-      // Obtener token del usuario o usar el de default
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         return { lastEditedTime: null, icon: null };
       }
 
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(tokenToUse)}&type=page`;
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page`;
       
       const response = await this._fetchWithRetry(apiUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -405,23 +422,19 @@ export class NotionService {
     }
 
     try {
-      // Obtener token del usuario o usar el de default
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         return [];
       }
 
       // Usar el mismo endpoint que para páginas - la API de Notion usa el mismo endpoint
       // para obtener hijos de bloques, pasando el blockId como pageId
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}&token=${encodeURIComponent(tokenToUse)}`;
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}`;
       
       const response = await this._fetchWithRetry(apiUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -450,14 +463,17 @@ export class NotionService {
    */
   async validateToken() {
     try {
-      const userToken = this.storageService?.getUserToken();
-      
-      if (!userToken) {
+      const authHeaders = await this._getNotionAuthHeaders({ allowDefault: false });
+
+      if (!authHeaders) {
         return false;
       }
 
       // Hacer una llamada simple para verificar el token
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?validate=true&token=${encodeURIComponent(userToken)}`);
+      const response = await this._fetchWithRetry(
+        '/.netlify/functions/notion-api?validate=true',
+        { method: 'GET', headers: authHeaders }
+      );
       
       return response.ok;
     } catch (e) {
@@ -472,9 +488,9 @@ export class NotionService {
    */
   async searchWorkspacePages(query = '') {
     try {
-      const userToken = this.storageService?.getUserToken();
-      
-      if (!userToken) {
+      const authHeaders = await this._getNotionAuthHeaders({ allowDefault: false });
+
+      if (!authHeaders) {
         throw new Error('No Notion token configured. Please add your token in Settings.');
       }
 
@@ -482,7 +498,6 @@ export class NotionService {
       
       const params = new URLSearchParams({
         action: 'search',
-        token: userToken,
         filter: 'page'
       });
       
@@ -490,7 +505,10 @@ export class NotionService {
         params.append('query', query);
       }
       
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
+      const response = await this._fetchWithRetry(
+        `/.netlify/functions/notion-api?${params.toString()}`,
+        { method: 'GET', headers: authHeaders }
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -528,9 +546,9 @@ export class NotionService {
    */
   async fetchChildPages(pageId) {
     try {
-      const userToken = this.storageService?.getUserToken();
-      
-      if (!userToken) {
+      const authHeaders = await this._getNotionAuthHeaders({ allowDefault: false });
+
+      if (!authHeaders) {
         throw new Error('No Notion token configured');
       }
 
@@ -538,11 +556,13 @@ export class NotionService {
       
       const params = new URLSearchParams({
         action: 'children',
-        pageId: pageId,
-        token: userToken
+        pageId: pageId
       });
       
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
+      const response = await this._fetchWithRetry(
+        `/.netlify/functions/notion-api?${params.toString()}`,
+        { method: 'GET', headers: authHeaders }
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1047,13 +1067,9 @@ export class NotionService {
    */
   async fetchDatabasePages(databaseId) {
     try {
-      // Obtener token del usuario o usar el de default
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         logWarn('No hay token para consultar base de datos');
         return [];
       }
@@ -1062,11 +1078,13 @@ export class NotionService {
       
       const params = new URLSearchParams({
         action: 'database',
-        databaseId: databaseId,
-        token: tokenToUse
+        databaseId: databaseId
       });
       
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
+      const response = await this._fetchWithRetry(
+        `/.netlify/functions/notion-api?${params.toString()}`,
+        { method: 'GET', headers: authHeaders }
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

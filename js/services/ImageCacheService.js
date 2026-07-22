@@ -5,7 +5,7 @@
  * iconos de páginas de Notion y otras imágenes frecuentes.
  */
 
-import { log, logWarn, logError } from '../utils/logger.js';
+import { log, logWarn, logError } from '../utils/logger.js?v=20260722-3';
 
 const DB_NAME = 'gm-vault-images';
 const DB_VERSION = 1;

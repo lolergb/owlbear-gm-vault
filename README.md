@@ -256,11 +256,11 @@ You can link pages directly to tokens/characters in the scene:
 
 - **Each user has their own token:** Configure your token once and use it in all rooms
 - **Each room is independent:** Pages are configured per room, but the token is shared
-- **Private token:** Your token is stored locally in your browser, only you can see it
+- **Private token:** Your token is stored locally and sent to the same-origin proxy only in request headers; it is never placed in a URL
 - **Notion URLs:** You can use private pages (they don't need to be public) if you share them with your integration
 - **Icons:** Pages automatically show their Notion icon
 - **Images:** Click on any image to view it at full size
-- **Change token:** Click **🔑** → Delete Token to go back to using the server token (if configured)
+- **Change token:** Click **🔑** → Delete Token to remove your personal connection; the built-in demos can still use the dedicated demo integration when configured
 - **Player visibility:** By default, all pages are hidden from players. Use the **👁️** button to make pages visible
 - **Content sharing:** Players don't need a Notion token to view pages shared by the GM
 - **GM must be online:** The GM needs to have the extension open for players to receive shared content

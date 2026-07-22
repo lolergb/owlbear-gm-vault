@@ -4,10 +4,10 @@
  * Construye y modifica configuraciones del vault.
  */
 
-import { Config } from '../models/Config.js?v=20260722-2';
+import { Config } from '../models/Config.js?v=20260722-3';
 import { Category } from '../models/Category.js';
 import { Page } from '../models/Page.js';
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.js?v=20260722-3';
 
 /**
  * Builder para construir configuraciones del vault

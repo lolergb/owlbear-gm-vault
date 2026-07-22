@@ -6,9 +6,9 @@
  */
 
 import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.js?v=20260722-3';
 import { iconHtml } from '../utils/iconHelper.js';
-import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-2';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-3';
 
 /**
  * Renderizador de interfaz de usuario
