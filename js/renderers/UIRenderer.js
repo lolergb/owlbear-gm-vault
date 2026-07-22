@@ -351,12 +351,45 @@ export class UIRenderer {
   }
 
   /**
+   * Actualiza el estado visual y accesible del control de visibilidad.
+   * @private
+   */
+  _setVisibilityButtonState(button, visible) {
+    const title = visible ? 'Visible to players' : 'Hidden from players';
+    button.innerHTML = iconHtml(`img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { alt: 'Visibility' });
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.setAttribute('aria-pressed', String(visible));
+  }
+
+  /**
+   * Sincroniza la fila existente cuando la visibilidad cambia desde otra vista.
+   * @param {Object} page - Página modificada
+   * @param {boolean} visible - Nuevo estado
+   */
+  updatePageVisibility(page, visible) {
+    document.querySelectorAll('.page-button').forEach(pageButton => {
+      const matchesId = page.id && pageButton.dataset.pageId === page.id;
+      const matchesLegacyPage = !page.id &&
+        pageButton.dataset.pageName === page.name &&
+        pageButton.dataset.pageUrl === (page.url || '');
+      if (!matchesId && !matchesLegacyPage) return;
+
+      const visibilityButton = pageButton.querySelector('.page-visibility-button');
+      if (visibilityButton) {
+        this._setVisibilityButtonState(visibilityButton, visible);
+      }
+    });
+  }
+
+  /**
    * Crea un botón de página (compatible con CSS original)
    * @private
    */
   _createPageButton(page, roomId, categoryPath, pageIndex, isGM) {
     const button = document.createElement('button');
     button.className = 'page-button';
+    button.dataset.pageId = page.id || '';
     button.dataset.pageIndex = pageIndex;
     button.dataset.pageName = page.name;
     button.dataset.pageUrl = page.url || '';
@@ -468,13 +501,39 @@ export class UIRenderer {
         // Botón de visibilidad
         const visibilityButton = document.createElement('button');
         visibilityButton.className = 'page-visibility-button';
-        visibilityButton.innerHTML = iconHtml(`img/${page.visibleToPlayers ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { alt: 'Visibility' });
-        visibilityButton.title = page.visibleToPlayers ? 'Visible to players' : 'Hidden from players';
+        this._setVisibilityButtonState(visibilityButton, page.visibleToPlayers === true);
         
-        visibilityButton.addEventListener('click', (e) => {
+        visibilityButton.addEventListener('click', async (e) => {
           e.stopPropagation();
-          if (this.onVisibilityChange) {
-            this.onVisibilityChange(page, categoryPath, pageIndex, !page.visibleToPlayers);
+          if (!this.onVisibilityChange || visibilityButton.disabled) return;
+
+          const previousVisibility = visibilityButton.getAttribute('aria-pressed') === 'true';
+          const newVisibility = !previousVisibility;
+          visibilityButton.disabled = true;
+          visibilityButton.setAttribute('aria-busy', 'true');
+          this._setVisibilityButtonState(visibilityButton, newVisibility);
+
+          try {
+            const updated = await this.onVisibilityChange(
+              page,
+              categoryPath,
+              pageIndex,
+              newVisibility
+            );
+
+            if (updated === false) {
+              page.visibleToPlayers = previousVisibility;
+              this._setVisibilityButtonState(visibilityButton, previousVisibility);
+            } else {
+              page.visibleToPlayers = newVisibility;
+            }
+          } catch (error) {
+            page.visibleToPlayers = previousVisibility;
+            this._setVisibilityButtonState(visibilityButton, previousVisibility);
+            console.error('Error updating page visibility:', error);
+          } finally {
+            visibilityButton.disabled = false;
+            visibilityButton.removeAttribute('aria-busy');
           }
         });
 

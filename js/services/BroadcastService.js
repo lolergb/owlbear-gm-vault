@@ -262,18 +262,21 @@ export class BroadcastService {
   /**
    * Envía la lista de páginas visibles a todos los players
    * @param {Object} visibleConfig - Configuración filtrada
+   * @returns {Promise<boolean>} Si el mensaje se pudo enviar
    */
-  broadcastVisiblePages(visibleConfig) {
-    if (!this.OBR) return;
+  async broadcastVisiblePages(visibleConfig) {
+    if (!this.OBR) return false;
 
     try {
-      this.OBR.broadcast.sendMessage(BROADCAST_CHANNEL_VISIBLE_PAGES, {
+      await this.OBR.broadcast.sendMessage(BROADCAST_CHANNEL_VISIBLE_PAGES, {
         config: visibleConfig,
         timestamp: Date.now()
       });
       log('📤 Lista de páginas visibles enviada');
+      return true;
     } catch (e) {
       logWarn('No se pudo enviar lista de páginas visibles:', e);
+      return false;
     }
   }
 
@@ -376,4 +379,3 @@ export class BroadcastService {
 }
 
 export default BroadcastService;
-

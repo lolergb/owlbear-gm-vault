@@ -520,36 +520,53 @@ export class ExtensionController {
   /**
    * Guarda la configuración actual
    * @param {Object} config - Configuración a guardar
+   * @param {Object} [options] - Opciones de persistencia
+   * @param {boolean} [options.render=true] - Si debe reconstruir la interfaz
    */
-  async saveConfig(config) {
+  async saveConfig(config, { render: shouldRender = true } = {}) {
     log('💾 Guardando configuración...');
 
     // Parsear el config para convertir formato items[] a formato interno si es necesario
     const configJson = config.toJSON ? config.toJSON() : config;
     this.config = this.configParser.parse(configJson);
     this.configBuilder = new ConfigBuilder(this.config);
+    this.uiRenderer?.setConfig?.(this.config);
 
     // Guardar en localStorage (guardamos el JSON parseado con formato legacy + order)
-    this.storageService.saveLocalConfig(this.config.toJSON ? this.config.toJSON() : this.config);
+    const localSaved = this.storageService.saveLocalConfig(
+      this.config.toJSON ? this.config.toJSON() : this.config
+    );
+    let saved = localSaved !== false;
 
     // Si es Master GM, guardar en room metadata y broadcast
     if (this.isGM && !this.isCoGM) {
       const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
-      await this.storageService.saveRoomConfig(configToSave);
-      
-      // Broadcast páginas visibles para Players
-      const visibleConfig = filterVisiblePages(configToSave);
-      this.broadcastService.broadcastVisiblePages(visibleConfig);
-      
-      // Broadcast vault completo para Co-GMs
-      await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-        config: configToSave
-      });
-      log('📤 Vault completo enviado a Co-GMs');
+      const roomSaved = await this.storageService.saveRoomConfig(configToSave);
+      saved = saved && roomSaved !== false;
+
+      // Solo anunciar un estado que haya quedado persistido localmente y en la sala.
+      if (saved) {
+        const visibleConfig = filterVisiblePages(configToSave);
+        await this.broadcastService.broadcastVisiblePages(visibleConfig);
+
+        // El vault completo es una sincronización auxiliar para Co-GMs. Un mensaje
+        // demasiado grande no debe deshacer una configuración ya guardada.
+        const fullVaultResult = await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
+          config: configToSave
+        });
+        if (fullVaultResult?.success === false) {
+          logWarn('No se pudo enviar el vault completo a los Co-GMs; la configuración principal sí quedó guardada');
+        } else {
+          log('📤 Vault completo enviado a Co-GMs');
+        }
+      }
     }
 
-    // Re-renderizar
-    await this.render();
+    if (shouldRender) {
+      await this.render();
+    }
+
+    return saved;
   }
 
   /**
@@ -637,13 +654,13 @@ export class ExtensionController {
    * @private
    */
   async _updatePageVisibility(page, categoryPath, pageIndex, newVisibility) {
-    if (!this.config || !this.isGM) return;
+    if (!this.config || !this.isGM) return false;
 
     log('👁️ Actualizando visibilidad de página:', page.name, '->', newVisibility);
 
     // Navegar a la categoría correcta
     const currentLevel = this._navigateToCategory(categoryPath);
-    if (!currentLevel) return;
+    if (!currentLevel) return false;
 
     // Encontrar y actualizar la página (por ID primero, luego por nombre)
     const pages = currentLevel.pages || [];
@@ -656,13 +673,38 @@ export class ExtensionController {
     }
     
     if (pageToUpdate) {
+      const previousVisibility = pageToUpdate.visibleToPlayers === true;
       pageToUpdate.visibleToPlayers = newVisibility;
-      await this.saveConfig(this.config);
+      let saved = false;
+      try {
+        saved = await this.saveConfig(this.config, { render: false });
+      } catch (error) {
+        logError('Error guardando la visibilidad de la página:', error);
+      }
+
+      if (!saved) {
+        pageToUpdate.visibleToPlayers = previousVisibility;
+        const rollbackPage = page.id
+          ? this.config?.findPageById?.(page.id)
+          : this.config?.findPageByName?.(page.name);
+        if (rollbackPage) rollbackPage.visibleToPlayers = previousVisibility;
+        page.visibleToPlayers = previousVisibility;
+        try {
+          await this.saveConfig(this.config, { render: false });
+        } catch (error) {
+          logError('Error restaurando la visibilidad anterior:', error);
+        }
+        return false;
+      }
+
+      page.visibleToPlayers = newVisibility;
       
       // Actualizar tokens vinculados a esta página
       await this._updateLinkedTokensVisibility(page.id, page.url, newVisibility);
+      return true;
     } else {
       logError('No se encontró la página:', page.name);
+      return false;
     }
   }
   
@@ -701,8 +743,40 @@ export class ExtensionController {
    * @private
    */
   async _handleVisibilityChange(page, categoryPath, pageIndex, visible) {
-    await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
-    this.analyticsService.trackVisibilityToggle(page.name, visible);
+    const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
+    if (updated) {
+      this.uiRenderer?.updatePageVisibility?.(page, visible);
+      this._updateCurrentPageVisibility(page, visible);
+      this.analyticsService.trackVisibilityToggle(page.name, visible);
+    }
+    return updated;
+  }
+
+  /**
+   * Mantiene sincronizados los indicadores de la página abierta sin renderizarla de nuevo.
+   * @private
+   */
+  _updateCurrentPageVisibility(page, visible) {
+    const matchesCurrentPage = page?.id
+      ? this.currentPage?.id === page.id
+      : this.currentPage?.name === page?.name &&
+        (this.currentPage?.url || '') === (page?.url || '');
+    if (!matchesCurrentPage) return;
+
+    this.currentPage.visibleToPlayers = visible;
+    const titleElements = [
+      document.getElementById('page-title'),
+      document.getElementById('notion-content')?.querySelector('.notion-page-title')
+    ].filter(Boolean);
+
+    titleElements.forEach(titleElement => {
+      const indicator = titleElement.querySelector('.visibility-indicator');
+      if (visible && !indicator) {
+        titleElement.insertAdjacentHTML('beforeend', this._getVisibilityIndicator());
+      } else if (!visible && indicator) {
+        indicator.remove();
+      }
+    });
   }
 
   /**
@@ -2180,19 +2254,46 @@ export class ExtensionController {
       }
       visibilityBtn.classList.remove('hidden');
       const isVisible = page.visibleToPlayers === true;
-      visibilityBtn.innerHTML = iconHtml(`img/${isVisible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
-      visibilityBtn.title = isVisible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
+      const setHeaderVisibilityState = (button, visible) => {
+        button.innerHTML = iconHtml(`img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
+        button.title = visible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-pressed', String(visible));
+      };
+      setHeaderVisibilityState(visibilityBtn, isVisible);
       
       // Remover listener anterior y agregar nuevo
       const newVisibilityBtn = visibilityBtn.cloneNode(true);
       visibilityBtn.parentNode.replaceChild(newVisibilityBtn, visibilityBtn);
       newVisibilityBtn.addEventListener('click', async () => {
+        if (newVisibilityBtn.disabled) return;
+        const previousVisibility = page.visibleToPlayers === true;
         const newVisibility = !page.visibleToPlayers;
-        await this._handleVisibilityChange(page, this.currentCategoryPath, this.currentPageIndex, newVisibility);
-        // Actualizar icono
-        newVisibilityBtn.innerHTML = iconHtml(`img/${newVisibility ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
-        newVisibilityBtn.title = newVisibility ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
-        page.visibleToPlayers = newVisibility;
+        newVisibilityBtn.disabled = true;
+        newVisibilityBtn.setAttribute('aria-busy', 'true');
+        setHeaderVisibilityState(newVisibilityBtn, newVisibility);
+
+        try {
+          const updated = await this._handleVisibilityChange(
+            page,
+            this.currentCategoryPath,
+            this.currentPageIndex,
+            newVisibility
+          );
+          if (updated) {
+            page.visibleToPlayers = newVisibility;
+          } else {
+            page.visibleToPlayers = previousVisibility;
+            setHeaderVisibilityState(newVisibilityBtn, previousVisibility);
+          }
+        } catch (error) {
+          page.visibleToPlayers = previousVisibility;
+          setHeaderVisibilityState(newVisibilityBtn, previousVisibility);
+          logError('Error actualizando visibilidad desde el header:', error);
+        } finally {
+          newVisibilityBtn.disabled = false;
+          newVisibilityBtn.removeAttribute('aria-busy');
+        }
       });
     }
 
@@ -4641,9 +4742,8 @@ export class ExtensionController {
       onPageClick: (page, categoryPath, pageIndex) => {
         this.openPage(page, categoryPath, pageIndex);
       },
-      onVisibilityChange: (page, categoryPath, pageIndex, visible) => {
-        this._handleVisibilityChange(page, categoryPath, pageIndex, visible);
-      },
+      onVisibilityChange: (page, categoryPath, pageIndex, visible) =>
+        this._handleVisibilityChange(page, categoryPath, pageIndex, visible),
       onPageShare: (page, categoryPath, pageIndex) => {
         this._shareCurrentPageToPlayers(page);
       },
@@ -7595,15 +7695,20 @@ export class ExtensionController {
     
     // Recopilar todas las páginas respetando el orden del vault
     const allPages = [];
+    const rootCategories = this.config.categories || [];
+    const rootPages = this.config.pages || [];
+    const hideCommonRoot = rootCategories.length === 1 && rootPages.length === 0;
 
     const addPageToList = (pageData, path, pageIndex) => {
       const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
+      const visiblePath = hideCommonRoot ? path.slice(1) : path;
       allPages.push({
         id: page.id,
         name: page.name,
         url: page.url,
         icon: page.icon,
-        displayPath: path.join(' / '),
+        displayPath: visiblePath.join(' / '),
+        searchPath: path.join(' / '),
         categoryPath: path,
         pageIndex
       });
@@ -7644,7 +7749,7 @@ export class ExtensionController {
     // Crear opciones para el select con indentación
     const pageOptions = allPages.map((page, index) => ({
       label: page.displayPath ? `${page.displayPath} → ${page.name}` : page.name,
-      searchText: `${page.displayPath} ${page.name}`.trim(),
+      searchText: `${page.searchPath} ${page.name}`.trim(),
       value: index.toString()
     }));
     

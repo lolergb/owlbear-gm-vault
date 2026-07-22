@@ -83,6 +83,52 @@ describe('ExtensionController token page selector', () => {
     expect(select.value).toBe('2');
   });
 
+  it('oculta la única carpeta raíz común sin perderla en la búsqueda', async () => {
+    const controller = createController();
+    controller.config = new Config({
+      categories: [
+        new Category('Bajo el Hielo Carmesí', {
+          pages: [
+            new Page('Bajo el Hielo Carmesí', 'https://example.com/campaign')
+          ],
+          categories: [
+            new Category('Capítulo I', {
+              categories: [
+                new Category('Monstruos y criaturas', {
+                  pages: [
+                    new Page('Necrichor', 'https://example.com/necrichor')
+                  ]
+                })
+              ]
+            })
+          ],
+          order: [
+            { type: 'page', index: 0 },
+            { type: 'category', index: 0 }
+          ]
+        })
+      ]
+    });
+
+    await controller._showPageSelectorForToken('token-1');
+
+    const searchInput = document.querySelector('#field-pageIndex-search');
+    const listbox = document.querySelector('#field-pageIndex-listbox');
+    expect(Array.from(listbox.children, option => option.textContent)).toEqual([
+      'Bajo el Hielo Carmesí',
+      'Capítulo I / Monstruos y criaturas → Necrichor'
+    ]);
+
+    typeSearch(searchInput, 'Bajo el Hielo Carmesí');
+    expect(Array.from(listbox.children, option => option.textContent)).toEqual([
+      'Bajo el Hielo Carmesí',
+      'Capítulo I / Monstruos y criaturas → Necrichor'
+    ]);
+
+    typeSearch(searchInput, 'Necrichor');
+    expect(document.querySelector('#field-pageIndex').value).toBe('1');
+  });
+
   it('bloquea el envío sin resultados y restaura la lista al limpiar', async () => {
     const controller = createController();
 
