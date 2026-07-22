@@ -110,6 +110,8 @@ describe('Netlify static asset cache policy', () => {
     const parserJs = readProjectFile('js/parsers/ConfigParser.js');
     const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
 
+    expect(indexHtml).toContain(`href="css/app.css?v=${buildTag}"`);
+    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${buildTag}"`);
     expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
     expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
     expect(mainJs).toContain(`2.1.0-beta.${buildTag}`);
