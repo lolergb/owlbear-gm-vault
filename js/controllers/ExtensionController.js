@@ -746,13 +746,23 @@ export class ExtensionController {
    * @private
    */
   async _handleVisibilityChange(page, categoryPath, pageIndex, visible) {
-    const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
-    if (updated) {
-      this.uiRenderer?.updatePageVisibility?.(page, visible);
-      this._updateCurrentPageVisibility(page, visible);
-      this.analyticsService.trackVisibilityToggle(page.name, visible);
+    try {
+      const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
+      if (updated) {
+        this.uiRenderer?.updatePageVisibility?.(page, visible);
+        this._updateCurrentPageVisibility(page, visible);
+        this.analyticsService.trackVisibilityToggle(page.name, visible);
+        this._showFeedback(visible
+          ? '👁️ Page visible to players'
+          : '🙈 Page hidden from players');
+      } else {
+        this._showFeedback('❌ Could not update page visibility');
+      }
+      return updated;
+    } catch (error) {
+      this._showFeedback('❌ Could not update page visibility');
+      throw error;
     }
-    return updated;
   }
 
   /**

@@ -33,6 +33,7 @@ function createController(config, { localSaved = true, roomSaved = true } = {}) 
     updatePageVisibility: jest.fn()
   };
   controller.analyticsService = { trackVisibilityToggle: jest.fn() };
+  controller._showFeedback = jest.fn();
   controller.render = jest.fn();
   controller.OBR = {
     scene: {
@@ -76,6 +77,18 @@ describe('page visibility updates', () => {
     expect(document.querySelectorAll('.visibility-indicator')).toHaveLength(2);
     expect(controller.render).not.toHaveBeenCalled();
     expect(controller.analyticsService.trackVisibilityToggle).toHaveBeenCalledWith('Goblin', true);
+    expect(controller._showFeedback).toHaveBeenCalledWith('👁️ Page visible to players');
+
+    controller._showFeedback.mockClear();
+    const hidden = await controller._handleVisibilityChange(
+      page,
+      [{ id: category.id, name: category.name }],
+      0,
+      false
+    );
+    expect(hidden).toBe(true);
+    expect(controller._showFeedback).toHaveBeenCalledWith('🙈 Page hidden from players');
+    expect(document.querySelectorAll('.visibility-indicator')).toHaveLength(0);
   });
 
   it('no revierte un guardado válido si falla el broadcast auxiliar a Co-GMs', async () => {
@@ -126,6 +139,7 @@ describe('page visibility updates', () => {
     expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(2);
     expect(controller.uiRenderer.updatePageVisibility).not.toHaveBeenCalled();
     expect(controller.analyticsService.trackVisibilityToggle).not.toHaveBeenCalled();
+    expect(controller._showFeedback).toHaveBeenCalledWith('❌ Could not update page visibility');
     expect(controller.render).not.toHaveBeenCalled();
   });
 
