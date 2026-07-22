@@ -385,8 +385,9 @@
   }
 
   .select--searchable option {
-    padding: var(--spacing-sm);
+    padding: var(--spacing-xs);
     border-radius: var(--radius-sm);
+    margin: var(--radius-sm);
   }
   
   /* Textarea específico */
