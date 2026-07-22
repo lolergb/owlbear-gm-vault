@@ -380,6 +380,7 @@
   }
 
   .select--searchable {
+    appearance: base-select;
     min-height: 96px;
     padding: var(--spacing-xs);
   }
