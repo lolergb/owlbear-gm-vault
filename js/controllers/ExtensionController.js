@@ -542,9 +542,12 @@ export class ExtensionController {
     if (this.isGM && !this.isCoGM) {
       const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
       const roomSaved = await this.storageService.saveRoomConfig(configToSave);
-      saved = saved && roomSaved !== false;
+      if (roomSaved === false) {
+        logWarn('No se pudo actualizar el metadata de la sala; la configuración local del GM sí quedó guardada');
+      }
 
-      // Solo anunciar un estado que haya quedado persistido localmente y en la sala.
+      // El vault completo del GM vive en localStorage. Los canales de sala son
+      // sincronizaciones auxiliares y no deben revertir el estado visual local.
       if (saved) {
         const visibleConfig = filterVisiblePages(configToSave);
         await this.broadcastService.broadcastVisiblePages(visibleConfig);

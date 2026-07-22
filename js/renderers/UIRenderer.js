@@ -356,7 +356,19 @@ export class UIRenderer {
    */
   _setVisibilityButtonState(button, visible) {
     const title = visible ? 'Visible to players' : 'Hidden from players';
-    button.innerHTML = iconHtml(`img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { alt: 'Visibility' });
+    const iconPath = `img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
+    let icon = button.querySelector('.icon');
+    if (!icon) {
+      button.innerHTML = iconHtml(iconPath, { alt: 'Visibility' });
+      icon = button.querySelector('.icon');
+    }
+    if (icon) {
+      // Actualizar la máscara existente fuerza el repintado en Chromium/Arc y
+      // evita depender de sustituir todo el contenido del botón.
+      icon.style.webkitMaskImage = `url('${iconPath}')`;
+      icon.style.maskImage = `url('${iconPath}')`;
+    }
+    button.classList.toggle('page-visibility-button--visible', visible);
     button.title = title;
     button.setAttribute('aria-label', title);
     button.setAttribute('aria-pressed', String(visible));

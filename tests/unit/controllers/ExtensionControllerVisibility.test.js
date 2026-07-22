@@ -14,14 +14,14 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function createController(config, { roomSaved = true } = {}) {
+function createController(config, { localSaved = true, roomSaved = true } = {}) {
   const controller = Object.create(ExtensionController.prototype);
   controller.config = config;
   controller.isGM = true;
   controller.isCoGM = false;
   controller.configParser = new ConfigParser();
   controller.storageService = {
-    saveLocalConfig: jest.fn(() => true),
+    saveLocalConfig: jest.fn(() => localSaved),
     saveRoomConfig: jest.fn().mockResolvedValue(roomSaved)
   };
   controller.broadcastService = {
@@ -103,18 +103,15 @@ describe('page visibility updates', () => {
     expect(controller.storageService.saveRoomConfig).toHaveBeenCalledTimes(1);
   });
 
-  it('restaura el modelo y no actualiza la UI cuando falla la persistencia', async () => {
+  it('restaura el modelo y no actualiza la UI cuando falla la persistencia local', async () => {
     const page = new Page('Goblin', 'https://example.com/goblin', {
       id: 'page-goblin'
     });
     const category = new Category('Bestiary', { pages: [page] });
     const controller = createController(
       new Config({ categories: [category] }),
-      { roomSaved: false }
+      { localSaved: false }
     );
-    controller.storageService.saveRoomConfig
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
 
     const updated = await controller._handleVisibilityChange(
       page,
@@ -132,6 +129,29 @@ describe('page visibility updates', () => {
     expect(controller.render).not.toHaveBeenCalled();
   });
 
+  it('mantiene el estado local si falla la sincronización de metadata de la sala', async () => {
+    const page = new Page('Goblin', 'https://example.com/goblin', {
+      id: 'page-goblin'
+    });
+    const category = new Category('Bestiary', { pages: [page] });
+    const controller = createController(
+      new Config({ categories: [category] }),
+      { roomSaved: false }
+    );
+
+    const updated = await controller._handleVisibilityChange(
+      page,
+      [{ id: category.id, name: category.name }],
+      0,
+      true
+    );
+
+    expect(updated).toBe(true);
+    expect(page.visibleToPlayers).toBe(true);
+    expect(controller.config.findPageById(page.id).visibleToPlayers).toBe(true);
+    expect(controller.uiRenderer.updatePageVisibility).toHaveBeenCalledWith(page, true);
+  });
+
   it('actualiza solo el botón y bloquea clics mientras sincroniza', async () => {
     const renderer = new UIRenderer();
     const page = new Page('Goblin', 'https://example.com/goblin');
@@ -144,6 +164,7 @@ describe('page visibility updates', () => {
     const pageButton = renderer._createPageButton(page, 'room-1', [], 0, true);
     document.body.appendChild(pageButton);
     const visibilityButton = pageButton.querySelector('.page-visibility-button');
+    const visibilityIcon = visibilityButton.querySelector('.icon');
     visibilityButton.click();
 
     expect(renderer.onVisibilityChange).toHaveBeenCalledTimes(1);
@@ -151,6 +172,9 @@ describe('page visibility updates', () => {
     expect(visibilityButton.getAttribute('aria-busy')).toBe('true');
     expect(visibilityButton.getAttribute('aria-pressed')).toBe('true');
     expect(visibilityButton.title).toBe('Visible to players');
+    expect(visibilityButton.querySelector('.icon').style.maskImage).toContain('icon-eye-open.svg');
+    expect(visibilityButton.querySelector('.icon')).toBe(visibilityIcon);
+    expect(visibilityButton.classList.contains('page-visibility-button--visible')).toBe(true);
 
     visibilityButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(renderer.onVisibilityChange).toHaveBeenCalledTimes(1);
@@ -159,6 +183,8 @@ describe('page visibility updates', () => {
     await flushPromises();
 
     expect(page.visibleToPlayers).toBe(true);
+    expect(visibilityButton.querySelector('.icon').style.maskImage).toContain('icon-eye-open.svg');
+    expect(visibilityButton.querySelector('.icon')).toBe(visibilityIcon);
     expect(visibilityButton.disabled).toBe(false);
     expect(visibilityButton.hasAttribute('aria-busy')).toBe(false);
     expect(document.body.contains(pageButton)).toBe(true);
