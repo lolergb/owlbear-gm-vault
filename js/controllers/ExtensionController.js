@@ -4,11 +4,21 @@
  * Orquesta todos los servicios, renderers y componentes de la aplicación.
  */
 
-import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-3';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-3';
+import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-4';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-4';
 import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
 import { iconHtml } from '../utils/iconHelper.js';
-import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-3';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
+import {
+  escapeHtml,
+  sanitizeEmbeddedHtml,
+  sanitizeExternalIframeUrl,
+  sanitizeGoogleEmbedUrl,
+  sanitizeHttpUrl,
+  sanitizeImageUrl,
+  sanitizeNotionHtml,
+  sanitizeVideoEmbedUrl
+} from '../utils/htmlSecurity.js?v=20260722-4';
 import {
   PAGE_TITLE_FALLBACK,
   getUsablePageTitle,
@@ -21,25 +31,25 @@ import { Page } from '../models/Page.js';
 import { Category } from '../models/Category.js';
 
 // Services
-import { CacheService } from '../services/CacheService.js?v=20260722-3';
-import { StorageService } from '../services/StorageService.js?v=20260722-3';
-import { NotionService } from '../services/NotionService.js?v=20260722-3';
-import { BroadcastService } from '../services/BroadcastService.js?v=20260722-3';
+import { CacheService } from '../services/CacheService.js?v=20260722-4';
+import { StorageService } from '../services/StorageService.js?v=20260722-4';
+import { NotionService } from '../services/NotionService.js?v=20260722-4';
+import { BroadcastService } from '../services/BroadcastService.js?v=20260722-4';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260722-3';
-import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-3';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260722-4';
+import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-3';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260722-3';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260722-4';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-3';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-3';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 
 // UI
-import { ModalManager } from '../ui/ModalManager.js?v=20260722-3';
-import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-3';
+import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
+import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
 
 /**
  * Controlador principal de la extensión
@@ -291,10 +301,13 @@ export class ExtensionController {
     const html = sessionStorage.getItem(contentKey);
     
     if (html && notionContent) {
-      notionContent.innerHTML = html;
+      // Todo HTML que cruza sessionStorage vuelve a sanearse al insertarlo.
+      // El tipo declarado en una URL o broadcast no es una frontera de confianza.
+      notionContent.innerHTML = sanitizeEmbeddedHtml(html);
       
       // Remover botones de compartir (el player no debe verlos)
       notionContent.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
+      this._attachImageHandlers(notionContent);
       
       // Limpiar el sessionStorage después de usar
       sessionStorage.removeItem(contentKey);
@@ -380,7 +393,7 @@ export class ExtensionController {
           <div class="empty-state">
             <div class="empty-state-icon">⚠️</div>
             <p class="empty-state-text">Error loading content</p>
-            <p class="empty-state-hint">${e.message}</p>
+            <p class="empty-state-hint">${escapeHtml(e.message)}</p>
           </div>
         `;
       }
@@ -454,7 +467,7 @@ export class ExtensionController {
     if (pageTitle) {
       // Añadir indicador de visibilidad si está compartida con players
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      pageTitle.innerHTML = resolvePageTitle(page.name) + visibilityIndicator;
+      pageTitle.innerHTML = escapeHtml(resolvePageTitle(page.name)) + visibilityIndicator;
     }
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
@@ -510,7 +523,7 @@ export class ExtensionController {
           <div class="empty-state">
             <div class="empty-state-icon">⚠️</div>
             <p class="empty-state-text">Error loading page</p>
-            <p class="empty-state-hint">${e.message}</p>
+            <p class="empty-state-hint">${escapeHtml(e.message)}</p>
           </div>
         `;
       }
@@ -1608,40 +1621,43 @@ export class ExtensionController {
 
     // Generar HTML del formulario
     const fieldsHtml = fields.map(field => {
+      const safeName = escapeHtml(field.name);
+      const safeLabel = escapeHtml(field.label);
+      const safePlaceholder = escapeHtml(field.placeholder || '');
       if (field.type === 'checkbox') {
         return `
-          <div class="form__field" data-field-name="${field.name}">
+          <div class="form__field" data-field-name="${safeName}">
             <label class="form__checkbox-label">
               <input 
                 type="checkbox" 
-                id="field-${field.name}" 
-                name="${field.name}"
+                id="field-${safeName}"
+                name="${safeName}"
                 class="checkbox"
                 ${field.value ? 'checked' : ''}
               />
-              <span>${field.label}</span>
+              <span>${safeLabel}</span>
             </label>
           </div>
         `;
       } else if (field.type === 'select') {
         const options = field.options || [];
-        const selectId = `field-${field.name}`;
-        const searchId = `field-${field.name}-search`;
-        const statusId = `field-${field.name}-search-status`;
-        const listboxId = `field-${field.name}-listbox`;
-        const selectLabelId = `field-${field.name}-label`;
+        const selectId = `field-${safeName}`;
+        const searchId = `field-${safeName}-search`;
+        const statusId = `field-${safeName}-search-status`;
+        const listboxId = `field-${safeName}-listbox`;
+        const selectLabelId = `field-${safeName}-label`;
         const visibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
 
         return `
-          <div class="form__field" data-field-name="${field.name}">
+          <div class="form__field" data-field-name="${safeName}">
             ${field.searchable ? `
-              <label class="form__label" for="${searchId}">${field.searchLabel || `Search ${field.label}`}</label>
+              <label class="form__label" for="${searchId}">${escapeHtml(field.searchLabel || `Search ${field.label}`)}</label>
               <input
                 type="search"
                 id="${searchId}"
                 class="input"
-                placeholder="${field.searchPlaceholder || 'Search options...'}"
-                aria-label="${field.searchLabel || `Search ${field.label}`}"
+                placeholder="${escapeHtml(field.searchPlaceholder || 'Search options...')}"
+                aria-label="${escapeHtml(field.searchLabel || `Search ${field.label}`)}"
                 aria-controls="${listboxId}"
                 aria-describedby="${statusId}"
                 autocomplete="off"
@@ -1658,16 +1674,16 @@ export class ExtensionController {
               class="form__label"
               id="${selectLabelId}"
               ${field.searchable ? '' : `for="${selectId}"`}
-            >${field.label}${field.required ? ' *' : ''}</label>
+            >${safeLabel}${field.required ? ' *' : ''}</label>
             <select 
               id="${selectId}"
-              name="${field.name}"
+              name="${safeName}"
               class="select${field.searchable ? ' select--searchable-source' : ''}"
               ${field.searchable ? `data-searchable-select="true" size="${visibleOptions}" hidden aria-hidden="true" tabindex="-1"` : ''}
               ${field.required ? 'required' : ''}
             >
               ${options.map(opt =>
-                `<option value="${opt.value}" ${field.value === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                `<option value="${escapeHtml(opt.value)}" ${field.value === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`
               ).join('')}
             </select>
             ${field.searchable ? `
@@ -1685,29 +1701,32 @@ export class ExtensionController {
         `;
       } else if (field.type === 'textarea') {
         return `
-          <div class="form__field" data-field-name="${field.name}">
-            <label class="form__label">${field.label}${field.required ? ' *' : ''}</label>
+          <div class="form__field" data-field-name="${safeName}">
+            <label class="form__label">${safeLabel}${field.required ? ' *' : ''}</label>
             <textarea 
-              id="field-${field.name}" 
-              name="${field.name}"
+              id="field-${safeName}"
+              name="${safeName}"
               class="textarea"
               ${field.required ? 'required' : ''}
-              placeholder="${field.placeholder || ''}"
-            >${field.value || ''}</textarea>
+              placeholder="${safePlaceholder}"
+            >${escapeHtml(field.value || '')}</textarea>
           </div>
         `;
       } else {
+        const safeInputType = new Set(['text', 'url', 'email', 'password', 'search', 'number']).has(field.type)
+          ? field.type
+          : 'text';
         return `
-          <div class="form__field" data-field-name="${field.name}">
-            <label class="form__label">${field.label}${field.required ? ' *' : ''}</label>
+          <div class="form__field" data-field-name="${safeName}">
+            <label class="form__label">${safeLabel}${field.required ? ' *' : ''}</label>
             <input 
-              type="${field.type || 'text'}" 
-              id="field-${field.name}" 
-              name="${field.name}"
+              type="${safeInputType}"
+              id="field-${safeName}"
+              name="${safeName}"
               class="input"
               ${field.required ? 'required' : ''}
-              placeholder="${field.placeholder || ''}"
-              value="${field.value || ''}"
+              placeholder="${safePlaceholder}"
+              value="${escapeHtml(field.value || '')}"
             />
           </div>
         `;
@@ -1715,7 +1734,7 @@ export class ExtensionController {
     }).join('');
 
     modal.innerHTML = `
-      <h2 class="modal__title">${title}</h2>
+      <h2 class="modal__title">${escapeHtml(title)}</h2>
       <form id="modal-form" class="form">
         ${fieldsHtml}
         <div class="form__actions">
@@ -2403,12 +2422,12 @@ export class ExtensionController {
         // Si el contenido no está cargado (compartiendo desde lista), usar el htmlContent directamente
         if (!notionContent || !notionContent.innerHTML.trim()) {
           log('📄 Usando htmlContent embebido para compartir...');
-          htmlContent = page.htmlContent;
+          htmlContent = sanitizeEmbeddedHtml(page.htmlContent);
         } else {
           // Clonar el contenido visible y remover botones de compartir
           const clone = notionContent.cloneNode(true);
           clone.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
-          htmlContent = clone.innerHTML;
+          htmlContent = sanitizeEmbeddedHtml(clone.innerHTML);
         }
         
         if (!htmlContent.trim()) {
@@ -2430,6 +2449,7 @@ export class ExtensionController {
           name: page.name,
           html: htmlContent,
           pageId: pageId,
+          contentType: 'embedded',
           senderId: this.playerId
         });
         
@@ -2474,7 +2494,7 @@ export class ExtensionController {
             // Clonar el contenido visible y remover botones de compartir
             const clone = notionContent.cloneNode(true);
             clone.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
-            htmlContent = clone.innerHTML;
+            htmlContent = sanitizeNotionHtml(clone.innerHTML);
           }
           
           if (!htmlContent.trim()) {
@@ -2487,6 +2507,7 @@ export class ExtensionController {
             name: page.name,
             html: htmlContent,
             pageId: pageId,
+            contentType: 'notion',
             senderId: this.playerId
           });
           
@@ -2686,15 +2707,16 @@ export class ExtensionController {
       try {
         // Generar un contentKey único para esta sesión (sessionStorage - temporal)
         const contentKey = `htmlContent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const safeHtmlContent = sanitizeEmbeddedHtml(pageInstance.htmlContent);
         
         // Guardar el HTML en sessionStorage para el modal (temporal, se limpia después de usar)
-        sessionStorage.setItem(contentKey, pageInstance.htmlContent);
+        sessionStorage.setItem(contentKey, safeHtmlContent);
         
         // Guardar en localStorage para caché persistente (igual que Notion)
         // Generar un pageId único para esta página embebida
         const pageId = `embedded-${pageInstance.name.toLowerCase().replace(/\s+/g, '-')}`;
         if (this.isGM && !this.isCoGM) {
-          this.cacheService.saveHtmlToLocalCache(pageId, pageInstance.htmlContent);
+          this.cacheService.saveHtmlToLocalCache(pageId, safeHtmlContent);
         }
         
         const currentPath = window.location.pathname;
@@ -2953,9 +2975,12 @@ export class ExtensionController {
       if (item.icon && item.icon.startsWith('img/')) {
         const rotateClass = item.rotation === 'rotate(90deg)' ? 'icon--rotate-up' : 
                             item.rotation === 'rotate(-90deg)' ? 'icon--rotate-down' : '';
-        itemIconMarkup = iconHtml(item.icon, { className: `context-menu__icon ${rotateClass}` });
+        const safeIconPath = /^img\/[a-zA-Z0-9._/-]+\.svg$/.test(item.icon) ? item.icon : '';
+        if (safeIconPath) {
+          itemIconMarkup = iconHtml(safeIconPath, { className: `context-menu__icon ${rotateClass}` });
+        }
       }
-      menuItem.innerHTML = `${itemIconMarkup}<span>${item.text}</span>`;
+      menuItem.innerHTML = `${itemIconMarkup}<span>${escapeHtml(item.text)}</span>`;
 
       menuItem.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -3240,7 +3265,7 @@ export class ExtensionController {
           <div class="vault-status__icon">👁️</div>
           <div class="vault-status__info">
             <span class="vault-status__title">Read-only mode</span>
-            <span class="vault-status__detail">Viewing ${masterGMName}'s vault</span>
+            <span class="vault-status__detail">Viewing ${escapeHtml(masterGMName)}'s vault</span>
             <span class="vault-status__detail">${pageCount} pages in ${categoryCount} folders</span>
           </div>
         </div>
@@ -3759,7 +3784,7 @@ export class ExtensionController {
           updateSelectionCount();
         }, selectedPages);
       } catch (e) {
-        listEl.innerHTML = `<div class="notion-pages-empty">❌ ${e.message}</div>`;
+        listEl.innerHTML = `<div class="notion-pages-empty">❌ ${escapeHtml(e.message)}</div>`;
       }
     };
 
@@ -3786,6 +3811,11 @@ export class ExtensionController {
       const currentConfig = this.config || { categories: [] };
       const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
       const currentPagesCount = this._countPagesInConfig(configForCount);
+      const currentItemsConfig = this.configParser.toItemsFormat(configForCount);
+      const destinationOptions = [
+        { value: 'root', label: 'Root level', searchText: 'Root level' },
+        ...this._flattenCategoryOptions(currentItemsConfig.categories || [])
+      ];
 
       // Ocultar elementos del formulario de selección
       formFields.forEach(field => field.style.display = 'none');
@@ -3797,13 +3827,15 @@ export class ExtensionController {
         <div id="import-options" class="import-options">
           <p class="import-options__question">How would you like to add this?</p>
           
-          <label class="import-option">
-            <input type="radio" name="import-mode" value="append" checked />
-            <div class="import-option__content">
-              <span class="import-option__title">Add to the end</span>
-              <span class="import-option__hint">Your current vault stays untouched</span>
-            </div>
-          </label>
+          <input type="hidden" name="import-mode" value="append" />
+
+          <div class="form__field import-destination-field">
+            <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
+            <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
+            <select id="field-destination" name="destination" class="select select--searchable-source" data-searchable-select="true" hidden aria-hidden="true" tabindex="-1"></select>
+            <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+            <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
+          </div>
           
           <label class="import-option">
             <input type="radio" name="import-mode" value="merge" />
@@ -3834,6 +3866,14 @@ export class ExtensionController {
       // Insertar antes del progress
       progressEl.insertAdjacentHTML('beforebegin', optionsHtml);
 
+      this._setupSearchableSelect(document, {
+        name: 'destination',
+        options: destinationOptions,
+        visibleOptions: 7,
+        resultLabel: 'folder',
+        searchPlaceholder: 'Search folders...'
+      });
+
       // Botón "Back" - volver a la selección de páginas
       document.getElementById('import-options-back').addEventListener('click', () => {
         document.getElementById('import-options').remove();
@@ -3842,9 +3882,40 @@ export class ExtensionController {
         if (formActions) formActions.style.display = '';
       });
 
+      const modeInputs = [...document.querySelectorAll('input[name="import-mode"]')];
+      const destinationSelect = document.getElementById('field-destination');
+      let selectedDestinationId = destinationSelect.value || 'root';
+      destinationSelect.addEventListener('change', () => {
+        selectedDestinationId = destinationSelect.value || 'root';
+        // Choosing a destination means the import is an append into that
+        // folder; clear the mutually exclusive merge/replace choices.
+        document.querySelectorAll('input[name="import-mode"][value="merge"], input[name="import-mode"][value="replace"]')
+          .forEach(input => { input.checked = false; });
+      });
+      const syncDestinationState = () => {
+        const mode = document.querySelector('input[name="import-mode"]:checked')?.value
+          || document.querySelector('input[name="import-mode"][value="append"]')?.value;
+        // Destination folders only apply to an append import. When the user
+        // chooses another strategy, clear the visual selection so the UI does
+        // not suggest that folder placement will be used.
+        if (mode !== 'append') {
+          selectedDestinationId = '';
+          destinationSelect.value = '';
+        } else {
+          destinationSelect.value = selectedDestinationId || 'root';
+        }
+        document.querySelectorAll('#field-destination-listbox [role="option"]').forEach(option => {
+          option.setAttribute('aria-selected', String(option.dataset.value === selectedDestinationId));
+        });
+      };
+      modeInputs.forEach(input => input.addEventListener('change', syncDestinationState));
+      syncDestinationState();
+
       // Botón "Confirm import" - ejecutar la importación
       document.getElementById('import-options-confirm').addEventListener('click', async () => {
-        const importMode = document.querySelector('input[name="import-mode"]:checked').value;
+        const importMode = document.querySelector('input[name="import-mode"]:checked')?.value
+          || document.querySelector('input[name="import-mode"][value="append"]').value;
+        const destinationId = document.getElementById('field-destination')?.value || 'root';
         const optionsEl = document.getElementById('import-options');
         const statusEl = document.getElementById('import-status');
         const fillEl = document.getElementById('import-fill');
@@ -3938,6 +4009,20 @@ export class ExtensionController {
                 finalPages = importedRootPages;
             }
 
+            if (importMode !== 'replace' && destinationId !== 'root') {
+              this._appendImportedContentToCategory(
+                finalCategories,
+                destinationId,
+                importedCategories,
+                importedRootPages
+              );
+              // Root pages have been moved under the destination folder.
+              finalPages = existingPages;
+              if (importMode === 'append') {
+                finalCategories = existingCategories;
+              }
+            }
+
             await this.saveConfig({ categories: finalCategories, pages: finalPages });
             
             closeModal();
@@ -4009,6 +4094,37 @@ export class ExtensionController {
     searchInput.focus();
   }
 
+  _flattenCategoryOptions(categories, depth = 0) {
+    const options = [];
+    for (const category of categories || []) {
+      if (!category?.id) continue;
+      const label = `${'— '.repeat(depth)}${category.name || 'Untitled folder'}`;
+      options.push({ value: category.id, label, searchText: label });
+      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1));
+    }
+    return options;
+  }
+
+  _appendImportedContentToCategory(categories, destinationId, importedCategories, importedRootPages) {
+    const findCategory = (items) => {
+      for (const category of items || []) {
+        if (category?.id === destinationId) return category;
+        const nested = findCategory(category.items?.filter(item => item?.type === 'category'));
+        if (nested) return nested;
+      }
+      return null;
+    };
+
+    const destination = findCategory(categories);
+    if (!destination) return false;
+    destination.items = Array.isArray(destination.items) ? destination.items : [];
+    destination.items.push(
+      ...(importedCategories || []),
+      ...(importedRootPages || []).map(page => this.configParser._pageToItemFormat(page))
+    );
+    return true;
+  }
+
   /**
    * Muestra el modal con opciones para cargar un archivo JSON
    * @param {Object} importedConfig - Configuración importada del archivo
@@ -4031,7 +4147,7 @@ export class ExtensionController {
     const modalContent = `
       <div class="import-options">
         <p class="import-options__question">
-          Loading <strong>${fileName}</strong> (${importedPagesCount} page${importedPagesCount !== 1 ? 's' : ''})
+          Loading <strong>${escapeHtml(fileName)}</strong> (${importedPagesCount} page${importedPagesCount !== 1 ? 's' : ''})
         </p>
         <p class="import-options__question">How would you like to add this?</p>
         
@@ -4402,39 +4518,63 @@ export class ExtensionController {
       const item = document.createElement('div');
       const isSelected = selectedPages.has(page.id);
       item.className = `notion-page-item${isSelected ? ' notion-page-item--selected' : ''}`;
-      item.dataset.pageId = page.id;
-
-      // Icono
-      let pageIconMarkup = '📄';
-      if (page.icon) {
-        if (page.icon.type === 'emoji') {
-          pageIconMarkup = page.icon.emoji;
-        } else if (page.icon.type === 'external' && page.icon.external?.url) {
-          pageIconMarkup = `<img src="${page.icon.external.url}" alt="" />`;
-        } else if (page.icon.type === 'file' && page.icon.file?.url) {
-          pageIconMarkup = `<img src="${page.icon.file.url}" alt="" />`;
-        }
-      }
+      item.dataset.pageId = page.id || '';
 
       // Fecha
       const lastEdited = page.lastEdited 
         ? new Date(page.lastEdited).toLocaleDateString()
         : '';
 
-      item.innerHTML = `
-        <div class="notion-page-item__checkbox">
-          <input type="checkbox" ${isSelected ? 'checked' : ''} />
-        </div>
-        <div class="notion-page-item__icon">${pageIconMarkup}</div>
-        <div class="notion-page-item__info">
-          <div class="notion-page-item__title">${page.title}</div>
-          ${lastEdited ? `<div class="notion-page-item__meta">Edited: ${lastEdited}</div>` : ''}
-        </div>
-      `;
+      const checkboxWrapper = document.createElement('div');
+      checkboxWrapper.className = 'notion-page-item__checkbox';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = isSelected;
+      checkboxWrapper.appendChild(checkbox);
+
+      const icon = document.createElement('div');
+      icon.className = 'notion-page-item__icon';
+      icon.textContent = '📄';
+
+      if (page.icon?.type === 'emoji') {
+        icon.textContent = page.icon.emoji || '📄';
+      } else {
+        const iconUrl = page.icon?.type === 'external'
+          ? page.icon.external?.url
+          : page.icon?.type === 'file'
+            ? page.icon.file?.url
+            : '';
+        const safeIconUrl = sanitizeHttpUrl(iconUrl);
+        if (safeIconUrl) {
+          const image = document.createElement('img');
+          image.src = safeIconUrl;
+          image.alt = '';
+          icon.replaceChildren(image);
+        }
+      }
+
+      const info = document.createElement('div');
+      info.className = 'notion-page-item__info';
+
+      const title = document.createElement('div');
+      title.className = 'notion-page-item__title';
+      title.textContent = page.title || '';
+      info.appendChild(title);
+
+      if (lastEdited) {
+        const meta = document.createElement('div');
+        meta.className = 'notion-page-item__meta';
+        meta.textContent = `Edited: ${lastEdited}`;
+        info.appendChild(meta);
+      }
+
+      item.appendChild(checkboxWrapper);
+      item.appendChild(icon);
+      item.appendChild(info);
 
       // Toggle selección al hacer click en el item (pero no en el checkbox)
       item.addEventListener('click', (e) => {
-        const checkbox = item.querySelector('input[type="checkbox"]');
         // Si el click fue en el checkbox, no hacer nada (el change event lo maneja)
         if (e.target.type === 'checkbox') return;
         
@@ -4445,7 +4585,6 @@ export class ExtensionController {
       });
 
       // Manejar click directo en el checkbox
-      const checkbox = item.querySelector('input[type="checkbox"]');
       checkbox.addEventListener('change', (e) => {
         const newState = e.target.checked;
         item.classList.toggle('notion-page-item--selected', newState);
@@ -4551,10 +4690,31 @@ export class ExtensionController {
 
     const items = [
       { icon: 'img/folder-close.svg', text: 'Add folder', action: () => this._addCategory() },
-      { icon: 'img/icon-page.svg', text: 'Add page', action: () => this._addPage() }
+      { icon: 'img/icon-page.svg', text: 'Add page', action: () => this._addPage() },
+      { separator: true },
+      { icon: 'img/icon-notion.svg', text: 'Import from Notion', action: () => this._importNotionFromAddMenu() },
+      { icon: 'img/icon-link.svg', text: 'Load from URL', action: () => {
+        const url = window.prompt('Enter the GM Vault URL');
+        if (!url) return;
+        const input = document.getElementById('vault-url-input');
+        const loadButton = document.getElementById('load-url-btn');
+        if (input && loadButton) {
+          input.value = url.trim();
+          loadButton.click();
+        }
+      } },
+      { icon: 'img/icon-page.svg', text: 'Load from file', action: () => {
+        document.getElementById('load-json-btn')?.click();
+      } }
     ];
 
     items.forEach(item => {
+      if (item.separator) {
+        const separator = document.createElement('div');
+        separator.className = 'context-menu__separator';
+        menu.appendChild(separator);
+        return;
+      }
       const menuItem = document.createElement('div');
       menuItem.className = 'context-menu__item';
       menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu__icon"><span class="context-menu__text">${item.text}</span>`;
@@ -4580,6 +4740,26 @@ export class ExtensionController {
     }
 
     menu.style.cssText = `position: fixed; left: ${left}px; top: ${top}px; z-index: 10000;`;
+  }
+
+  /**
+   * Opens the existing Notion import flow from the global add menu.
+   * Keeping the token check here makes the entry point discoverable without
+   * changing the established import modal or its selection experience.
+   * @private
+   */
+  _importNotionFromAddMenu() {
+    if (!this.storageService.getUserToken()) {
+      this._showSettings();
+      this.uiRenderer.showErrorToast(
+        'Notion not configured',
+        'Add your Notion token in Settings to import pages and folders.'
+      );
+      return;
+    }
+
+    this.analyticsService.trackImportFromNotionClicked();
+    this._showNotionPagesSelector();
   }
 
   /**
@@ -4836,7 +5016,9 @@ export class ExtensionController {
     window.addEventListener('message', async (event) => {
       const iframeCandidates = [
         document.getElementById('notion-iframe'),
-        ...document.querySelectorAll('.mention-modal__iframe')
+        ...Array.from(document.querySelectorAll('.mention-modal__iframe')).filter(
+          (iframe) => iframe.__gmVaultTrustedExternalMention === true
+        )
       ].filter(Boolean);
       const sourceIframe = iframeCandidates.find(
         (iframe) => iframe.contentWindow && event.source === iframe.contentWindow
@@ -4849,11 +5031,15 @@ export class ExtensionController {
       } catch (_error) {
         return;
       }
-      if (event.origin !== iframeOrigin) return;
+      const sandboxTokens = sourceIframe.getAttribute('sandbox') || '';
+      const hasOpaqueSandboxOrigin = Boolean(sandboxTokens) &&
+        !sandboxTokens.split(/\s+/).includes('allow-same-origin') &&
+        event.origin === 'null';
+      if (event.origin !== iframeOrigin && !hasOpaqueSandboxOrigin) return;
 
       const normalizeImageUrl = (value) => {
         try {
-          const parsed = new URL(value, event.origin);
+          const parsed = new URL(value, iframeOrigin);
           return parsed.protocol === 'http:' || parsed.protocol === 'https:'
             ? parsed.toString()
             : '';
@@ -4880,7 +5066,7 @@ export class ExtensionController {
               isPlayer: isPlayer,
               isGM: this.isGM,
               isCoGM: this.isCoGM
-            }, event.origin);
+            }, hasOpaqueSandboxOrigin ? '*' : event.origin);
             log('✅ Rol enviado al iframe');
           } catch (error) {
             logError('❌ Error enviando rol al iframe:', error);
@@ -5227,7 +5413,7 @@ export class ExtensionController {
         html = this.cacheService.getHtmlFromLocalCache(pageId);
         if (html) {
           log('📦 Contenido del caché local para:', pageId);
-          return html;
+          return sanitizeNotionHtml(html);
         }
       } else {
         log('🔄 forceRefresh solicitado - limpiando caché para:', pageId);
@@ -5340,7 +5526,7 @@ export class ExtensionController {
       const { url, caption, type, senderId } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('🎬 Video recibido:', url.substring(0, 50));
         await this._showVideoModal(url, caption, type || 'youtube');
       }
@@ -5351,7 +5537,7 @@ export class ExtensionController {
       const { url, name, senderId } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('📄 Google Doc recibido:', url.substring(0, 50));
         await this._showGoogleDocModal(url, name);
       }
@@ -5359,12 +5545,15 @@ export class ExtensionController {
 
     // Listener para recibir contenido Notion renderizado (sin necesidad de token)
     this.OBR.broadcast.onMessage('com.dmscreen/showNotionContent', async (event) => {
-      const { name, html, pageId, senderId } = event.data;
+      const { name, html, senderId } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (html) {
         log('📝 Contenido Notion HTML recibido');
-        await this._showNotionHtmlModal(name, html);
+        // Nunca confiar en contentType/pageId del payload: cualquier cliente de
+        // la sala puede construir el mensaje. La política es igual para Notion
+        // y para contenido HTML embebido.
+        await this._showNotionHtmlModal(name, sanitizeEmbeddedHtml(html));
       }
     });
 
@@ -5373,7 +5562,7 @@ export class ExtensionController {
       const { url, name, pageId, senderId } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('📝 Página Notion recibida:', url.substring(0, 50));
         await this._showNotionPageModal(url, name, pageId);
       }
@@ -5384,7 +5573,7 @@ export class ExtensionController {
       const { url, name, senderId } = event.data;
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('🔗 Contenido recibido:', url.substring(0, 50));
         await this._showContentModal(url, name);
       }
@@ -5772,24 +5961,24 @@ export class ExtensionController {
     
     // Cover image - clickeable para abrir en modal
     if (pageInfo?.cover) {
-      const coverUrl = pageInfo.cover.external?.url || pageInfo.cover.file?.url;
+      const coverUrl = sanitizeHttpUrl(pageInfo.cover.external?.url || pageInfo.cover.file?.url);
       if (coverUrl) {
+        const escapedCoverUrl = escapeHtml(coverUrl);
+        const escapedPageId = escapeHtml(pageId);
         headerHtml += `
           <div class="notion-page-cover">
             <div class="notion-image-container">
               <div class="image-loading">
                 <div class="loading-spinner"></div>
               </div>
-              <img src="${coverUrl}" alt="Page cover" 
+              <img src="${escapedCoverUrl}" alt="Page cover"
                    class="notion-cover-image notion-image-clickable loaded" 
-                   style="opacity: 1 !important; display: block !important;"
-                   data-image-url="${coverUrl}"
+                   data-image-url="${escapedCoverUrl}"
                    data-image-caption=""
-                   data-block-id="cover-${pageId}"
-                   onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />
-              <button class="notion-image-share-button share-button" 
-                      data-image-url="${coverUrl}" 
+                   data-block-id="cover-${escapedPageId}"
+                   data-image-kind="cover" />
+              <button class="notion-image-share-button share-button"
+                      data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
                       title="Share with room">
                 ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
@@ -5804,11 +5993,13 @@ export class ExtensionController {
     let notionIconMarkup = '';
     if (pageInfo?.icon) {
       if (pageInfo.icon.type === 'emoji') {
-        notionIconMarkup = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+        notionIconMarkup = `<span class="notion-page-icon">${escapeHtml(pageInfo.icon.emoji)}</span>`;
       } else if (pageInfo.icon.external?.url) {
-        notionIconMarkup = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+        const iconUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
+        if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
       } else if (pageInfo.icon.file?.url) {
-        notionIconMarkup = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+        const iconUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
+        if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
       }
     }
     
@@ -5816,15 +6007,16 @@ export class ExtensionController {
     const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
     
     // Usar el mismo título reparado en el contenido y en la configuración.
-    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${notionPageTitle}${visibilityIndicator}</h1>`;
+    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${escapeHtml(notionPageTitle)}${visibilityIndicator}</h1>`;
     
     // Renderizar propiedades de base de datos (si las hay)
     const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
     
-    notionContent.innerHTML = headerHtml + propertiesHtml + blocksHtml;
+    const safeHtml = sanitizeNotionHtml(headerHtml + propertiesHtml + blocksHtml);
+    notionContent.innerHTML = safeHtml;
 
     // Guardar HTML en caché
-    this.cacheService.saveHtmlToLocalCache(pageId, headerHtml + blocksHtml);
+    this.cacheService.saveHtmlToLocalCache(pageId, safeHtml);
 
     // Actualizar mentions y adjuntar handlers
     this._updateMentionsInContent(notionContent);
@@ -5899,7 +6091,7 @@ export class ExtensionController {
     const pageTitle = document.getElementById('page-title');
     if (pageTitle && this.currentPage?.id === page?.id) {
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      pageTitle.innerHTML = resolvedTitle + visibilityIndicator;
+      pageTitle.innerHTML = escapeHtml(resolvedTitle) + visibilityIndicator;
     }
 
     log(`📝 Título reparado y guardado: "${resolvedTitle}"`);
@@ -5938,11 +6130,13 @@ export class ExtensionController {
       
       // Cover image
       if (pageInfo?.cover) {
-        const coverUrl = pageInfo.cover.external?.url || pageInfo.cover.file?.url;
+        const coverUrl = sanitizeHttpUrl(pageInfo.cover.external?.url || pageInfo.cover.file?.url);
         if (coverUrl) {
+          const escapedCoverUrl = escapeHtml(coverUrl);
+          const escapedPageId = escapeHtml(pageId);
           const shareButtonHtml = includeShareButtons ? `
-              <button class="notion-image-share-button share-button" 
-                      data-image-url="${coverUrl}" 
+              <button class="notion-image-share-button share-button"
+                      data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
                       title="Share with room">
                 ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
@@ -5954,14 +6148,12 @@ export class ExtensionController {
               <div class="image-loading">
                 <div class="loading-spinner"></div>
               </div>
-              <img src="${coverUrl}" alt="Page cover" 
+              <img src="${escapedCoverUrl}" alt="Page cover"
                    class="notion-cover-image notion-image-clickable loaded" 
-                   style="opacity: 1 !important; display: block !important;"
-                   data-image-url="${coverUrl}"
+                   data-image-url="${escapedCoverUrl}"
                    data-image-caption=""
-                   data-block-id="cover-${pageId}"
-                   onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />${shareButtonHtml}
+                   data-block-id="cover-${escapedPageId}"
+                   data-image-kind="cover" />${shareButtonHtml}
             </div>
           </div>
         `;
@@ -5975,29 +6167,31 @@ export class ExtensionController {
       let notionIconMarkup = '';
       if (pageInfo?.icon) {
         if (pageInfo.icon.type === 'emoji') {
-          notionIconMarkup = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+          notionIconMarkup = `<span class="notion-page-icon">${escapeHtml(pageInfo.icon.emoji)}</span>`;
         } else if (pageInfo.icon.external?.url) {
-          notionIconMarkup = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+          const iconUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
+          if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
         } else if (pageInfo.icon.file?.url) {
-          notionIconMarkup = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+          const iconUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
+          if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
         }
       }
       
       // Título (usar de Notion o fallback)
       const pageTitle = resolvePageTitle(notionTitle, fallbackTitle);
-      headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${pageTitle}</h1>`;
+      headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${escapeHtml(pageTitle)}</h1>`;
       
       // Renderizar propiedades de base de datos (si las hay)
       const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
       
       // HTML completo
-      const html = headerHtml + propertiesHtml + blocksHtml;
+      const html = sanitizeNotionHtml(headerHtml + propertiesHtml + blocksHtml);
       
       return {
         html,
-        headerHtml,
-        blocksHtml,
-        propertiesHtml,
+        headerHtml: sanitizeNotionHtml(headerHtml),
+        blocksHtml: sanitizeNotionHtml(blocksHtml),
+        propertiesHtml: sanitizeNotionHtml(propertiesHtml),
         pageInfo
       };
     } catch (e) {
@@ -6043,7 +6237,8 @@ export class ExtensionController {
       const cachedHtml = this.cacheService.getHtmlFromLocalCache(pageId);
       if (cachedHtml) {
         log('📦 Usando HTML del caché local');
-        notionContent.innerHTML = cachedHtml;
+        const safeCachedHtml = sanitizeNotionHtml(cachedHtml);
+        notionContent.innerHTML = safeCachedHtml;
         // Re-procesar mentions para asegurar que estén actualizados con el config actual
         this._updateMentionsInContent(notionContent);
         this._attachImageHandlers(notionContent);
@@ -6063,9 +6258,10 @@ export class ExtensionController {
       log('✅ Contenido recibido del GM');
       // Asegurar clase para ocultar .notion-gm-only (por si no se aplicó en init)
       if (!this.isGM) document.body.classList.add('role-player');
-      notionContent.innerHTML = html;
+      const safeHtml = sanitizeNotionHtml(html);
+      notionContent.innerHTML = safeHtml;
       // Guardar en caché local para próximas visitas
-      this.cacheService.saveHtmlToLocalCache(pageId, html);
+      this.cacheService.saveHtmlToLocalCache(pageId, safeHtml);
       // Actualizar mentions y adjuntar handlers
       this._updateMentionsInContent(notionContent);
       this._attachImageHandlers(notionContent);
@@ -6105,18 +6301,21 @@ export class ExtensionController {
       }
     }
 
-    // Asegurar URL absoluta
-    let absoluteImageUrl = imageUrl;
-    if (imageUrl && !imageUrl.match(/^https?:\/\//i)) {
-      try {
-        absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
-      } catch (e) {
-        absoluteImageUrl = imageUrl;
-      }
+    let absoluteImageUrl = '';
+    try {
+      absoluteImageUrl = sanitizeImageUrl(new URL(imageUrl, window.location.origin).href);
+    } catch {
+      absoluteImageUrl = '';
+    }
+
+    if (!absoluteImageUrl) {
+      notionContent.innerHTML = '<div class="empty-state"><p class="empty-state-text">Invalid image URL</p></div>';
+      return;
     }
 
     const caption = page.name || '';
-    const escapedCaption = caption.replace(/"/g, '&quot;');
+    const escapedCaption = escapeHtml(caption);
+    const escapedImageUrl = escapeHtml(absoluteImageUrl);
 
     // Agregar clase centered-content
     notionContent.classList.add('centered-content');
@@ -6136,10 +6335,10 @@ export class ExtensionController {
       ">
         <div style="position: relative; display: inline-block;">
           <img 
-            src="${absoluteImageUrl}" 
-            alt="${caption || 'Imagen'}"
+            src="${escapedImageUrl}"
+            alt="${escapedCaption || 'Image'}"
             class="notion-image-clickable"
-            data-image-url="${absoluteImageUrl}"
+            data-image-url="${escapedImageUrl}"
             data-image-caption="${escapedCaption}"
             style="
               max-width: 100%;
@@ -6151,7 +6350,7 @@ export class ExtensionController {
             "
           />
           <button class="notion-image-share-button share-button" 
-                  data-image-url="${absoluteImageUrl}" 
+                  data-image-url="${escapedImageUrl}"
                   data-image-caption="${escapedCaption}"
                   title="Share with room">
             ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
@@ -6209,9 +6408,22 @@ export class ExtensionController {
     const embedUrl = videoType === 'youtube'
       ? `https://www.youtube.com/embed/${videoId}?autoplay=1`
       : `https://player.vimeo.com/video/${videoId}?autoplay=1`;
+    const safeEmbedUrl = sanitizeVideoEmbedUrl(embedUrl);
+
+    if (!safeEmbedUrl) {
+      notionContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">❌</div>
+          <p class="empty-state-text">Invalid video URL</p>
+        </div>
+      `;
+      return;
+    }
 
     const caption = page.name || '';
-    const escapedCaption = caption.replace(/"/g, '&quot;');
+    const escapedCaption = escapeHtml(caption);
+    const escapedThumbnailUrl = escapeHtml(thumbnailUrl);
+    const escapedEmbedUrl = escapeHtml(safeEmbedUrl);
 
     notionContent.classList.add('centered-content');
     notionContent.innerHTML = `
@@ -6227,10 +6439,10 @@ export class ExtensionController {
       ">
         <div style="position: relative; display: inline-block; cursor: pointer;">
           <img 
-            src="${thumbnailUrl}" 
-            alt="${caption || 'Video'}"
+            src="${escapedThumbnailUrl}"
+            alt="${escapedCaption || 'Video'}"
             class="video-thumbnail-clickable"
-            data-video-url="${embedUrl}"
+            data-video-url="${escapedEmbedUrl}"
             data-video-type="${videoType}"
             style="
               max-width: 100%;
@@ -6267,7 +6479,7 @@ export class ExtensionController {
     const thumbnail = notionContent.querySelector('.video-thumbnail-clickable');
     if (thumbnail) {
       thumbnail.addEventListener('click', () => {
-        this._openVideoModal(embedUrl, caption, videoType);
+        this._openVideoModal(safeEmbedUrl, caption, videoType);
       });
     }
   }
@@ -6277,8 +6489,14 @@ export class ExtensionController {
    * @private
    */
   async _openVideoModal(embedUrl, caption, videoType) {
+    const safeVideoUrl = sanitizeVideoEmbedUrl(embedUrl);
+    if (!safeVideoUrl) {
+      logWarn('Blocked unsafe video embed URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
-      window.open(embedUrl, '_blank');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -6288,7 +6506,7 @@ export class ExtensionController {
       const baseUrl = window.location.origin + baseDir;
 
       const viewerUrl = new URL('html/video-viewer.html', baseUrl);
-      viewerUrl.searchParams.set('url', encodeURIComponent(embedUrl));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeVideoUrl));
       viewerUrl.searchParams.set('type', videoType);
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
@@ -6302,7 +6520,7 @@ export class ExtensionController {
       });
     } catch (e) {
       logError('Error abriendo video modal:', e);
-      window.open(embedUrl, '_blank');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -6314,10 +6532,16 @@ export class ExtensionController {
     if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
+      const safeVideoUrl = sanitizeVideoEmbedUrl(url);
+      if (!safeVideoUrl) {
+        this._showFeedback('❌ Invalid video URL');
+        return false;
+      }
+
       const result = await this.broadcastService.sendMessage('com.dmscreen/showVideo', {
-        url: url,
+        url: safeVideoUrl,
         caption: caption || '',
-        type: videoType,
+        type: videoType === 'vimeo' ? 'vimeo' : 'youtube',
         senderId: this.playerId
       });
       
@@ -6382,8 +6606,19 @@ export class ExtensionController {
       log('Error parsing Google URL, using original:', e);
     }
 
-    log('📄 Loading Google Doc:', embedUrl);
-    notionIframe.src = embedUrl;
+    const safeEmbedUrl = sanitizeGoogleEmbedUrl(embedUrl);
+    if (!safeEmbedUrl) {
+      logWarn('Blocked unsafe Google document URL');
+      this._setNotionDisplayMode('content');
+      const notionContent = document.getElementById('notion-content');
+      if (notionContent) {
+        notionContent.innerHTML = '<div class="empty-state"><p class="empty-state-text">Invalid document URL</p></div>';
+      }
+      return;
+    }
+
+    log('📄 Loading Google Doc:', safeEmbedUrl);
+    notionIframe.src = safeEmbedUrl;
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
     
     // El botón de share está ahora en el header
@@ -6397,8 +6632,14 @@ export class ExtensionController {
     if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
+      const safeDocUrl = sanitizeGoogleEmbedUrl(url);
+      if (!safeDocUrl) {
+        this._showFeedback('❌ Invalid document URL');
+        return false;
+      }
+
       const result = await this.broadcastService.sendMessage('com.dmscreen/showGoogleDoc', {
-        url: url,
+        url: safeDocUrl,
         name: name || '',
         senderId: this.playerId
       });
@@ -6432,14 +6673,17 @@ export class ExtensionController {
     if (!notionContent) return;
 
     try {
-      // El htmlContent ya viene pre-renderizado con estilos de Notion
-      notionContent.innerHTML = page.htmlContent;
+      // El HTML embebido comparte origen con el token de Notion, así que se
+      // trata como contenido externo aunque proceda de un export local.
+      const safeHtmlContent = sanitizeEmbeddedHtml(page.htmlContent);
+      notionContent.innerHTML = safeHtmlContent;
+      this._attachImageHandlers(notionContent);
       
       // Guardar en caché para players
       if (this.isGM && !this.isCoGM) {
         // Generar un ID único para la página (basado en nombre)
         const pageId = `embedded-${page.name.toLowerCase().replace(/\s+/g, '-')}`;
-        this.cacheService.saveHtmlToLocalCache(pageId, page.htmlContent);
+        this.cacheService.saveHtmlToLocalCache(pageId, safeHtmlContent);
       }
       
       log('✅ Renderizado HTML embebido para:', page.name);
@@ -6449,7 +6693,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading embedded content</p>
-          <p class="empty-state-hint">${e.message}</p>
+          <p class="empty-state-hint">${escapeHtml(e.message)}</p>
         </div>
       `;
     }
@@ -6528,7 +6772,7 @@ export class ExtensionController {
       // Agregar título con indicador de visibilidad si aplica
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
       const pageName = resolvePageTitle(page.name);
-      const titleHtml = `<h1 class="notion-page-title">${pageName}${visibilityIndicator}</h1>`;
+      const titleHtml = `<h1 class="notion-page-title">${escapeHtml(pageName)}${visibilityIndicator}</h1>`;
       notionContent.insertAdjacentHTML('afterbegin', titleHtml);
       
       log('✅ Demo HTML cargado correctamente');
@@ -6539,7 +6783,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading content</p>
-          <p class="empty-state-hint">${e.message}</p>
+          <p class="empty-state-hint">${escapeHtml(e.message)}</p>
         </div>
       `;
     }
@@ -6573,9 +6817,102 @@ export class ExtensionController {
       return;
     }
 
-    notionIframe.src = page.url;
+    let safeExternalUrl = '';
+    try {
+      safeExternalUrl = sanitizeHttpUrl(new URL(page.url, window.location.origin).href);
+      if (safeExternalUrl && new URL(safeExternalUrl).origin === window.location.origin) {
+        safeExternalUrl = '';
+      }
+    } catch {
+      safeExternalUrl = '';
+    }
+
+    if (!safeExternalUrl) {
+      logWarn('Blocked unsafe external page URL');
+      this._setNotionDisplayMode('content');
+      const notionContent = document.getElementById('notion-content');
+      if (notionContent) {
+        notionContent.innerHTML = '<div class="empty-state"><p class="empty-state-text">Invalid external URL</p></div>';
+      }
+      return;
+    }
+
+    notionIframe.src = safeExternalUrl;
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
     notionIframe.allowFullscreen = true;
+  }
+
+  /**
+   * Adjunta estados de carga/error sin depender de atributos onload/onerror.
+   * @param {HTMLElement} targetContainer
+   * @private
+   */
+  _attachImageLifecycleHandlers(targetContainer) {
+    const images = targetContainer.querySelectorAll('.notion-image-clickable');
+
+    images.forEach(img => {
+      if (img.__gmVaultLifecycleHandlersAdded) return;
+      img.__gmVaultLifecycleHandlersAdded = true;
+
+      const removeLoading = () => {
+        img.parentElement?.querySelector('.image-loading')?.remove();
+      };
+
+      const handleLoad = () => {
+        img.classList.add('loaded');
+        removeLoading();
+      };
+
+      const handleError = () => {
+        img.style.display = 'none';
+        removeLoading();
+
+        const parent = img.parentElement;
+        if (!parent || parent.querySelector('.notion-image-error')) return;
+
+        const errorState = document.createElement('div');
+        errorState.className = 'empty-state notion-image-error';
+
+        const icon = document.createElement('div');
+        icon.className = 'empty-state-icon';
+        icon.textContent = '⚠️';
+
+        const message = document.createElement('p');
+        message.className = 'empty-state-text';
+        message.textContent = img.dataset.imageKind === 'cover'
+          ? 'Cover image expired'
+          : 'Could not load image';
+
+        errorState.append(icon, message);
+
+        if (img.dataset.imageKind !== 'cover') {
+          const hint = document.createElement('p');
+          hint.className = 'empty-state-hint';
+          hint.textContent = 'The URL may have expired';
+          errorState.appendChild(hint);
+        }
+
+        const reloadButton = document.createElement('button');
+        reloadButton.type = 'button';
+        reloadButton.className = 'btn btn--sm btn--ghost';
+        reloadButton.textContent = '🔄 Reload page';
+        reloadButton.addEventListener('click', () => {
+          if (typeof window.refreshImage === 'function') window.refreshImage(reloadButton);
+        });
+        errorState.appendChild(reloadButton);
+        parent.appendChild(errorState);
+      };
+
+      img.addEventListener('load', handleLoad);
+      img.addEventListener('error', handleError);
+
+      if (img.complete) {
+        queueMicrotask(() => {
+          if (img.naturalWidth > 0) handleLoad();
+          else handleError();
+        });
+      }
+    });
   }
 
   /**
@@ -6586,11 +6923,13 @@ export class ExtensionController {
     const targetContainer = container || document.getElementById('notion-content');
     if (!targetContainer) return;
 
+    this._attachImageLifecycleHandlers(targetContainer);
+
     const images = targetContainer.querySelectorAll('.notion-image-clickable');
     
     images.forEach(img => {
-      if (img.dataset.listenerAdded) return;
-      img.dataset.listenerAdded = 'true';
+      if (img.__gmVaultClickHandlerAdded) return;
+      img.__gmVaultClickHandlerAdded = true;
       
       img.addEventListener('click', () => {
         const url = img.dataset.imageUrl || img.src;
@@ -6602,8 +6941,8 @@ export class ExtensionController {
     const shareButtons = targetContainer.querySelectorAll('.notion-image-share-button');
     
     shareButtons.forEach(btn => {
-      if (btn.dataset.listenerAdded) return;
-      btn.dataset.listenerAdded = 'true';
+      if (btn.__gmVaultShareHandlerAdded) return;
+      btn.__gmVaultShareHandlerAdded = true;
       
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -6848,9 +7187,13 @@ export class ExtensionController {
       this.notionRenderer.setRenderingOptions({ isInModal: true });
       
       let htmlContent = null;
+      let htmlSanitizer = sanitizeNotionHtml;
       
       // Master GM: usar API de Notion directamente
-      if (this.isGM && !this.isCoGM) {
+      if (page.hasEmbeddedHtml()) {
+        htmlSanitizer = sanitizeEmbeddedHtml;
+        htmlContent = page.htmlContent;
+      } else if (this.isGM && !this.isCoGM) {
         const result = await this._generateNotionHtmlWithHeader(notionPageId, {
           includeShareButtons: true,
           fallbackTitle: displayName,
@@ -6880,6 +7223,7 @@ export class ExtensionController {
         htmlContent = await this.broadcastService.requestContentFromGM(notionPageId);
         
         if (htmlContent) {
+          htmlContent = sanitizeNotionHtml(htmlContent);
           // Guardar en caché local
           this.cacheService.saveHtmlToLocalCache(notionPageId, htmlContent);
         }
@@ -6897,7 +7241,8 @@ export class ExtensionController {
       }
       
       // Mostrar contenido
-      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlContent}</div>`;
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlSanitizer(htmlContent)}</div>`;
+      this._attachImageLifecycleHandlers(content);
       
       // Adjuntar handlers de imágenes
       const images = content.querySelectorAll('.notion-image-clickable');
@@ -6917,7 +7262,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error reloading page</p>
-          <p class="empty-state-hint">${error.message || 'Unknown error'}</p>
+          <p class="empty-state-hint">${escapeHtml(error.message || 'Unknown error')}</p>
         </div>
       `;
     } finally {
@@ -7034,22 +7379,47 @@ export class ExtensionController {
       this.notionRenderer.setRenderingOptions({ isInModal: true });
       
       let htmlContent = null;
+      let htmlSanitizer = sanitizeNotionHtml;
       
       // Caso 1: Página con HTML embebido (local-first, Obsidian)
       if (page.hasEmbeddedHtml()) {
         log('📄 Mention: página con HTML embebido (local-first)');
         // Usar el HTML embebido directamente
         htmlContent = page.htmlContent;
+        htmlSanitizer = sanitizeEmbeddedHtml;
       }
       // Caso 2: Página con URL externa (Obsidian Tunnel) - cargar en iframe
       else if (page.url && !page.getNotionPageId()) {
         log('🔗 Mention: página con URL externa, cargando en iframe:', page.url);
+        let safeExternalUrl = '';
+        try {
+          safeExternalUrl = sanitizeExternalIframeUrl(
+            new URL(page.url, window.location.origin).href
+          );
+        } catch {
+          safeExternalUrl = '';
+        }
+
+        if (!safeExternalUrl) {
+          content.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">⚠️</div>
+              <p class="empty-state-text">Cannot load page</p>
+              <p class="empty-state-hint">Invalid external URL</p>
+            </div>
+          `;
+          return;
+        }
+
         const iframe = document.createElement('iframe');
         // Añadir parámetro inModal=true para que el iframe sepa que está en modal desde el inicio
-        const modalUrl = new URL(page.url, window.location.origin);
+        const modalUrl = new URL(safeExternalUrl);
         modalUrl.searchParams.set('inModal', 'true');
         iframe.src = modalUrl.toString();
         iframe.className = 'mention-modal__iframe';
+        iframe.__gmVaultTrustedExternalMention = true;
+        iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-presentation');
+        iframe.referrerPolicy = 'no-referrer';
         iframe.style.cssText = 'width: 100%; height: 100%; border: none; min-height: 500px;';
         iframe.title = displayName;
         
@@ -7142,7 +7512,7 @@ export class ExtensionController {
           const cachedHtml = this.cacheService.getHtmlFromLocalCache(notionPageId);
           if (cachedHtml) {
             log('📦 Mention: usando HTML del caché local');
-            htmlContent = cachedHtml;
+            htmlContent = sanitizeNotionHtml(cachedHtml);
           } else {
             // Solicitar contenido al GM vía broadcast
             log('📡 Mention: solicitando contenido al GM...');
@@ -7150,6 +7520,7 @@ export class ExtensionController {
             
             if (htmlContent) {
               log('✅ Mention: contenido recibido del GM');
+              htmlContent = sanitizeNotionHtml(htmlContent);
               // Guardar en caché local para próximas visitas
               this.cacheService.saveHtmlToLocalCache(notionPageId, htmlContent);
             }
@@ -7193,7 +7564,8 @@ export class ExtensionController {
       }
       
       // Mostrar contenido con header completo (cover, título, icono, propiedades, bloques)
-      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlContent}</div>`;
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlSanitizer(htmlContent)}</div>`;
+      this._attachImageLifecycleHandlers(content);
       
       // Adjuntar handlers de imágenes PERO NO de mentions (evita navegación infinita)
       const images = content.querySelectorAll('.notion-image-clickable');
@@ -7255,7 +7627,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading page</p>
-          <p class="empty-state-hint">${error.message || 'Unknown error'}</p>
+          <p class="empty-state-hint">${escapeHtml(error.message || 'Unknown error')}</p>
         </div>
       `;
     } finally {
@@ -7273,25 +7645,26 @@ export class ExtensionController {
    * @private
    */
   async _showImageModal(imageUrl, caption, showShareButton = true, promptShare = false) {
+    let absoluteImageUrl = '';
+    try {
+      absoluteImageUrl = sanitizeImageUrl(new URL(imageUrl, window.location.origin).href);
+    } catch {
+      absoluteImageUrl = '';
+    }
+
+    if (!absoluteImageUrl) {
+      logWarn('Blocked unsafe image URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
       // Fallback: abrir en nueva ventana
-      window.open(imageUrl, '_blank', 'noopener,noreferrer');
+      window.open(absoluteImageUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
     try {
-      // Asegurarse de que imageUrl sea una URL absoluta
-      let absoluteImageUrl = imageUrl;
-      if (imageUrl && !imageUrl.match(/^https?:\/\//i)) {
-        try {
-          absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
-        } catch (e) {
-          log('No se pudo construir URL absoluta, usando original:', imageUrl);
-          absoluteImageUrl = imageUrl;
-        }
-      }
-      
       // Construir URL del viewer
       const currentPath = window.location.pathname;
       const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
@@ -7317,7 +7690,7 @@ export class ExtensionController {
     } catch (error) {
       logError('Error al abrir modal de Owlbear:', error);
       // Fallback: abrir en nueva ventana
-      window.open(imageUrl, '_blank', 'noopener,noreferrer');
+      window.open(absoluteImageUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7332,14 +7705,16 @@ export class ExtensionController {
     }
 
     try {
-      // Asegurarse de que la URL sea absoluta
-      let absoluteImageUrl = url;
-      if (url && !url.match(/^https?:\/\//i)) {
-        try {
-          absoluteImageUrl = new URL(url, window.location.origin).toString();
-        } catch (e) {
-          absoluteImageUrl = url;
-        }
+      let absoluteImageUrl = '';
+      try {
+        absoluteImageUrl = sanitizeImageUrl(new URL(url, window.location.origin).href);
+      } catch {
+        absoluteImageUrl = '';
+      }
+
+      if (!absoluteImageUrl) {
+        this._showFeedback('❌ Invalid image URL');
+        return false;
       }
 
       const result = await shareImageWithPlayers({
@@ -7391,9 +7766,15 @@ export class ExtensionController {
    * @private
    */
   async _showVideoModal(videoUrl, caption, videoType = 'youtube') {
+    const safeVideoUrl = sanitizeVideoEmbedUrl(videoUrl);
+    if (!safeVideoUrl) {
+      logWarn('Blocked unsafe shared video URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(videoUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -7403,8 +7784,8 @@ export class ExtensionController {
       const baseUrl = window.location.origin + baseDir;
       
       const viewerUrl = new URL('html/video-viewer.html', baseUrl);
-      viewerUrl.searchParams.set('url', encodeURIComponent(videoUrl));
-      viewerUrl.searchParams.set('type', videoType);
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeVideoUrl));
+      viewerUrl.searchParams.set('type', videoType === 'vimeo' ? 'vimeo' : 'youtube');
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
       }
@@ -7417,7 +7798,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de video:', error);
-      window.open(videoUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7428,9 +7809,15 @@ export class ExtensionController {
    * @private
    */
   async _showGoogleDocModal(docUrl, name) {
+    const safeDocUrl = sanitizeGoogleEmbedUrl(docUrl);
+    if (!safeDocUrl) {
+      logWarn('Blocked unsafe shared Google document URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(docUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeDocUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -7440,7 +7827,7 @@ export class ExtensionController {
       const baseUrl = window.location.origin + baseDir;
       
       const viewerUrl = new URL('html/google-doc-viewer.html', baseUrl);
-      viewerUrl.searchParams.set('url', encodeURIComponent(docUrl));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeDocUrl));
       if (name) {
         viewerUrl.searchParams.set('name', encodeURIComponent(name));
       }
@@ -7453,7 +7840,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de Google Doc:', error);
-      window.open(docUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeDocUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7465,9 +7852,15 @@ export class ExtensionController {
    * @private
    */
   async _showNotionPageModal(url, name, pageId) {
+    const safeNotionUrl = sanitizeHttpUrl(url);
+    if (!safeNotionUrl || !isNotionUrl(safeNotionUrl)) {
+      logWarn('Blocked unsafe legacy Notion URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeNotionUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -7478,7 +7871,7 @@ export class ExtensionController {
       
       const viewerUrl = new URL('index.html', baseUrl);
       viewerUrl.searchParams.set('modal', 'true');
-      viewerUrl.searchParams.set('url', encodeURIComponent(url));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeNotionUrl));
       if (name) {
         viewerUrl.searchParams.set('name', encodeURIComponent(name));
       }
@@ -7491,7 +7884,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de Notion:', error);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeNotionUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7523,7 +7916,7 @@ export class ExtensionController {
       // Guardar el HTML en sessionStorage para recuperarlo en la modal
       // Esto evita problemas con URLs muy largas
       const contentKey = 'gm-vault-shared-content-' + Date.now();
-      sessionStorage.setItem(contentKey, html);
+      sessionStorage.setItem(contentKey, sanitizeEmbeddedHtml(html));
       viewerUrl.searchParams.set('contentKey', contentKey);
       
       await this.OBR.modal.open({
@@ -7544,9 +7937,28 @@ export class ExtensionController {
    * @private
    */
   async _showContentModal(url, name) {
+    let safeContentUrl = '';
+    try {
+      safeContentUrl = sanitizeHttpUrl(new URL(url, window.location.origin).href);
+      const parsed = safeContentUrl ? new URL(safeContentUrl) : null;
+      if (
+        parsed?.origin === window.location.origin &&
+        !/^\/content-demo\/[A-Za-z0-9._/-]+\.html$/.test(parsed.pathname)
+      ) {
+        safeContentUrl = '';
+      }
+    } catch {
+      safeContentUrl = '';
+    }
+
+    if (!safeContentUrl) {
+      logWarn('Blocked unsafe shared content URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeContentUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -7557,7 +7969,7 @@ export class ExtensionController {
       
       const viewerUrl = new URL('index.html', baseUrl);
       viewerUrl.searchParams.set('modal', 'true');
-      viewerUrl.searchParams.set('url', encodeURIComponent(url));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeContentUrl));
       if (name) {
         viewerUrl.searchParams.set('name', encodeURIComponent(name));
       }
@@ -7570,7 +7982,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de contenido:', error);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeContentUrl, '_blank', 'noopener,noreferrer');
     }
   }
 

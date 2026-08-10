@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Permanent+Marker&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=20260722-3">
-  <link rel="stylesheet" href="css/notion-markdown.css?v=20260722-3">
+  <link rel="stylesheet" href="css/app.css?v=20260722-4">
+  <link rel="stylesheet" href="css/notion-markdown.css?v=20260722-4">
   <!-- Preload iconos críticos -->
   <link rel="preload" href="img/icon-add.svg" as="image" type="image/svg+xml">
   <link rel="preload" href="img/icon-arrow.svg" as="image" type="image/svg+xml">
@@ -94,9 +94,6 @@
             <button id="clear-token" class="btn btn--ghost btn--flex">Delete Token</button>
             <button id="save-token" class="btn btn--primary btn--flex">Save Token</button>
           </div>
-          <div class="form__actions form__actions--double">
-            <button id="import-notion-btn" class="btn btn--primary btn--flex">📥 Import from Notion</button>
-          </div>
         </div>
 
         <div class="form form--separated">
@@ -104,21 +101,14 @@
           <p class="settings__description">
             Save and reuse your vault. Import a setup shared by another GM or export yours as a backup.
           </p>
-          <div class="form__field">
-            <label class="form__label" for="vault-url-input">Load from URL</label>
-            <input type="url" id="vault-url-input" placeholder="https://example.com/gm-vault" class="input input--mono" autocomplete="off" spellcheck="false">
-            <div class="form__actions form__actions--single" style="margin-top: 8px;">
-              <button id="load-url-btn" class="btn btn--primary btn--flex">Load from URL</button>
-            </div>
-          </div>
-          <label class="form__label" style="margin-top: var(--spacing-lg);">Load from file</label>
           <div class="form__actions form__actions--single">
-            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">View JSON</button>
+            <button id="download-json-btn" class="btn btn--ghost btn--flex">Backup GM Vault</button>
           </div>
-          <div class="form__actions form__actions--double">
-            <button id="load-json-btn" class="btn btn--primary btn--flex">Load vault</button>
-            <button id="download-json-btn" class="btn btn--ghost btn--flex">Download vault</button>
-          </div>
+          <!-- Import controls are opened from the + menu. -->
+          <input type="url" id="vault-url-input" hidden>
+          <button id="load-url-btn" hidden type="button"></button>
+          <button id="load-json-btn" hidden type="button"></button>
+          <button id="view-json-btn" hidden type="button"></button>
         </div>
 
         <div class="form form--separated">
@@ -147,6 +137,6 @@
   </div>
   <!-- La aplicación activa usa la arquitectura modular de js/main.js. -->
   <!-- One-time cache bust for clients that received the former 7-day JS cache policy. -->
-  <script type="module" src="js/main.js?v=20260722-3"></script>
+  <script type="module" src="js/main.js?v=20260722-4"></script>
 </body>
 </html>

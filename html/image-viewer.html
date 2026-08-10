@@ -169,7 +169,7 @@
       cursor: progress;
     }
 
-    .header-action-button[aria-busy="true"] img {
+    .header-action-button[aria-busy="true"] .share-icon {
       opacity: 0;
     }
 
@@ -202,7 +202,7 @@
       border-radius: 999px;
     }
 
-    .header-action-button img {
+    .header-action-button .share-icon {
       width: var(--icon-size-md);
       height: var(--icon-size-md);
       display: block;
@@ -369,7 +369,14 @@
         aria-label="Show this image to all players"
         hidden
       >
-        <img src="../img/icon-players.svg" alt="" />
+        <svg class="share-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+            <path d="M7.667 11.001a2.667 2.667 0 1 0 0-5.333 2.667 2.667 0 0 0 0 5.333Z" />
+            <path d="M12.812 20.164c.697-.233 1.106-.992.848-1.679-.913-2.424-3.248-4.149-5.992-4.149-2.744 0-5.079 1.725-5.992 4.149-.259.688.15 1.446.848 1.679 1.283.428 3.041.837 5.145.837 2.103 0 3.862-.409 5.143-.837Z" />
+            <path d="M16 7.669a2.667 2.667 0 1 0 0-5.333 2.667 2.667 0 0 0 0 5.333Z" />
+            <path d="M17.539 17.585c1.424-.137 2.652-.434 3.605-.753.697-.233 1.106-.992.848-1.679-.913-2.424-3.248-4.149-5.992-4.149-1.119 0-2.161.301-3.076.805" />
+          </g>
+        </svg>
       </button>
       <button
         id="close-button"
@@ -398,7 +405,8 @@
       sendImageShareStatus,
       shareImageWithPlayers
     } from "../js/services/ImageShareService.js";
-    import { runShareButtonAction } from "../js/utils/shareButtonState.js?v=20260722-3";
+    import { runShareButtonAction } from "../js/utils/shareButtonState.js?v=20260722-4";
+    import { sanitizeImageUrl } from "../js/utils/htmlSecurity.js?v=20260722-4";
 
     const urlParams = new URLSearchParams(window.location.search);
     const shareParam = urlParams.get('share');
@@ -585,14 +593,15 @@
     });
 
     if (imageUrl) {
-      if (!/^https?:\/\//i.test(imageUrl)) {
-        try {
-          imageUrl = new URL(imageUrl, window.location.origin).toString();
-        } catch (error) {
-          console.error('Could not build an absolute image URL:', error);
-        }
+      try {
+        imageUrl = sanitizeImageUrl(new URL(imageUrl, window.location.origin).href);
+      } catch (error) {
+        console.error('Could not validate the image URL:', error);
+        imageUrl = '';
       }
+    }
 
+    if (imageUrl) {
       viewerImage.alt = caption || 'Image';
       viewerImage.src = imageUrl;
     } else {

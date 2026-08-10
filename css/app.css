@@ -406,6 +406,10 @@
     background: var(--color-bg-active);
     color: var(--color-text-primary);
   }
+
+  .import-destination-help {
+    margin-bottom: 4px;
+  }
   
   /* Textarea específico */
   .textarea {
