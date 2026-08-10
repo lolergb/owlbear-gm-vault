@@ -4734,7 +4734,7 @@ export class ExtensionController {
       { icon: 'img/icon-link.svg', text: 'Import from URL', action: () => {
         const url = window.prompt('Enter the GM Vault URL');
         if (!url) return;
-        this._showSettings();
+        this._setupSettingsEventListeners();
         setTimeout(() => {
           const input = document.getElementById('vault-url-input');
           const loadButton = document.getElementById('load-url-btn');
@@ -4745,7 +4745,7 @@ export class ExtensionController {
         }, 0);
       } },
       { icon: 'img/icon-page.svg', text: 'Import from file', action: () => {
-        this._showSettings();
+        this._setupSettingsEventListeners();
         setTimeout(() => document.getElementById('load-json-btn')?.click(), 0);
       } }
     ];
