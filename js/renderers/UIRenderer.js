@@ -6,9 +6,10 @@
  */
 
 import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
-import { log } from '../utils/logger.js?v=20260722-3';
+import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
-import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-3';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
+import { escapeHtml, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260722-4';
 
 /**
  * Renderizador de interfaz de usuario
@@ -463,8 +464,8 @@ export class UIRenderer {
     // HTML del botón
     button.innerHTML = `
       <div class="page-button-inner">
-        <div class="page-icon-placeholder" style="background: ${placeholderColor};">${placeholderInitial}</div>
-        <div class="page-name-text">${page.name}</div>
+        <div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>
+        <div class="page-name-text">${escapeHtml(page.name)}</div>
         ${visibleIndicator}
         ${linkIconHtml}
       </div>
@@ -691,11 +692,17 @@ export class UIRenderer {
       if (pageInfo && pageInfo.icon) {
         let iconHtml = '';
         if (pageInfo.icon.type === 'emoji') {
-          iconHtml = `<span class="page-icon-emoji">${pageInfo.icon.emoji || '📄'}</span>`;
+          iconHtml = `<span class="page-icon-emoji">${escapeHtml(pageInfo.icon.emoji || '📄')}</span>`;
         } else if (pageInfo.icon.type === 'external' && pageInfo.icon.external?.url) {
-          iconHtml = `<img src="${pageInfo.icon.external.url}" alt="${pageName}" class="page-icon-image" />`;
+          const safeUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
+          if (safeUrl) {
+            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
+          }
         } else if (pageInfo.icon.type === 'file' && pageInfo.icon.file?.url) {
-          iconHtml = `<img src="${pageInfo.icon.file.url}" alt="${pageName}" class="page-icon-image" />`;
+          const safeUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
+          if (safeUrl) {
+            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
+          }
         }
 
         if (iconHtml) {
@@ -704,7 +711,7 @@ export class UIRenderer {
             inner.innerHTML = `
               <div style="display: flex; align-items: center; gap: var(--spacing-md); width: 100%;">
                 ${iconHtml}
-                <div class="page-name" style="flex: 1; text-align: left;">${pageName}</div>
+                <div class="page-name" style="flex: 1; text-align: left;">${escapeHtml(pageName)}</div>
                 ${linkIconHtml}
               </div>
             `;
@@ -1126,12 +1133,15 @@ export class UIRenderer {
       if (item.icon && item.icon.startsWith('img/')) {
         const rotateClass = item.rotation === 'rotate(90deg)' ? 'icon--rotate-up' : 
                             item.rotation === 'rotate(-90deg)' ? 'icon--rotate-down' : '';
-        itemIconHtml = iconHtml(item.icon, { className: `context-menu__icon ${rotateClass}` });
+        const safeIconPath = /^img\/[a-zA-Z0-9._/-]+\.svg$/.test(item.icon) ? item.icon : '';
+        if (safeIconPath) {
+          itemIconHtml = iconHtml(safeIconPath, { className: `context-menu__icon ${rotateClass}` });
+        }
       } else {
-        itemIconHtml = `<span class="context-menu__icon">${item.icon || ''}</span>`;
+        itemIconHtml = `<span class="context-menu__icon">${escapeHtml(item.icon || '')}</span>`;
       }
 
-      menuItem.innerHTML = `${itemIconHtml}<span>${item.text}</span>`;
+      menuItem.innerHTML = `${itemIconHtml}<span>${escapeHtml(item.text)}</span>`;
 
       menuItem.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1311,14 +1321,15 @@ export class UIRenderer {
 
     const toast = document.createElement('div');
     toast.id = 'gm-toast';
-    toast.className = `gm-toast gm-toast--${type}`;
+    const safeType = Object.hasOwn(icons, type) ? type : 'info';
+    toast.className = `gm-toast gm-toast--${safeType}`;
     
     toast.innerHTML = `
       <div class="gm-toast__content">
-        <span class="gm-toast__icon">${icons[type] || icons.info}</span>
+        <span class="gm-toast__icon">${icons[safeType]}</span>
         <div class="gm-toast__body">
-          <div class="gm-toast__title">${title}</div>
-          ${message ? `<div class="gm-toast__message">${message}</div>` : ''}
+          <div class="gm-toast__title">${escapeHtml(title)}</div>
+          ${message ? `<div class="gm-toast__message">${escapeHtml(message)}</div>` : ''}
         </div>
         <button class="gm-toast__close" aria-label="Close">✕</button>
       </div>

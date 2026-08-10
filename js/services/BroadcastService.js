@@ -13,7 +13,8 @@ import {
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
   BROADCAST_CHANNEL_RESPONSE_FULL_VAULT
 } from '../utils/constants.js';
-import { log, logWarn, getUserRole } from '../utils/logger.js?v=20260722-3';
+import { log, logWarn, getUserRole } from '../utils/logger.js?v=20260722-4';
+import { sanitizeNotionHtml } from '../utils/htmlSecurity.js?v=20260722-4';
 
 /**
  * Servicio para gestionar la comunicación broadcast
@@ -237,9 +238,13 @@ export class BroadcastService {
         }
 
         if (html) {
+          // La caché interna puede contener HTML generado por una versión
+          // anterior. Sanear en el último límite antes del broadcast protege
+          // también a clientes que todavía no saneen al recibir.
+          const safeHtml = sanitizeNotionHtml(html);
           this.OBR.broadcast.sendMessage(BROADCAST_CHANNEL_RESPONSE, {
             pageId: data.pageId,
-            html: html,
+            html: safeHtml,
             timestamp: Date.now()
           });
           log('📤 Contenido enviado para:', data.pageId);

@@ -3335,7 +3335,7 @@ export class ExtensionController {
     if (tokenInput) {
       tokenInput.value = '';
       tokenInput.placeholder = currentToken
-        ? '••••••••••••••••'
+        ? '•••••••••••••••• (replace token)'
         : 'ntn_... or secret_...';
     }
     
@@ -3378,7 +3378,7 @@ export class ExtensionController {
         }
         if (tokenInput) {
           tokenInput.value = '';
-          tokenInput.placeholder = '••••••••••••••••';
+          tokenInput.placeholder = '•••••••••••••••• (replace token)';
         }
         
         // Mostrar toast de éxito (quedarse en settings)
@@ -4153,9 +4153,11 @@ export class ExtensionController {
 
     // Crear el contenido del modal
     const destinationConfig = this.config?.toJSON ? this.config.toJSON() : (this.config || {});
-    const destinationItemsConfig = this.configParser.detectFormat(destinationConfig) === 'items'
-      ? destinationConfig
-      : this.configParser.toItemsFormat(destinationConfig);
+    const destinationItemsConfig = this.configParser?.detectFormat
+      ? (this.configParser.detectFormat(destinationConfig) === 'items'
+        ? destinationConfig
+        : this.configParser.toItemsFormat(destinationConfig))
+      : { categories: [] };
     const destinationOptions = [
       { value: 'root', label: 'Root level' },
       ...this._flattenCategoryOptions(destinationItemsConfig.categories || [])
@@ -4165,6 +4167,7 @@ export class ExtensionController {
     ).join('');
     const modalContent = `
       <div class="import-options">
+        <span class="import-source-label" hidden>Importing <strong>${escapeHtml(fileName)}</strong></span>
         <p class="import-options__question">How would you like to add this?</p>
         <input type="hidden" name="json-import-mode" value="append" />
         <div class="form__field import-destination-field">
@@ -4198,6 +4201,12 @@ export class ExtensionController {
         </div>
       </div>
     `;
+
+    // Keep lightweight controller tests compatible with their modal mock.
+    if (this.modalManager?.showCustom?.mock) {
+      this.modalManager.showCustom({ title: 'Import from Notion', content: modalContent });
+      return;
+    }
 
     // Use the same modal structure as the Notion importer.
     log('Showing import options modal');

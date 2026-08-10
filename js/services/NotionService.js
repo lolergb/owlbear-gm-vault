@@ -6,7 +6,7 @@
 
 import { ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
 import { isNotionUrl } from '../utils/helpers.js';
-import { log, logError, logWarn } from '../utils/logger.js?v=20260722-3';
+import { log, logError, logWarn } from '../utils/logger.js?v=20260722-4';
 
 /**
  * Servicio para interactuar con Notion

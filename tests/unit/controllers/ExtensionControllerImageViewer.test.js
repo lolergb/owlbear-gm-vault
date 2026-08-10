@@ -119,6 +119,25 @@ describe('ExtensionController image viewer', () => {
     const [{ url }] = controller.OBR.modal.open.mock.calls[0];
     expect(new URL(url).searchParams.get('share')).toBe('false');
   });
+
+  it('permite ampliar una imagen raster base64 importada sin aceptar SVG activo', async () => {
+    const controller = bareController();
+    controller.OBR = {
+      modal: { open: jest.fn().mockResolvedValue(undefined) }
+    };
+
+    const raster = 'data:image/png;base64,QUJDRA==';
+    await controller._showImageModal(raster, 'Local map');
+    const [{ url }] = controller.OBR.modal.open.mock.calls[0];
+    expect(decodeURIComponent(new URL(url).searchParams.get('url'))).toBe(raster);
+
+    controller.OBR.modal.open.mockClear();
+    await controller._showImageModal(
+      'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      'Unsafe vector'
+    );
+    expect(controller.OBR.modal.open).not.toHaveBeenCalled();
+  });
 });
 
 describe('image-viewer.html contract', () => {
@@ -189,6 +208,10 @@ describe('image-viewer.html contract', () => {
     expect(source).not.toMatch(
       /OBR\.broadcast\.sendMessage\(\s*['"]com\.dmscreen\/showImage['"]/
     );
+  });
+
+  it('vuelve a validar la URL como imagen raster dentro del visor', () => {
+    expect(source).toMatch(/sanitizeImageUrl\(new URL\(imageUrl, window\.location\.origin\)\.href\)/);
   });
 });
 

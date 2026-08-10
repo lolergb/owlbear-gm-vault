@@ -5,7 +5,7 @@
  */
 
 import { CACHE_PREFIX, PAGE_INFO_CACHE_PREFIX, ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
-import { log, logError, logWarn, getUserRole } from '../utils/logger.js?v=20260722-3';
+import { log, logError, logWarn, getUserRole } from '../utils/logger.js?v=20260722-4';
 import { compressJson, validateTotalMetadataSize } from '../utils/helpers.js';
 
 /**

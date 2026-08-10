@@ -329,7 +329,7 @@ describe('Netlify static asset cache policy', () => {
   });
 
   it('fuerza una URL nueva para los módulos que tuvieron caché de siete días', () => {
-    const buildTag = '20260722-3';
+    const buildTag = '20260722-4';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
     const controllerJs = readProjectFile('js/controllers/ExtensionController.js');

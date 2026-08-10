@@ -437,6 +437,30 @@ describe('Flujo GM → Player: Contenido HTML', () => {
     );
   });
 
+  it('GM sanea HTML legado del caché justo antes de enviarlo', async () => {
+    const pageId = 'legacy-cache';
+    mockCacheService.getHtmlFromLocalCache.mockImplementation((requestedPageId) => (
+      requestedPageId === pageId
+        ? '<p>Visible</p><img src=x onerror="window.pwned=1"><script>window.pwned=2</script>'
+        : null
+    ));
+    const generator = jest.fn();
+    gmBroadcast.setupGMContentResponder(generator);
+
+    gmOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_REQUEST, {
+      pageId,
+      requestId: Date.now()
+    });
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const response = gmOBR.broadcast.sendMessage.mock.calls.find(
+      ([channel]) => channel === BROADCAST_CHANNEL_RESPONSE
+    )?.[1];
+    expect(generator).not.toHaveBeenCalled();
+    expect(response.html).toContain('Visible');
+    expect(response.html).not.toMatch(/onerror=|<script/i);
+  });
+
   it('Player debe recibir null si GM no tiene el contenido', async () => {
     const pageId = 'pagina-no-cacheada';
     

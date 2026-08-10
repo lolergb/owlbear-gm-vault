@@ -160,6 +160,7 @@
   
   <script type="module">
     import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+    import { sanitizeVideoEmbedUrl } from "../js/utils/htmlSecurity.js?v=20260722-4";
     
     // Obtener parámetros de la URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -173,18 +174,15 @@
     }
     
     if (videoUrl) {
-      // Decodificar la URL
-      videoUrl = decodeURIComponent(videoUrl);
-      
-      // Asegurarse de que sea una URL absoluta
-      if (!videoUrl.match(/^https?:\/\//i)) {
-        try {
-          videoUrl = new URL(videoUrl, window.location.origin).toString();
-        } catch (e) {
-          console.error('Error construyendo URL absoluta:', e);
-        }
+      try {
+        videoUrl = sanitizeVideoEmbedUrl(decodeURIComponent(videoUrl));
+      } catch (error) {
+        console.error('Could not decode the video URL:', error);
+        videoUrl = '';
       }
-      
+    }
+
+    if (videoUrl) {
       document.getElementById('viewer-video').src = videoUrl;
       
       if (caption) {
@@ -193,7 +191,7 @@
         captionDiv.style.display = 'block';
       }
     } else {
-      document.body.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">Error: No video URL provided</div>';
+      document.body.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">Error: Invalid video URL</div>';
     }
     
     // Cerrar con ESC
@@ -250,4 +248,3 @@
   </script>
 </body>
 </html>
-
