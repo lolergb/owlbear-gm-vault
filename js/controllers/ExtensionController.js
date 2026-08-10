@@ -3335,7 +3335,7 @@ export class ExtensionController {
     if (tokenInput) {
       tokenInput.value = '';
       tokenInput.placeholder = currentToken
-        ? 'Enter a new token to replace the current one'
+        ? '••••••••••••••••'
         : 'ntn_... or secret_...';
     }
     
@@ -3378,7 +3378,7 @@ export class ExtensionController {
         }
         if (tokenInput) {
           tokenInput.value = '';
-          tokenInput.placeholder = 'Enter a new token to replace the current one';
+          tokenInput.placeholder = '••••••••••••••••';
         }
         
         // Mostrar toast de éxito (quedarse en settings)
@@ -4109,8 +4109,10 @@ export class ExtensionController {
     const findCategory = (items) => {
       for (const category of items || []) {
         if (category?.id === destinationId) return category;
-        const nested = findCategory(category.items?.filter(item => item?.type === 'category'));
+        const nested = findCategory(category.items);
         if (nested) return nested;
+        const legacyNested = findCategory(category.categories);
+        if (legacyNested) return legacyNested;
       }
       return null;
     };
@@ -4119,7 +4121,13 @@ export class ExtensionController {
     if (!destination) return false;
     destination.items = Array.isArray(destination.items) ? destination.items : [];
     destination.items.push(
-      ...(importedCategories || []),
+      ...(importedCategories || []).map(category =>
+        category?.type === 'category'
+          ? category
+          : Array.isArray(category?.items)
+            ? { type: 'category', ...category }
+            : this.configParser._categoryToItemFormat(category)
+      ),
       ...(importedRootPages || []).map(page => this.configParser._pageToItemFormat(page))
     );
     return true;
@@ -4144,20 +4152,29 @@ export class ExtensionController {
     }
 
     // Crear el contenido del modal
+    const destinationConfig = this.config?.toJSON ? this.config.toJSON() : (this.config || {});
+    const destinationItemsConfig = this.configParser.detectFormat(destinationConfig) === 'items'
+      ? destinationConfig
+      : this.configParser.toItemsFormat(destinationConfig);
+    const destinationOptions = [
+      { value: 'root', label: 'Root level' },
+      ...this._flattenCategoryOptions(destinationItemsConfig.categories || [])
+    ];
+    const destinationMarkup = destinationOptions.map(option =>
+      `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+    ).join('');
     const modalContent = `
       <div class="import-options">
-        <p class="import-options__question">
-          Loading <strong>${escapeHtml(fileName)}</strong> (${importedPagesCount} page${importedPagesCount !== 1 ? 's' : ''})
-        </p>
         <p class="import-options__question">How would you like to add this?</p>
-        
-        <label class="import-option">
-          <input type="radio" name="json-import-mode" value="append" checked />
-          <div class="import-option__content">
-            <span class="import-option__title">Add to the end</span>
-            <span class="import-option__hint">Your current ${currentPagesCount} page${currentPagesCount !== 1 ? 's' : ''} stay untouched</span>
-          </div>
-        </label>
+        <input type="hidden" name="json-import-mode" value="append" />
+        <div class="form__field import-destination-field">
+          <label class="form__label" for="field-destination-search">Destination folder</label>
+          <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
+          <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
+          <select id="field-destination" class="select select--searchable-source" hidden aria-hidden="true" tabindex="-1">${destinationMarkup}</select>
+          <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+          <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
+        </div>
         
         <label class="import-option">
           <input type="radio" name="json-import-mode" value="merge" />
@@ -4176,20 +4193,30 @@ export class ExtensionController {
         </label>
 
         <div class="form__actions" style="margin-top: var(--spacing-lg);">
-          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Cancel</button>
-          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Import</button>
+          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Back</button>
+          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Confirm import</button>
         </div>
       </div>
     `;
 
-    // Mostrar modal usando modalManager
+    // Use the same modal structure as the Notion importer.
     log('Showing import options modal');
-    const modal = this.modalManager.showCustom({
-      title: 'Load Vault',
-      content: modalContent,
-      className: 'modal--import-json'
-    });
+    const overlay = document.createElement('div');
+    overlay.id = 'json-import-modal';
+    overlay.className = 'modal';
+    const modal = document.createElement('div');
+    modal.className = 'modal__content notion-pages-modal';
+    modal.innerHTML = `<h2 class="modal__title">Import from Notion</h2><div class="form">${modalContent}</div>`;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
     log('Modal created:', modal);
+    this._setupSearchableSelect(modal, {
+      name: 'destination',
+      options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
+      visibleOptions: 7,
+      resultLabel: 'folder',
+      searchPlaceholder: 'Search folders...'
+    });
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
@@ -4197,13 +4224,15 @@ export class ExtensionController {
     log('Cancel button:', cancelBtn, 'Confirm button:', confirmBtn);
 
     cancelBtn.addEventListener('click', () => {
-      this.modalManager.close();
+      overlay.remove();
     });
 
     confirmBtn.addEventListener('click', async () => {
-      const importMode = modal.querySelector('input[name="json-import-mode"]:checked').value;
-      this.modalManager.close();
-      await this._applyJsonImport(importedConfig, importMode, importedPagesCount);
+      const importMode = modal.querySelector('input[name="json-import-mode"]:checked')?.value
+        || modal.querySelector('input[name="json-import-mode"][value="append"]').value;
+      overlay.remove();
+      const destinationId = modal.querySelector('#field-destination')?.value || 'root';
+      await this._applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId);
     });
   }
 
@@ -4214,7 +4243,7 @@ export class ExtensionController {
    * @param {number} importedPagesCount - Número de páginas importadas
    * @private
    */
-  async _applyJsonImport(importedConfig, importMode, importedPagesCount) {
+  async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root') {
     try {
       // Detectar formato del JSON importado
       const format = this.configParser.detectFormat(importedConfig);
@@ -4264,8 +4293,17 @@ export class ExtensionController {
       switch (importMode) {
         case 'append':
           // Añadir al final
-          finalCategories = [...existingCategories, ...importedCategories];
-          finalPages = [...existingPages, ...importedPages];
+          if (destinationId !== 'root') {
+            const cloneCategories = typeof structuredClone === 'function'
+              ? structuredClone(existingCategories)
+              : JSON.parse(JSON.stringify(existingCategories));
+            finalCategories = cloneCategories;
+            this._appendImportedContentToCategory(finalCategories, destinationId, importedCategories, importedPages);
+            finalPages = [...existingPages];
+          } else {
+            finalCategories = [...existingCategories, ...importedCategories];
+            finalPages = [...existingPages, ...importedPages];
+          }
           break;
         
         case 'merge':
@@ -4693,18 +4731,22 @@ export class ExtensionController {
       { icon: 'img/icon-page.svg', text: 'Add page', action: () => this._addPage() },
       { separator: true },
       { icon: 'img/icon-notion.svg', text: 'Import from Notion', action: () => this._importNotionFromAddMenu() },
-      { icon: 'img/icon-link.svg', text: 'Load from URL', action: () => {
+      { icon: 'img/icon-link.svg', text: 'Import from URL', action: () => {
         const url = window.prompt('Enter the GM Vault URL');
         if (!url) return;
-        const input = document.getElementById('vault-url-input');
-        const loadButton = document.getElementById('load-url-btn');
-        if (input && loadButton) {
-          input.value = url.trim();
-          loadButton.click();
-        }
+        this._showSettings();
+        setTimeout(() => {
+          const input = document.getElementById('vault-url-input');
+          const loadButton = document.getElementById('load-url-btn');
+          if (input && loadButton) {
+            input.value = url.trim();
+            loadButton.click();
+          }
+        }, 0);
       } },
-      { icon: 'img/icon-page.svg', text: 'Load from file', action: () => {
-        document.getElementById('load-json-btn')?.click();
+      { icon: 'img/icon-page.svg', text: 'Import from file', action: () => {
+        this._showSettings();
+        setTimeout(() => document.getElementById('load-json-btn')?.click(), 0);
       } }
     ];
 

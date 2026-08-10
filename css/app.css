@@ -379,6 +379,12 @@
     font-family: var(--font-family-mono);
   }
 
+  /* Mask the Notion token visually without exposing it to password managers. */
+  .token-secret {
+    -webkit-text-security: disc;
+    text-security: disc;
+  }
+
   .select--searchable {
     min-height: 96px;
     padding: var(--spacing-xs);
@@ -2196,6 +2202,27 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+/* Keep vault imports visually aligned with the Notion import modal. */
+.modal-container.modal--import-json {
+  max-width: 900px;
+  background: var(--color-bg-surface);
+}
+
+.modal-container.modal--import-json .modal-header {
+  border-bottom: 0;
+  padding: var(--spacing-xl) var(--spacing-xl) 0;
+}
+
+.modal-container.modal--import-json .modal-content {
+  padding: var(--spacing-xl);
+  background: transparent;
+}
+
+.modal-container.modal--import-json .import-destination-field .input,
+.modal-container.modal--import-json .import-destination-field .select--searchable {
+  background: var(--color-bg-surface);
 }
 
 .modal-buttons {

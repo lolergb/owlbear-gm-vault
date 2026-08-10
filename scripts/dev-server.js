@@ -2,11 +2,19 @@ import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handler as notionApiHandler } from '../netlify/functions/notion-api.js';
 
 const HOST = '127.0.0.1';
-const PORT = 8000;
+const PORT = Number(process.env.PORT || 8000);
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const OWLBEAR_ORIGIN = 'https://www.owlbear.rodeo';
+const OWLBEAR_ORIGINS = new Set([
+  'https://www.owlbear.rodeo',
+  'https://owlbear.rodeo',
+  'http://localhost:8000',
+  'http://127.0.0.1:8000',
+  'http://localhost:8001',
+  'http://127.0.0.1:8001'
+]);
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -21,10 +29,17 @@ const CONTENT_TYPES = {
   '.webp': 'image/webp'
 };
 
-function setDevelopmentHeaders(response) {
-  response.setHeader('Access-Control-Allow-Origin', OWLBEAR_ORIGIN);
-  response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+function setDevelopmentHeaders(response, request) {
+  const requestOrigin = request.headers.origin;
+  const allowedOrigin = OWLBEAR_ORIGINS.has(requestOrigin)
+    ? requestOrigin
+    : 'https://www.owlbear.rodeo';
+  response.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
+  response.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, X-Notion-Token, X-GM-Vault-Default'
+  );
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   response.setHeader('Vary', 'Origin');
@@ -37,7 +52,48 @@ function sendText(response, status, message) {
 }
 
 const server = http.createServer(async (request, response) => {
-  setDevelopmentHeaders(response);
+  setDevelopmentHeaders(response, request);
+
+  // Mirror the Netlify function locally so the Owlbear extension can use the
+  // same Notion import flow during development.
+  if ((request.url || '').startsWith('/.netlify/functions/notion-api')) {
+    if (request.method === 'OPTIONS') {
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+
+    if (request.method !== 'GET' && request.method !== 'POST') {
+      sendText(response, 405, 'Method not allowed');
+      return;
+    }
+
+    try {
+      const requestUrl = new URL(request.url, `http://${HOST}:${PORT}`);
+      const body = await new Promise((resolveBody, rejectBody) => {
+        let raw = '';
+        request.setEncoding('utf8');
+        request.on('data', chunk => { raw += chunk; });
+        request.on('end', () => resolveBody(raw));
+        request.on('error', rejectBody);
+      });
+      const result = await notionApiHandler({
+        httpMethod: request.method,
+        headers: request.headers,
+        queryStringParameters: Object.fromEntries(requestUrl.searchParams.entries()),
+        body: body || null
+      });
+      response.statusCode = result.statusCode || 200;
+      for (const [name, value] of Object.entries(result.headers || {})) {
+        response.setHeader(name, value);
+      }
+      response.end(result.body || '');
+    } catch (error) {
+      console.error('Local Notion function error:', error);
+      sendText(response, 500, 'Local Notion function error');
+    }
+    return;
+  }
 
   if (request.method === 'OPTIONS') {
     response.statusCode = 204;
@@ -102,5 +158,5 @@ server.on('error', (error) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`GM Vault Local: http://${HOST}:${PORT}/manifest.local.json`);
-  console.log(`CORS enabled for ${OWLBEAR_ORIGIN}`);
+  console.log('CORS enabled for Owlbear Rodeo origins');
 });

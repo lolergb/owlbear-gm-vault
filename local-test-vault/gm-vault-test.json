@@ -1,0 +1,16 @@
+{
+  "categories": [
+    {
+      "id": "local-test",
+      "name": "Local test vault",
+      "pages": [
+        {
+          "id": "local-page",
+          "name": "Imported local page",
+          "url": "https://example.com/local-test"
+        }
+      ],
+      "categories": []
+    }
+  ]
+}
