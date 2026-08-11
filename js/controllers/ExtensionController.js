@@ -1938,9 +1938,26 @@ export class ExtensionController {
         updateSubmitState();
         updateStatus();
       }
+
+      return matchingOptions.length;
     };
 
-    searchInput.addEventListener('input', renderOptions);
+    let searchAnalyticsTimer = null;
+    searchInput.addEventListener('input', () => {
+      const resultCount = renderOptions();
+      clearTimeout(searchAnalyticsTimer);
+
+      const queryLength = searchInput.value.trim().length;
+      if (queryLength > 0 && typeof field.onSearch === 'function') {
+        searchAnalyticsTimer = setTimeout(() => {
+          field.onSearch({
+            queryLength,
+            resultCount,
+            totalCount: options.length
+          });
+        }, 500);
+      }
+    });
     searchInput.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowDown' && !select.disabled) {
         event.preventDefault();
@@ -3463,9 +3480,20 @@ export class ExtensionController {
             log(`Load JSON: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
             
             // Mostrar modal con opciones de importación
-            await this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, file.name);
+            await this._showLoadJsonOptionsModal(
+              importedConfig,
+              currentPagesCount,
+              importedPagesCount,
+              file.name,
+              'file'
+            );
             
           } catch (err) {
+            this.analyticsService?.trackVaultImportFailed?.({
+              source: 'file',
+              stage: 'read',
+              errorType: err?.name
+            });
             alert('❌ Error loading file: ' + err.message);
           }
         });
@@ -3535,10 +3563,21 @@ export class ExtensionController {
           const vaultName = urlObj.pathname.split('/').pop() || 'vault';
           
           // Mostrar modal con opciones de importación
-          await this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, vaultName);
+          await this._showLoadJsonOptionsModal(
+            importedConfig,
+            currentPagesCount,
+            importedPagesCount,
+            vaultName,
+            'url'
+          );
           
         } catch (err) {
           console.error('Error loading from URL:', err);
+          this.analyticsService?.trackVaultImportFailed?.({
+            source: 'url',
+            stage: 'fetch',
+            errorType: err?.name
+          });
           this.uiRenderer.showErrorToast('Could not import from URL', err.message);
         } finally {
           loadUrlBtn.disabled = false;
@@ -4081,10 +4120,23 @@ export class ExtensionController {
 
             // Track analytics
             this.analyticsService.trackJSONImported(pagesImported);
+            this.analyticsService?.trackVaultImportCompleted?.({
+              source: 'notion',
+              mode: importMode,
+              destinationType: destinationId === 'root' ? 'root' : 'folder',
+              itemCount: pagesImported
+            });
 
             // Volver a la lista
             this._goBackToList();
           } else {
+            this.analyticsService?.trackVaultImportFailed?.({
+              source: 'notion',
+              stage: 'empty',
+              mode: importMode,
+              destinationType: destinationId === 'root' ? 'root' : 'folder',
+              errorType: 'no_content'
+            });
             this.uiRenderer.showWarningToast(
               'No pages found',
               'The selected pages have no content to import.'
@@ -4094,6 +4146,13 @@ export class ExtensionController {
           }
         } catch (e) {
           logError('Error importing from Notion:', e);
+          this.analyticsService?.trackVaultImportFailed?.({
+            source: 'notion',
+            stage: 'generate',
+            mode: importMode,
+            destinationType: destinationId === 'root' ? 'root' : 'folder',
+            errorType: e?.name
+          });
           this.uiRenderer.showErrorToast(
             'Import failed',
             e.message || 'An error occurred while importing.'
@@ -4156,13 +4215,13 @@ export class ExtensionController {
    * @param {string} fileName - Nombre del archivo importado
    * @private
    */
-  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName) {
+  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName, source = 'file') {
     log(`_showLoadJsonOptionsModal: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}, file=${fileName}`);
     
     // Si el vault actual está vacío, hacer replace directamente sin mostrar opciones
     if (currentPagesCount === 0) {
       log('Vault is empty, applying direct replace');
-      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount);
+      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount, 'root', source);
       return;
     }
 
@@ -4256,7 +4315,7 @@ export class ExtensionController {
         || modal.querySelector('input[name="json-import-mode"][value="append"]').value;
       overlay.remove();
       const destinationId = modal.querySelector('#field-destination')?.value || 'root';
-      await this._applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId);
+      await this._applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId, source);
     });
   }
 
@@ -4267,7 +4326,7 @@ export class ExtensionController {
    * @param {number} importedPagesCount - Número de páginas importadas
    * @private
    */
-  async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root') {
+  async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root', source = 'file') {
     try {
       // Detectar formato del JSON importado
       const format = this.configParser.detectFormat(importedConfig);
@@ -4357,6 +4416,12 @@ export class ExtensionController {
       
       // Track analytics
       this.analyticsService.trackJSONImported(importedPagesCount);
+      this.analyticsService?.trackVaultImportCompleted?.({
+        source,
+        mode: importMode,
+        destinationType: destinationId === 'root' ? 'root' : 'folder',
+        itemCount: importedPagesCount
+      });
 
       // Mostrar resultado
       const modeText = importMode === 'append' ? 'added' : importMode === 'merge' ? 'merged' : 'loaded';
@@ -4369,6 +4434,13 @@ export class ExtensionController {
       this._goBackToList();
     } catch (err) {
       logError('Error applying JSON import:', err);
+      this.analyticsService?.trackVaultImportFailed?.({
+        source,
+        stage: 'save',
+        mode: importMode,
+        destinationType: destinationId === 'root' ? 'root' : 'folder',
+        errorType: err?.name
+      });
       this.uiRenderer.showErrorToast(
         'Import failed',
         err.message || 'An error occurred while importing.'
@@ -7832,6 +7904,8 @@ export class ExtensionController {
         }
       });
 
+      this.analyticsService?.trackImageShareResult?.(result);
+
       if (result.loaded > 0) {
         log('📤 Imagen compartida:', absoluteImageUrl.substring(0, 80));
         this.analyticsService.trackImageShare(absoluteImageUrl);
@@ -8321,6 +8395,13 @@ export class ExtensionController {
         resultLabel: 'page',
         noResultsText: 'No pages found',
         visibleOptions: 7,
+        onSearch: ({ queryLength, resultCount, totalCount }) => {
+          this.analyticsService?.trackTokenPageSearchUsed?.({
+            queryLength,
+            resultCount,
+            totalCount
+          });
+        },
         required: true
       }
     ], async (data) => {

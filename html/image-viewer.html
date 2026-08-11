@@ -407,6 +407,7 @@
     } from "../js/services/ImageShareService.js";
     import { runShareButtonAction } from "../js/utils/shareButtonState.js?v=20260722-4";
     import { sanitizeImageUrl } from "../js/utils/htmlSecurity.js?v=20260722-4";
+    import { AnalyticsService } from "../js/services/AnalyticsService.js?v=20260722-4";
 
     const urlParams = new URLSearchParams(window.location.search);
     const shareParam = urlParams.get('share');
@@ -440,6 +441,9 @@
     const shareButton = document.getElementById('share-button');
     const closeButton = document.getElementById('close-button');
     const feedback = document.getElementById('feedback');
+    const analyticsService = new AnalyticsService();
+    const viewerContext = shareId ? 'shared' : 'detail';
+    let analyticsReady = Promise.resolve();
     let obrReady = false;
     let pendingLoadStatus = null;
     let loadStatusSent = false;
@@ -543,7 +547,14 @@
     };
 
     sizeToggle.addEventListener('click', () => {
-      setActualSize(!imageStage.classList.contains('actual-size'));
+      const actualSize = !imageStage.classList.contains('actual-size');
+      setActualSize(actualSize);
+      void analyticsReady.then(() => {
+        analyticsService.trackImageViewerZoom(
+          actualSize ? 'actual_size' : 'fit',
+          viewerContext
+        );
+      });
     });
 
     closeButton.addEventListener('click', closeViewer);
@@ -612,6 +623,16 @@
 
     OBR.onReady(async () => {
       try {
+        analyticsService.setOBR(OBR);
+        analyticsReady = analyticsService.init({
+          trackExtensionOpened: false,
+          showConsentBanner: false
+        }).then(() => {
+          analyticsService.trackImageViewerOpened(viewerContext);
+        }).catch((error) => {
+          console.warn('Could not initialize image viewer analytics:', error);
+        });
+
         obrReady = true;
         if (pendingLoadStatus) {
           reportImageLoadStatus(pendingLoadStatus.status, pendingLoadStatus.reason);
@@ -636,6 +657,12 @@
                     url: imageUrl,
                     caption,
                     onProgress: renderShareProgress
+                  });
+                  void analyticsReady.then(() => {
+                    analyticsService.trackImageShareResult(result);
+                    if (result.loaded > 0) {
+                      analyticsService.trackImageShare(imageUrl);
+                    }
                   });
                   return result.phase === 'complete' && result.loaded > 0;
                 },

@@ -205,9 +205,17 @@ describe('image-viewer.html contract', () => {
 
   it('usa el protocolo fiable también desde el botón del visor', () => {
     expect(source).toMatch(/shareImageWithPlayers\s*\(\s*\{/);
+    expect(source).toMatch(/trackImageShareResult\(result\)/);
     expect(source).not.toMatch(
       /OBR\.broadcast\.sendMessage\(\s*['"]com\.dmscreen\/showImage['"]/
     );
+  });
+
+  it('mide apertura y zoom sin duplicar extension_opened', () => {
+    expect(source).toMatch(/trackImageViewerOpened\(viewerContext\)/);
+    expect(source).toMatch(/trackImageViewerZoom\(/);
+    expect(source).toMatch(/trackExtensionOpened:\s*false/);
+    expect(source).toMatch(/showConsentBanner:\s*false/);
   });
 
   it('vuelve a validar la URL como imagen raster dentro del visor', () => {

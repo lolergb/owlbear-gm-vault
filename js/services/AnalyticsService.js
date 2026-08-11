@@ -131,15 +131,18 @@ export class AnalyticsService {
   /**
    * Inicializa el servicio de analytics
    */
-  async init() {
+  async init({ trackExtensionOpened = true, showConsentBanner = true } = {}) {
     // Detectar si es beta
     const isBeta = this._detectBeta();
     
     // Verificar consent (mostrar banner si no hay consent, incluso en beta)
     const consent = this.getConsent();
     if (consent === null) {
-      // Mostrar banner de cookies (también en beta para que el consent esté listo)
-      this.showConsentBanner();
+      // The main extension owns consent UI. Auxiliary viewers can initialize
+      // analytics without rendering a second banner over their content.
+      if (showConsentBanner) {
+        this.showConsentBanner();
+      }
       return;
     }
 
@@ -185,8 +188,11 @@ export class AnalyticsService {
 
           log('📊 Mixpanel analytics habilitado');
           
-          // Track extensión abierta
-          this.trackExtensionOpened();
+          // Auxiliary extension pages (such as the image viewer) share the
+          // same analytics client but must not inflate extension_opened.
+          if (trackExtensionOpened) {
+            this.trackExtensionOpened();
+          }
         }
       }
     } catch (e) {
@@ -463,6 +469,31 @@ export class AnalyticsService {
   }
 
   /**
+   * Track a completed import without sending file names, URLs or folder names.
+   */
+  trackVaultImportCompleted({ source, mode, destinationType, itemCount } = {}) {
+    this.trackEvent('vault_import_completed', {
+      source: this._normalizeEnum(source, ['notion', 'url', 'file']),
+      mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
+      destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
+      item_count: this._normalizeCount(itemCount)
+    });
+  }
+
+  /**
+   * Track an import failure using only controlled, non-content properties.
+   */
+  trackVaultImportFailed({ source, stage, mode, destinationType, errorType } = {}) {
+    this.trackEvent('vault_import_failed', {
+      source: this._normalizeEnum(source, ['notion', 'url', 'file']),
+      stage: this._normalizeEnum(stage, ['read', 'fetch', 'generate', 'save', 'empty']),
+      mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
+      destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
+      error_type: String(errorType || 'unknown').slice(0, 60)
+    });
+  }
+
+  /**
    * Track JSON exported
    * @param {number} itemCount - Número de items
    */
@@ -683,8 +714,57 @@ export class AnalyticsService {
    * @param {string} url - URL cargada
    */
   trackLoadFromUrlClicked(url) {
+    let urlDomain = 'invalid';
+    try {
+      urlDomain = url ? new URL(url).hostname : 'unknown';
+    } catch (_error) {}
+
     this.trackEvent('load_from_url_clicked', {
-      url_domain: url ? new URL(url).hostname : 'unknown'
+      url_domain: urlDomain
+    });
+  }
+
+  /**
+   * Track use of the token page search without collecting the query itself.
+   */
+  trackTokenPageSearchUsed({ queryLength, resultCount, totalCount } = {}) {
+    this.trackEvent('token_page_search_used', {
+      query_length: this._normalizeCount(queryLength),
+      result_count: this._normalizeCount(resultCount),
+      total_count: this._normalizeCount(totalCount)
+    });
+  }
+
+  /**
+   * Track the actual delivery outcome of a live image share.
+   */
+  trackImageShareResult(result = {}) {
+    const unresolved = this._normalizeCount(result.missing) + this._normalizeCount(result.loading);
+    this.trackEvent('image_share_completed', {
+      phase: this._normalizeEnum(result.phase, ['complete', 'no_recipients', 'error']),
+      recipient_count: this._normalizeCount(result.total),
+      delivered_count: this._normalizeCount(result.loaded),
+      failed_count: this._normalizeCount(result.failed),
+      unresolved_count: unresolved
+    });
+  }
+
+  /**
+   * Track image viewer sizing without collecting image URLs or captions.
+   */
+  trackImageViewerZoom(mode, context = 'detail') {
+    this.trackEvent('image_viewer_zoom_changed', {
+      mode: this._normalizeEnum(mode, ['fit', 'actual_size']),
+      context: this._normalizeEnum(context, ['detail', 'shared'])
+    });
+  }
+
+  /**
+   * Track that the responsive image viewer was opened.
+   */
+  trackImageViewerOpened(context = 'detail') {
+    this.trackEvent('image_viewer_opened', {
+      context: this._normalizeEnum(context, ['detail', 'shared'])
     });
   }
 
@@ -765,6 +845,15 @@ export class AnalyticsService {
     this.trackEvent('page_shared_to_players', {
       page_name: pageName
     });
+  }
+
+  _normalizeEnum(value, allowedValues) {
+    return allowedValues.includes(value) ? value : 'unknown';
+  }
+
+  _normalizeCount(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
   }
 }
 

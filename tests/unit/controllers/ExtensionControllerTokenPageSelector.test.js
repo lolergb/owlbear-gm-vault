@@ -24,7 +24,10 @@ function createController() {
       })
     ]
   });
-  controller.analyticsService = { trackPageLinkedToToken: jest.fn() };
+  controller.analyticsService = {
+    trackPageLinkedToToken: jest.fn(),
+    trackTokenPageSearchUsed: jest.fn()
+  };
   controller._showFeedback = jest.fn();
   return controller;
 }
@@ -35,6 +38,7 @@ function typeSearch(searchInput, value) {
 }
 
 afterEach(() => {
+  jest.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -81,6 +85,23 @@ describe('ExtensionController token page selector', () => {
       'Frozen Keep → Throne Room'
     ]);
     expect(select.value).toBe('2');
+  });
+
+  it('registra métricas agregadas de búsqueda sin enviar la consulta', async () => {
+    jest.useFakeTimers();
+    const controller = createController();
+
+    await controller._showPageSelectorForToken('token-1');
+    typeSearch(document.querySelector('#field-pageIndex-search'), 'angel');
+    await jest.advanceTimersByTimeAsync(500);
+
+    expect(controller.analyticsService.trackTokenPageSearchUsed).toHaveBeenCalledWith({
+      queryLength: 5,
+      resultCount: 1,
+      totalCount: 4
+    });
+    expect(controller.analyticsService.trackTokenPageSearchUsed.mock.calls[0][0])
+      .not.toHaveProperty('query');
   });
 
   it('oculta la única carpeta raíz común sin perderla en la búsqueda', async () => {

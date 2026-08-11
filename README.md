@@ -326,13 +326,19 @@ We track the following events to measure usage and identify popular features:
 - `token_configured` - When you save your Notion token
 - `token_removed` - When you remove your Notion token
 - `json_imported` - When you import JSON configuration (includes item count)
+- `vault_import_completed` - When an import finishes (source, mode, root/folder destination and item count; no file, URL or folder names)
+- `vault_import_failed` - When an import fails (source, stage and technical error type; no content values)
 - `json_exported` - When you export JSON configuration (includes item count)
 
 **Sharing & Integration:**
 - `image_shared` - When GM shares an image with players
+- `image_share_completed` - Delivery outcome for a live image share (recipient, delivered, failed and unresolved counts)
+- `image_viewer_opened` - When the responsive image viewer opens (detail or shared context)
+- `image_viewer_zoom_changed` - When a GM or player switches between Fit and 100%
 - `visibility_toggled` - When GM changes page visibility
 - `page_linked_to_token` - When GM links a page to a scene token
 - `page_viewed_from_token` - When viewing a page from token context menu
+- `token_page_search_used` - Use of search while linking a page to a token (query length and result counts only; never the query text)
 
 **Error & Limits:**
 - `storage_limit_reached` - When localStorage is full
