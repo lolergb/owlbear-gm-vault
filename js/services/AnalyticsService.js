@@ -21,6 +21,8 @@ export class AnalyticsService {
     this.mixpanelEnabled = false;
     this.mixpanelDistinctId = null;
     this.isBeta = false;
+    this.environment = 'unknown';
+    this.deployContext = 'unknown';
   }
 
   /**
@@ -50,7 +52,8 @@ export class AnalyticsService {
       hostname.includes('.local');
     
     this.isBeta = isBeta;
-    log(`📊 Entorno detectado: ${isBeta ? 'BETA (sin analytics)' : 'PRODUCCIÓN'}`);
+    this.environment = isBeta ? 'beta' : 'production';
+    log(`📊 Entorno detectado: ${isBeta ? 'BETA' : 'PRODUCCIÓN'}`);
     return isBeta;
   }
 
@@ -168,6 +171,14 @@ export class AnalyticsService {
       const response = await fetch('/.netlify/functions/get-mixpanel-token');
       if (response.ok) {
         const data = await response.json();
+        this.environment = this._normalizeEnum(
+          data.environment || this.environment,
+          ['beta', 'production']
+        );
+        this.deployContext = this._normalizeEnum(
+          data.deployContext,
+          ['production', 'deploy-preview', 'branch-deploy', 'dev']
+        );
         if (data.enabled && data.token) {
           this.mixpanelToken = data.token;
           this.mixpanelEnabled = true;
@@ -230,7 +241,9 @@ export class AnalyticsService {
           time: Math.floor(Date.now() / 1000),
           $insert_id: Math.random().toString(36).substring(2, 15),
           role: userRole,
-          ...properties
+          ...properties,
+          environment: this.environment,
+          deploy_context: this.deployContext
         }
       };
 

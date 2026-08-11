@@ -351,6 +351,8 @@ We track the following events to measure usage and identify popular features:
 Each event includes:
 - **Event name** - The action performed
 - **User role** - Whether you're a GM or Player
+- **Environment** - Whether the event came from beta or production
+- **Deploy context** - Production, deploy preview or branch deploy
 - **Distinct ID** - A unique identifier (your Owlbear player ID or an anonymous ID)
 - **Timestamp** - When the event occurred
 - **Event-specific properties** - Relevant context (e.g., page name, page type)

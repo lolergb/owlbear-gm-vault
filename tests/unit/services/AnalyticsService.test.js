@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { TextEncoder as NodeTextEncoder } from 'node:util';
 import { AnalyticsService } from '../../../js/services/AnalyticsService.js';
 
 function createService() {
@@ -8,6 +9,43 @@ function createService() {
 }
 
 describe('AnalyticsService beta events', () => {
+  it('adds deployment metadata to every Mixpanel payload', async () => {
+    const originalFetch = global.fetch;
+    const originalTextEncoder = global.TextEncoder;
+    global.TextEncoder = NodeTextEncoder;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 1 })
+    });
+    const service = new AnalyticsService();
+    service.mixpanelEnabled = true;
+    service.mixpanelToken = 'mixpanel-test-token';
+    service.mixpanelDistinctId = 'player-1';
+    service.environment = 'beta';
+    service.deployContext = 'deploy-preview';
+    service.OBR = {
+      player: { getRole: jest.fn().mockResolvedValue('GM') }
+    };
+
+    try {
+      await service.trackEvent('beta_test_event', { feature: 'imports' });
+
+      const requestBody = global.fetch.mock.calls[0][1].body;
+      const encodedPayload = new URLSearchParams(requestBody).get('data');
+      const [event] = JSON.parse(atob(encodedPayload));
+      expect(event.properties).toMatchObject({
+        role: 'GM',
+        feature: 'imports',
+        environment: 'beta',
+        deploy_context: 'deploy-preview'
+      });
+    } finally {
+      global.fetch = originalFetch;
+      if (originalTextEncoder) global.TextEncoder = originalTextEncoder;
+      else delete global.TextEncoder;
+    }
+  });
+
   it('tracks completed imports with controlled properties only', () => {
     const service = createService();
 

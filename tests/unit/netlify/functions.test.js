@@ -90,6 +90,37 @@ describe('Netlify function ES module exports', () => {
   });
 });
 
+describe('Mixpanel deployment metadata', () => {
+  it.each([
+    ['production', 'production'],
+    ['deploy-preview', 'beta'],
+    ['branch-deploy', 'beta'],
+    ['dev', 'beta'],
+    ['unexpected-context', 'unknown']
+  ])('maps %s to %s', async (deployContext, environment) => {
+    const originalToken = process.env.MIXPANEL_TOKEN;
+    const originalContext = process.env.CONTEXT;
+    process.env.MIXPANEL_TOKEN = 'mixpanel-test-token';
+    process.env.CONTEXT = deployContext;
+
+    try {
+      const response = await mixpanelTokenHandler(event('GET'), {});
+      const body = JSON.parse(response.body);
+
+      expect(response.statusCode).toBe(200);
+      expect(body).toMatchObject({
+        enabled: true,
+        environment,
+        deployContext: environment === 'unknown' ? 'unknown' : deployContext
+      });
+      expect(response.headers['Cache-Control']).toBe('no-store');
+    } finally {
+      restoreEnv('MIXPANEL_TOKEN', originalToken);
+      restoreEnv('CONTEXT', originalContext);
+    }
+  });
+});
+
 describe('Notion proxy security contract', () => {
   const DEFAULT_SECRET = 'ntn_v2_server_only_sentinel';
   const PERSONAL_SECRET = 'ntn_personal_header_sentinel';
