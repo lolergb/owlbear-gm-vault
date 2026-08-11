@@ -1,6 +1,6 @@
 {
   "name": "GM Vault Local",
-  "version": "2.1.0",
+  "version": "2.1.0-beta.1",
   "manifest_version": 1,
   "author": "lolergb",
   "description": "Local development build of GM Vault for Owlbear Rodeo.",
