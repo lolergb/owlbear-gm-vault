@@ -14,6 +14,7 @@ const CORS_HEADERS = {
 const PERSONAL_TOKEN_ONLY_ACTIONS = new Set(['search', 'children']);
 const DEFAULT_ROOT_PAGE_IDS = new Set([
   '2d8d4856c90e80f1b4e4ecff59e61dd5', // Quick Start
+  '3b8d4856c90e8092aa7fd83915f6e55e', // Quick Start Beta
   '2d8d4856c90e806eb8fffd6f055eaf3b', // Session Notes Template
   '2d8d4856c90e804185b4cf910d4817c1', // The Watched Crossroads
   '2d8d4856c90e8030b014dbbb7bf5306d'  // Maera

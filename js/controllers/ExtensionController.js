@@ -1607,9 +1607,13 @@ export class ExtensionController {
    * @param {string} title - Título del modal
    * @param {Array} fields - Campos del formulario
    * @param {Function} onSubmit - Callback al enviar
+   * @param {Object} [options] - Opciones visuales del formulario
+   * @param {string} [options.submitText='Save'] - Texto del botón principal
+   * @param {string} [options.cancelText='Cancel'] - Texto del botón secundario
    * @private
    */
-  _showModalForm(title, fields, onSubmit, onCancel = null) {
+  _showModalForm(title, fields, onSubmit, onCancel = null, options = {}) {
+    const { submitText = 'Save', cancelText = 'Cancel' } = options;
     // Crear overlay
     const overlay = document.createElement('div');
     overlay.id = 'modal-overlay';
@@ -1624,6 +1628,13 @@ export class ExtensionController {
       const safeName = escapeHtml(field.name);
       const safeLabel = escapeHtml(field.label);
       const safePlaceholder = escapeHtml(field.placeholder || '');
+      const safeHelpUrl = field.helpUrl ? sanitizeHttpUrl(field.helpUrl) : '';
+      const helpHtml = field.helpText ? `
+        <p class="form__help">
+          ${escapeHtml(field.helpText)}
+          ${safeHelpUrl && field.helpLinkText ? `<a href="${escapeHtml(safeHelpUrl)}" class="link" target="_blank" rel="noopener noreferrer">${escapeHtml(field.helpLinkText)}</a>` : ''}
+        </p>
+      ` : '';
       if (field.type === 'checkbox') {
         return `
           <div class="form__field" data-field-name="${safeName}">
@@ -1728,6 +1739,7 @@ export class ExtensionController {
               placeholder="${safePlaceholder}"
               value="${escapeHtml(field.value || '')}"
             />
+            ${helpHtml}
           </div>
         `;
       }
@@ -1738,8 +1750,8 @@ export class ExtensionController {
       <form id="modal-form" class="form">
         ${fieldsHtml}
         <div class="form__actions">
-          <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">Cancel</button>
-          <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">Save</button>
+          <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">${escapeHtml(cancelText)}</button>
+          <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">${escapeHtml(submitText)}</button>
         </div>
       </form>
     `;
@@ -3475,7 +3487,7 @@ export class ExtensionController {
         const url = vaultUrlInput ? vaultUrlInput.value.trim() : '';
         log('URL value:', url);
         if (!url) {
-          alert('Please enter a URL');
+          this.uiRenderer.showErrorToast('URL required', 'Enter the URL of a GM Vault JSON file.');
           return;
         }
         
@@ -3483,9 +3495,12 @@ export class ExtensionController {
 
         // Validar que sea una URL válida
         try {
-          new URL(url);
+          const parsedUrl = new URL(url);
+          if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+            throw new Error('Unsupported URL protocol');
+          }
         } catch (e) {
-          alert('Please enter a valid URL');
+          this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
           return;
         }
 
@@ -3524,7 +3539,7 @@ export class ExtensionController {
           
         } catch (err) {
           console.error('Error loading from URL:', err);
-          alert('❌ Error loading from URL: ' + err.message);
+          this.uiRenderer.showErrorToast('Could not import from URL', err.message);
         } finally {
           loadUrlBtn.disabled = false;
           loadUrlBtn.textContent = originalText;
@@ -4740,19 +4755,7 @@ export class ExtensionController {
       { icon: 'img/icon-page.svg', text: 'Add page', action: () => this._addPage() },
       { separator: true },
       { icon: 'img/icon-notion.svg', text: 'Import from Notion', action: () => this._importNotionFromAddMenu() },
-      { icon: 'img/icon-link.svg', text: 'Import from URL', action: () => {
-        const url = window.prompt('Enter the GM Vault URL');
-        if (!url) return;
-        this._setupSettingsEventListeners();
-        setTimeout(() => {
-          const input = document.getElementById('vault-url-input');
-          const loadButton = document.getElementById('load-url-btn');
-          if (input && loadButton) {
-            input.value = url.trim();
-            loadButton.click();
-          }
-        }, 0);
-      } },
+      { icon: 'img/icon-link.svg', text: 'Import from URL', action: () => this._importUrlFromAddMenu() },
       { icon: 'img/icon-page.svg', text: 'Import from file', action: () => {
         this._setupSettingsEventListeners();
         setTimeout(() => document.getElementById('load-json-btn')?.click(), 0);
@@ -4811,6 +4814,38 @@ export class ExtensionController {
 
     this.analyticsService.trackImportFromNotionClicked();
     this._showNotionPagesSelector();
+  }
+
+  /**
+   * Opens a GM Vault form to collect the URL before starting the shared
+   * destination/combine/replace import flow.
+   * @private
+   */
+  _importUrlFromAddMenu() {
+    this._showModalForm('Import from URL', [
+      {
+        name: 'url',
+        label: 'URL of your GM Vault JSON file',
+        type: 'url',
+        required: true,
+        placeholder: 'https://example.com/gm-vault.json',
+        helpText: 'Using Obsidian? The Obsidian to GM Vault plugin creates a local URL you can paste here.',
+        helpLinkText: 'Set up the Obsidian plugin',
+        helpUrl: 'https://app.notion.com/p/Obsidian-to-GM-Vault-2f0d4856c90e80c39c4cc6963e95d209?source=copy_link'
+      }
+    ], ({ url }) => {
+      const input = document.getElementById('vault-url-input');
+      const loadButton = document.getElementById('load-url-btn');
+
+      if (!input || !loadButton) {
+        this.uiRenderer.showErrorToast('Import unavailable', 'Could not start the URL import.');
+        return;
+      }
+
+      input.value = url;
+      this._setupSettingsEventListeners();
+      loadButton.click();
+    }, null, { submitText: 'Continue' });
   }
 
   /**
@@ -6032,7 +6067,7 @@ export class ExtensionController {
                       data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
                       title="Share with room">
-                ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
+                <img src="img/icon-players.svg" alt="Share" />
               </button>
             </div>
           </div>
@@ -6190,7 +6225,7 @@ export class ExtensionController {
                       data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
                       title="Share with room">
-                ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
+                <img src="img/icon-players.svg" alt="Share" />
               </button>` : '';
           
           headerHtml += `
