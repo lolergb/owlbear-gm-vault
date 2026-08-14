@@ -12,9 +12,8 @@ import {
   VAULT_OWNER_KEY,
   ROOM_CONTENT_CACHE_KEY,
   ROOM_HTML_CACHE_KEY
-} from '../utils/constants.js';
+} from '../utils/constants.js?v=20260812-1';
 import { log, logError, getUserRole } from '../utils/logger.js?v=20260722-4';
-import { compressJson, validateTotalMetadataSize, filterVisiblePages } from '../utils/helpers.js?v=20260722-4';
 
 /**
  * Servicio para gestionar el almacenamiento de configuración
@@ -170,84 +169,8 @@ export class StorageService {
   }
 
   // ============================================
-  // CONFIGURACIÓN EN ROOM METADATA
+  // ROOM METADATA
   // ============================================
-
-  /**
-   * Obtiene la configuración desde room metadata
-   * Según la arquitectura: room metadata solo contiene estructura visible para players.
-   * El GM debe usar localStorage para la configuración completa.
-   * @returns {Promise<Object|null>}
-   */
-  async getRoomConfig() {
-    if (!this.OBR) return null;
-
-    try {
-      const metadata = await this.OBR.room.getMetadata();
-      
-      // Solo obtener config visible (estructura para players)
-      // El GM NO debe leer de room metadata, debe usar localStorage
-      if (metadata[ROOM_METADATA_KEY]) {
-        log('📦 Config visible obtenida de room metadata');
-        return metadata[ROOM_METADATA_KEY];
-      }
-    } catch (e) {
-      logError('Error al leer room metadata:', e);
-    }
-    return null;
-  }
-
-  /**
-   * Guarda la configuración en room metadata
-   * Según la arquitectura: solo se guarda la estructura visible para players.
-   * El contenido completo se guarda en localStorage del GM y se comparte via broadcast.
-   * @param {Object} config - Configuración completa
-   * @returns {Promise<boolean>}
-   */
-  async saveRoomConfig(config) {
-    if (!this.OBR) return false;
-
-    try {
-      const isGM = await getUserRole();
-      if (!isGM) {
-        log('⚠️ Solo el GM puede guardar en room metadata');
-        return false;
-      }
-
-      const metadata = await this.OBR.room.getMetadata() || {};
-      
-      // Crear versión filtrada para players (solo estructura, sin contenido)
-      const visibleConfig = filterVisiblePages(config);
-      
-      // Validar tamaño de config visible
-      const visibleValidation = validateTotalMetadataSize(ROOM_METADATA_KEY, visibleConfig, metadata);
-      
-      if (!visibleValidation.fits) {
-        logError('⚠️ La configuración visible excede el límite de metadata');
-        return false;
-      }
-
-      // Guardar SOLO config visible (estructura de páginas para players)
-      // El contenido completo está en localStorage del GM y se comparte via broadcast
-      await this.OBR.room.setMetadata({
-        [ROOM_METADATA_KEY]: compressJson(visibleConfig)
-      });
-
-      // Limpiar FULL_CONFIG_KEY si existe (no debería estar según arquitectura)
-      if (metadata[FULL_CONFIG_KEY]) {
-        await this.OBR.room.setMetadata({
-          [FULL_CONFIG_KEY]: null
-        });
-        log('🧹 Limpiado FULL_CONFIG_KEY del room metadata (debe estar solo en localStorage)');
-      }
-
-      log('💾 Configuración visible guardada en room metadata para players');
-      return true;
-    } catch (e) {
-      logError('Error al guardar en room metadata:', e);
-      return false;
-    }
-  }
 
   /**
    * Limpia todo el room metadata relacionado con el vault
@@ -269,7 +192,8 @@ export class StorageService {
         [ROOM_METADATA_KEY]: null,
         [FULL_CONFIG_KEY]: null,
         [ROOM_CONTENT_CACHE_KEY]: null,
-        [ROOM_HTML_CACHE_KEY]: null
+        [ROOM_HTML_CACHE_KEY]: null,
+        [VAULT_OWNER_KEY]: null
       });
 
       log('✅ Room metadata limpiado correctamente');
@@ -302,51 +226,29 @@ export class StorageService {
   /**
    * Establece el dueño del vault
    * @param {string} playerId - ID del jugador
-   * @param {string} playerName - Nombre del jugador
+   * @param {string|null} connectionId - Conexión activa que actúa como Master GM
    * @returns {Promise<boolean>}
    */
-  async setVaultOwner(playerId, playerName) {
+  async setVaultOwner(playerId, connectionId = null) {
     if (!this.OBR) return false;
 
     try {
+      const owner = connectionId ? { id: playerId, connectionId } : { id: playerId };
       await this.OBR.room.setMetadata({
-        [VAULT_OWNER_KEY]: {
-          id: playerId,
-          name: playerName,
-          lastHeartbeat: Date.now()
-        }
+        [VAULT_OWNER_KEY]: owner,
+        // v2.1.0-beta.2 migration: content/configuration never belongs in
+        // the room-wide 16 kB budget. Null removes legacy values.
+        [ROOM_METADATA_KEY]: null,
+        [FULL_CONFIG_KEY]: null,
+        [ROOM_CONTENT_CACHE_KEY]: null,
+        [ROOM_HTML_CACHE_KEY]: null
       });
+      log('🧹 Room metadata migrado a ownership mínimo');
       return true;
     } catch (e) {
       logError('Error al establecer vault owner:', e);
       return false;
     }
-  }
-
-  /**
-   * Actualiza el heartbeat del vault owner
-   * @returns {Promise<boolean>}
-   */
-  async updateOwnerHeartbeat() {
-    if (!this.OBR) return false;
-
-    try {
-      const metadata = await this.OBR.room.getMetadata();
-      const owner = metadata[VAULT_OWNER_KEY];
-      
-      if (owner) {
-        await this.OBR.room.setMetadata({
-          [VAULT_OWNER_KEY]: {
-            ...owner,
-            lastHeartbeat: Date.now()
-          }
-        });
-        return true;
-      }
-    } catch (e) {
-      logError('Error al actualizar heartbeat:', e);
-    }
-    return false;
   }
 
   /**

@@ -360,7 +360,9 @@ describe('Netlify static asset cache policy', () => {
   });
 
   it('fuerza una URL nueva para los módulos que tuvieron caché de siete días', () => {
-    const buildTag = '20260722-4';
+    const legacyBuildTag = '20260722-4';
+    const buildTag = '20260815-1';
+    const storageBuildTag = '20260812-1';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
     const controllerJs = readProjectFile('js/controllers/ExtensionController.js');
@@ -369,19 +371,20 @@ describe('Netlify static asset cache policy', () => {
     const parserJs = readProjectFile('js/parsers/ConfigParser.js');
     const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
 
-    expect(indexHtml).toContain(`href="css/app.css?v=${buildTag}"`);
-    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${buildTag}"`);
+    expect(indexHtml).toContain(`href="css/app.css?v=${legacyBuildTag}"`);
+    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${legacyBuildTag}"`);
     expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
     expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
-    expect(mainJs).toContain(`2.1.0-beta.${buildTag}`);
-    expect(controllerJs).toContain(`../services/NotionService.js?v=${buildTag}`);
-    expect(controllerJs).toContain(`../services/StorageService.js?v=${buildTag}`);
-    expect(controllerJs).toContain(`../utils/logger.js?v=${buildTag}`);
-    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${buildTag}`);
-    expect(controllerJs).toContain(`../utils/helpers.js?v=${buildTag}`);
-    expect(storageServiceJs).toContain(`../utils/helpers.js?v=${buildTag}`);
-    expect(notionServiceJs).toContain(`../utils/logger.js?v=${buildTag}`);
-    expect(parserJs).toContain(`../models/Config.js?v=${buildTag}`);
-    expect(builderJs).toContain(`../models/Config.js?v=${buildTag}`);
+    expect(mainJs).toContain(`2.1.0-beta.2`);
+    expect(controllerJs).toContain(`../services/BroadcastService.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../services/NotionService.js?v=${storageBuildTag}`);
+    expect(controllerJs).toContain(`../services/StorageService.js?v=${storageBuildTag}`);
+    expect(controllerJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
+    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${legacyBuildTag}`);
+    expect(controllerJs).toContain(`../utils/helpers.js?v=${legacyBuildTag}`);
+    expect(notionServiceJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
+    expect(parserJs).toContain(`../models/Config.js?v=${legacyBuildTag}`);
+    expect(builderJs).toContain(`../models/Config.js?v=${legacyBuildTag}`);
   });
 });

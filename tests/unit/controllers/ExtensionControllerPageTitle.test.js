@@ -79,7 +79,7 @@ describe('ExtensionController title repair', () => {
     expect(controller._showMentionPageModal).toHaveBeenCalledWith(page, 'Lost Mine');
   });
 
-  it('persiste la reparación localmente y en la sala para el Master GM', async () => {
+  it('persiste la reparación localmente y la difunde para el Master GM', async () => {
     const page = new Page('Untitled', PAGE_URL, { id: 'page-title-test' });
     const config = new Config({
       categories: [new Category('Adventure', { pages: [page] })]
@@ -89,11 +89,11 @@ describe('ExtensionController title repair', () => {
     controller.isGM = true;
     controller.isCoGM = false;
     controller.storageService = {
-      saveLocalConfig: jest.fn(),
-      saveRoomConfig: jest.fn().mockResolvedValue(undefined)
+      saveLocalConfig: jest.fn()
     };
     controller.broadcastService = {
       broadcastVisiblePages: jest.fn(),
+      notifyFullVaultUpdated: jest.fn().mockResolvedValue(true),
       sendMessage: jest.fn().mockResolvedValue(undefined)
     };
 
@@ -102,9 +102,8 @@ describe('ExtensionController title repair', () => {
     expect(title).toBe('Phandalin');
     expect(page.name).toBe('Phandalin');
     expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.storageService.saveRoomConfig).toHaveBeenCalledTimes(1);
     expect(controller.broadcastService.broadcastVisiblePages).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.sendMessage).toHaveBeenCalledTimes(1);
+    expect(controller.broadcastService.notifyFullVaultUpdated).toHaveBeenCalledTimes(1);
   });
 
   it('no vuelve a guardar una página que ya tiene nombre válido', async () => {
@@ -131,4 +130,3 @@ describe('ExtensionController title repair', () => {
     expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
   });
 });
-

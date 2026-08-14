@@ -76,13 +76,29 @@ export class UIRenderer {
    * Verifica si una categoría tiene contenido visible para players
    */
   hasVisibleContentForPlayers(category) {
-    if (category.pages && category.pages.some(p => p.visibleToPlayers === true)) {
+    if (category.pages && category.pages.some(p => this._isPageRenderable(p, false))) {
       return true;
     }
     if (category.categories) {
       return category.categories.some(subcat => this.hasVisibleContentForPlayers(subcat));
     }
     return false;
+  }
+
+  /**
+   * Keeps visibility and URL filtering separate from array indexing. Stored
+   * order entries always point at the original pages array, so filtering the
+   * array before applying order would shift those indexes.
+   * @private
+   */
+  _isPageRenderable(page, isGM = true) {
+    if (!page) return false;
+    const url = typeof page.url === 'string' ? page.url : '';
+    const hasValidUrl = url && !url.includes('...') &&
+      (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'));
+    const hasHtmlContent = !!page.htmlContent;
+    if (!hasValidUrl && !hasHtmlContent) return false;
+    return isGM || page.visibleToPlayers === true;
   }
 
   /**
@@ -110,31 +126,39 @@ export class UIRenderer {
     const hasContent = hasRootPages || hasRootCategories;
 
     if (!hasContent) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">📚</div>
-          <p class="empty-state-text">No pages configured</p>
-          <p class="empty-state-hint">Click + to add your first page or folder</p>
-        </div>
-      `;
+      container.innerHTML = this.isGM
+        ? `
+          <div class="empty-state">
+            <div class="empty-state-icon">📚</div>
+            <p class="empty-state-text">No pages configured</p>
+            <p class="empty-state-hint">Click + to add your first page or folder</p>
+          </div>
+        `
+        : `
+          <div class="empty-state">
+            <div class="empty-state-icon">👁️</div>
+            <p class="empty-state-text">No content visible to players</p>
+            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
+          </div>
+        `;
       return;
     }
 
     // Si es Player view (no es GM), verificar si hay contenido visible
     if (!this.isGM) {
       // Verificar si hay páginas visibles en root
-      const hasVisibleRootPages = config?.pages && config.pages.some(p => p.visibleToPlayers === true);
+      const hasVisibleRootPages = config?.pages && config.pages.some(p => this._isPageRenderable(p, false));
       // Verificar si hay categorías con contenido visible
       const hasVisibleCategories = config?.categories && config.categories.some(cat => 
         this.hasVisibleContentForPlayers(cat)
       );
-      
+
       if (!hasVisibleRootPages && !hasVisibleCategories) {
         container.innerHTML = `
           <div class="empty-state">
             <div class="empty-state-icon">👁️</div>
             <p class="empty-state-text">No content visible to players</p>
-            <p class="empty-state-hint">Toggle visibility on pages using the eye icon to share them with players</p>
+            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
           </div>
         `;
         return;
@@ -142,21 +166,7 @@ export class UIRenderer {
     }
 
     // Obtener orden combinado del root (páginas + categorías mezcladas)
-    const rootPages = (config.pages || []).filter(page => {
-      // Filtrar páginas válidas - aceptar URL válida O htmlContent (local-first)
-      const hasValidUrl = page.url && !page.url.includes('...') && 
-        (page.url.startsWith('http') || page.url.startsWith('/'));
-      const hasHtmlContent = !!page.htmlContent;
-      
-      if (!hasValidUrl && !hasHtmlContent) {
-        return false;
-      }
-      // Si es jugador, filtrar solo páginas visibles
-      if (!this.isGM && page.visibleToPlayers !== true) {
-        return false;
-      }
-      return true;
-    });
+    const rootPages = config.pages || [];
     
     const rootCombinedOrder = this._getCombinedOrder(config, rootPages);
     
@@ -164,10 +174,8 @@ export class UIRenderer {
     rootCombinedOrder.forEach((item, index) => {
       if (item.type === 'page') {
         const page = rootPages[item.index];
-        if (page) {
-          // Usar el índice original en config.pages
-          const originalIndex = (config.pages || []).findIndex(p => p.name === page.name && p.url === page.url);
-          const pageButton = this._createPageButton(page, roomId, [], originalIndex !== -1 ? originalIndex : item.index, this.isGM);
+        if (this._isPageRenderable(page, this.isGM)) {
+          const pageButton = this._createPageButton(page, roomId, [], item.index, this.isGM);
           container.appendChild(pageButton);
           // Aplicar animación con delay stagger
           requestAnimationFrame(() => {
@@ -205,19 +213,8 @@ export class UIRenderer {
     if (!category.name) return;
 
     // Filtrar páginas válidas - aceptar URL válida O htmlContent (local-first)
-    let categoryPages = (category.pages || []).filter(page => {
-      const hasValidUrl = page.url && !page.url.includes('...') && 
-        (page.url.startsWith('http') || page.url.startsWith('/'));
-      const hasHtmlContent = !!page.htmlContent;
-      return hasValidUrl || hasHtmlContent;
-    });
-
-    // Si es jugador, filtrar solo páginas visibles
-    if (!isGM) {
-      categoryPages = categoryPages.filter(page => page.visibleToPlayers === true);
-    }
-
-    const hasPages = categoryPages.length > 0;
+    const categoryPages = category.pages || [];
+    const hasPages = categoryPages.some(page => this._isPageRenderable(page, isGM));
     const hasSubcategories = category.categories && category.categories.length > 0;
     const hasContent = hasPages || hasSubcategories;
 
@@ -301,10 +298,8 @@ export class UIRenderer {
     combinedOrder.forEach((item, index) => {
       if (item.type === 'page') {
         const page = categoryPages[item.index];
-        if (page) {
-          // Usar el índice original en category.pages, no en categoryPages filtradas
-          const originalIndex = (category.pages || []).findIndex(p => p.name === page.name && p.url === page.url);
-          const pageButton = this._createPageButton(page, roomId, [...categoryPath, currentPathItem], originalIndex !== -1 ? originalIndex : item.index, isGM);
+        if (this._isPageRenderable(page, isGM)) {
+          const pageButton = this._createPageButton(page, roomId, [...categoryPath, currentPathItem], item.index, isGM);
           contentContainer.appendChild(pageButton);
           // Aplicar animación con delay stagger
           requestAnimationFrame(() => {
@@ -471,35 +466,38 @@ export class UIRenderer {
       </div>
     `;
 
-    // Contenedor de botones de acción (siempre visible para todos los roles)
+    // Contenedor de acciones. Players pueden abrir contenido, pero solo los
+    // roles GM (Master o Co-GM) pueden emitir handouts a toda la sala.
     const actionsContainer = document.createElement('div');
     actionsContainer.className = 'page-button-actions';
 
-    // Botón de compartir con players (todos: GM, coGM y Player)
-    const shareButton = document.createElement('button');
-    shareButton.className = 'page-share-button';
-    shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
-    shareButton.title = 'Share with players';
-    shareButton.setAttribute('aria-label', shareButton.title);
-    
-    shareButton.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      console.log('🔗 Share button clicked for:', page.name, 'onPageShare:', !!this.onPageShare);
-      if (!this.onPageShare) {
-        console.warn('⚠️ onPageShare callback not defined');
-        return;
-      }
+    let shareButton = null;
+    if (isGM) {
+      shareButton = document.createElement('button');
+      shareButton.className = 'page-share-button';
+      shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
+      shareButton.title = 'Share with players';
+      shareButton.setAttribute('aria-label', shareButton.title);
 
-      try {
-        await runShareButtonAction(
-          shareButton,
-          () => this.onPageShare(page, categoryPath, pageIndex),
-          { keepVisibleElement: button }
-        );
-      } catch (error) {
-        console.error('Could not share page:', error);
-      }
-    });
+      shareButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        console.log('🔗 Share button clicked for:', page.name, 'onPageShare:', !!this.onPageShare);
+        if (!this.onPageShare) {
+          console.warn('⚠️ onPageShare callback not defined');
+          return;
+        }
+
+        try {
+          await runShareButtonAction(
+            shareButton,
+            () => this.onPageShare(page, categoryPath, pageIndex),
+            { keepVisibleElement: button }
+          );
+        } catch (error) {
+          console.error('Could not share page:', error);
+        }
+      });
+    }
 
     // Botón de abrir en modal OBR (para todos) - PRIMERO
     const openModalButton = document.createElement('button');
@@ -518,7 +516,7 @@ export class UIRenderer {
     });
 
     actionsContainer.appendChild(openModalButton);
-    actionsContainer.appendChild(shareButton);
+    if (shareButton) actionsContainer.appendChild(shareButton);
 
     // Botones adicionales solo para GM completo (no coGM ni Player)
     if (isGM && !this.isCoGM) {

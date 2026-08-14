@@ -18,8 +18,7 @@ import {
   BROADCAST_CHANNEL_VISIBLE_PAGES,
   BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES,
   BROADCAST_CHANNEL_SHOW_IMAGE,
-  BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
-  BROADCAST_CHANNEL_RESPONSE_FULL_VAULT
+  BROADCAST_CHANNEL_INVALIDATE_PAGE
 } from '../../js/utils/constants.js';
 
 // ============================================
@@ -31,24 +30,34 @@ import {
  */
 function createMockOBR(role = 'GM') {
   const messageHandlers = new Map();
+  const localConnectionId = role === 'GM' ? 'conn-local-gm' : 'conn-local-player';
+  const players = [
+    { id: 'gm-remote', name: 'GM', connectionId: 'conn-gm', role: 'GM' },
+    { id: 'player-remote', name: 'Player', connectionId: 'conn-player', role: 'PLAYER' },
+    { id: `local-${role}`, name: `Local ${role}`, connectionId: localConnectionId, role }
+  ];
   
   return {
     role,
     player: {
       getRole: jest.fn(() => Promise.resolve(role)),
       getId: jest.fn(() => Promise.resolve(`player-${role}-${Date.now()}`)),
+      getConnectionId: jest.fn(() => Promise.resolve(localConnectionId)),
+    },
+    party: {
+      getPlayers: jest.fn(() => Promise.resolve(players))
     },
     broadcast: {
       // Envía mensaje y dispara handlers registrados
       sendMessage: jest.fn((channel, data) => {
         return new Promise((resolve, reject) => {
-          // Simular límite de 64KB
-          const size = JSON.stringify(data).length;
-          if (size > 64 * 1024) {
+          // Simular el límite real de Owlbear: 16 kB UTF-8.
+          const size = Buffer.byteLength(JSON.stringify(data), 'utf8');
+          if (size > 16 * 1024) {
             reject({ 
               error: { 
                 name: 'SizeLimitExceededError',
-                message: 'Message exceeds size limit of 64KB'
+                message: 'Message exceeds size limit of 16KB'
               }
             });
             return;
@@ -58,7 +67,7 @@ function createMockOBR(role = 'GM') {
           const handlers = messageHandlers.get(channel) || [];
           handlers.forEach(handler => {
             // Simular evento de broadcast
-            setTimeout(() => handler({ data }), 0);
+            setTimeout(() => handler({ data, connectionId: localConnectionId }), 0);
           });
           
           resolve();
@@ -83,9 +92,9 @@ function createMockOBR(role = 'GM') {
       }),
       
       // Helper para tests: simula recibir un mensaje externo
-      _simulateIncomingMessage: (channel, data) => {
+      _simulateIncomingMessage: async (channel, data, connectionId = 'conn-gm') => {
         const handlers = messageHandlers.get(channel) || [];
-        handlers.forEach(handler => handler({ data }));
+        await Promise.all(handlers.map(handler => handler({ data, connectionId })));
       },
       
       // Helper para tests: obtiene handlers registrados
@@ -241,15 +250,15 @@ describe('BroadcastService - Envío de mensajes', () => {
     );
   });
 
-  it('debe detectar error de límite de tamaño (64KB)', async () => {
-    // Crear contenido que exceda 64KB
+  it('debe detectar error de límite de tamaño (16KB)', async () => {
+    // Crear contenido que exceda 16KB
     const largeContent = 'x'.repeat(70 * 1024);
     
     let sizeLimitCalled = false;
     broadcastService.setSizeLimitCallback((channel, size) => {
       sizeLimitCalled = true;
       expect(channel).toBe(BROADCAST_CHANNEL_RESPONSE);
-      expect(size).toBeGreaterThan(64);
+      expect(size).toBeGreaterThan(16);
     });
     
     const result = await broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE, {
@@ -437,14 +446,16 @@ describe('Flujo GM → Player: Contenido HTML', () => {
     );
   });
 
-  it('GM sanea HTML legado del caché justo antes de enviarlo', async () => {
+  it('GM sanea HTML legado justo antes de enviarlo', async () => {
     const pageId = 'legacy-cache';
     mockCacheService.getHtmlFromLocalCache.mockImplementation((requestedPageId) => (
       requestedPageId === pageId
         ? '<p>Visible</p><img src=x onerror="window.pwned=1"><script>window.pwned=2</script>'
         : null
     ));
-    const generator = jest.fn();
+    const generator = jest.fn((requestedPageId) => (
+      mockCacheService.getHtmlFromLocalCache(requestedPageId)
+    ));
     gmBroadcast.setupGMContentResponder(generator);
 
     gmOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_REQUEST, {
@@ -456,7 +467,7 @@ describe('Flujo GM → Player: Contenido HTML', () => {
     const response = gmOBR.broadcast.sendMessage.mock.calls.find(
       ([channel]) => channel === BROADCAST_CHANNEL_RESPONSE
     )?.[1];
-    expect(generator).not.toHaveBeenCalled();
+    expect(generator).toHaveBeenCalledWith(pageId, false, expect.any(Object));
     expect(response.html).toContain('Visible');
     expect(response.html).not.toMatch(/onerror=|<script/i);
   });
@@ -470,67 +481,61 @@ describe('Flujo GM → Player: Contenido HTML', () => {
     // Debe retornar null (timeout)
     expect(result).toBeNull();
   }, 10000);
-});
 
-// ============================================
-// TESTS: Flujo GM → Co-GM (vault completo)
-// ============================================
+  it('fragmenta contenido grande por debajo de 16 kB y lo reconstruye', async () => {
+    const pageId = 'large-page';
+    const html = `<div>${'🧙‍♂️ contenido '.repeat(3500)}</div>`;
 
-describe('Flujo GM → Co-GM: Vault completo', () => {
-  let gmBroadcast;
-  let coGmBroadcast;
-  let gmOBR;
-  let coGmOBR;
+    const sendResult = await gmBroadcast.sendContentResponse(pageId, 123, html);
+    expect(sendResult.success).toBe(true);
+    expect(sendResult.chunks).toBeGreaterThan(1);
 
-  beforeEach(() => {
-    gmOBR = createMockOBR('GM');
-    coGmOBR = createMockOBR('GM'); // Co-GM también tiene rol GM
-    
-    gmBroadcast = new BroadcastService();
-    gmBroadcast.setDependencies({ OBR: gmOBR });
-    
-    coGmBroadcast = new BroadcastService();
-    coGmBroadcast.setDependencies({ OBR: coGmOBR });
-  });
-
-  it('GM debe enviar vault completo (incluyendo páginas ocultas) a Co-GM', async () => {
-    // GM envía vault completo
-    await gmBroadcast.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-      config: sampleConfig
+    const sentChunks = gmOBR.broadcast.sendMessage.mock.calls
+      .filter(([channel, data]) => channel === BROADCAST_CHANNEL_RESPONSE && data.kind === 'content-chunk')
+      .map(([, data]) => data);
+    expect(sentChunks).toHaveLength(sendResult.chunks);
+    sentChunks.forEach(chunk => {
+      expect(Buffer.byteLength(JSON.stringify(chunk), 'utf8')).toBeLessThanOrEqual(16 * 1024);
     });
-    
-    // Verificar que se envió la config completa
-    const sentData = gmOBR.broadcast.sendMessage.mock.calls[0][1];
-    
-    // Debe incluir TODAS las páginas (visibles y ocultas)
-    const allPageNames = [];
-    function collectPageNames(categories) {
-      categories.forEach(cat => {
-        cat.pages?.forEach(p => allPageNames.push(p.name));
-        if (cat.categories) collectPageNames(cat.categories);
+
+    const requestPromise = playerBroadcast.requestContentFromGM(pageId);
+    const request = playerOBR.broadcast.sendMessage.mock.calls.find(
+      ([channel]) => channel === BROADCAST_CHANNEL_REQUEST
+    )[1];
+    for (const chunk of [...sentChunks].reverse()) {
+      playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_RESPONSE, {
+        ...chunk,
+        requestId: request.requestId
       });
     }
-    collectPageNames(sentData.config.categories);
-    
-    expect(allPageNames).toContain('Gandalf');
-    expect(allPageNames).toContain('Sauron (secreto)'); // Debe incluir secretos
-    expect(allPageNames).toContain('Mordor (oculto)'); // Debe incluir ocultos
+
+    await expect(requestPromise).resolves.toBe(html);
   });
 
-  it('Co-GM debe poder solicitar vault completo', async () => {
-    // Co-GM solicita vault
-    await coGmBroadcast.sendMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, {
-      requesterId: 'cogm-123',
-      requesterName: 'Co-GM Player'
+  it('ignora fragmentos sin correlación y totales inconsistentes', async () => {
+    const pageId = 'correlated-page';
+    const requestPromise = playerBroadcast.requestContentFromGM(pageId);
+    const request = playerOBR.broadcast.sendMessage.mock.calls.find(
+      ([channel]) => channel === BROADCAST_CHANNEL_REQUEST
+    )[1];
+
+    playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_RESPONSE, {
+      kind: 'content-chunk', pageId, index: 0, total: 2, chunk: 'safe-'
     });
-    
-    expect(coGmOBR.broadcast.sendMessage).toHaveBeenCalledWith(
-      BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
-      expect.objectContaining({
-        requesterId: 'cogm-123',
-        requesterName: 'Co-GM Player'
-      })
-    );
+    playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_RESPONSE, {
+      kind: 'content-chunk', pageId, requestId: request.requestId,
+      index: 0, total: 2, chunk: 'safe-'
+    });
+    playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_RESPONSE, {
+      kind: 'content-chunk', pageId, requestId: request.requestId,
+      index: 1, total: 3, chunk: 'wrong-total'
+    });
+    playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_RESPONSE, {
+      kind: 'content-chunk', pageId, requestId: request.requestId,
+      index: 1, total: 2, chunk: 'content'
+    });
+
+    await expect(requestPromise).resolves.toBe('safe-content');
   });
 });
 
@@ -795,18 +800,18 @@ describe('Refresh manual con forceRefresh', () => {
     expect(generateCalled).toBe(true);
     expect(generateForceRefresh).toBe(true);
     
-    // Verificar que se limpió el caché antes de generar
-    expect(mockCacheService.clearPageCache).toHaveBeenCalledWith(pageId);
+    // La política de caché pertenece al controlador, no al transporte.
+    expect(mockCacheService.clearPageCache).not.toHaveBeenCalled();
   });
 
-  it('GM debe usar caché cuando NO hay forceRefresh', async () => {
+  it('GM delega la política de caché cuando NO hay forceRefresh', async () => {
     const pageId = 'cached-page';
     let generateCalled = false;
     
     // Configurar GM para responder
-    gmBroadcast.setupGMContentResponder(async () => {
+    gmBroadcast.setupGMContentResponder(async (requestedPageId) => {
       generateCalled = true;
-      return '<div>Generated content</div>';
+      return mockCacheService.getHtmlFromLocalCache(requestedPageId);
     });
     
     // Simular solicitud de player SIN forceRefresh
@@ -819,8 +824,7 @@ describe('Refresh manual con forceRefresh', () => {
     // Esperar procesamiento
     await new Promise(resolve => setTimeout(resolve, 50));
     
-    // Verificar que se usó el caché (NO se llamó al generador)
-    expect(generateCalled).toBe(false);
+    expect(generateCalled).toBe(true);
     expect(mockCacheService.getHtmlFromLocalCache).toHaveBeenCalledWith(pageId);
     expect(mockCacheService.clearPageCache).not.toHaveBeenCalled();
     
@@ -911,5 +915,16 @@ describe('Actualización de visibilidad en tiempo real', () => {
     const npcs = sentConfig.categories.find(c => c.name === 'NPCs');
     const sauron = npcs.pages.find(p => p.name === 'Sauron (secreto)');
     expect(sauron).toBeDefined();
+  });
+
+  it('Player recibe invalidación al ocultar una página', async () => {
+    const invalidated = [];
+    playerBroadcast.listenForPageInvalidation(pageId => invalidated.push(pageId));
+
+    await playerOBR.broadcast._simulateIncomingMessage(BROADCAST_CHANNEL_INVALIDATE_PAGE, {
+      pageId: 'hidden-page'
+    });
+
+    expect(invalidated).toEqual(['hidden-page']);
   });
 });

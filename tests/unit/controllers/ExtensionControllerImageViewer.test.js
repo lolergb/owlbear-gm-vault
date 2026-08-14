@@ -230,8 +230,8 @@ describe('image share background contract', () => {
 
     expect(manifest.background_url).toBe('/html/background.html');
     expect(localManifest.background_url).toBe('/html/background.html');
-    expect(manifest.version).toBe('2.1.0');
-    expect(localManifest.version).toBe('2.1.0');
+    expect(manifest.version).toBe('2.1.0-beta.2');
+    expect(localManifest.version).toBe('2.1.0-beta.2');
   });
 
   it('delega la recepción al listener único de background', () => {

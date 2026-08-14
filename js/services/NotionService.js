@@ -4,7 +4,6 @@
  * Gestiona las llamadas a la API de Notion a través del proxy de Netlify.
  */
 
-import { ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
 import { isNotionUrl } from '../utils/helpers.js';
 import { log, logError, logWarn } from '../utils/logger.js?v=20260722-4';
 
@@ -284,12 +283,7 @@ export class NotionService {
       const authHeaders = await this._getNotionAuthHeaders();
 
       if (!authHeaders) {
-        // Sin token, intentar obtener del caché compartido
-        const sharedBlocks = await this._getFromSharedCache(pageId);
-        if (sharedBlocks) {
-          return sharedBlocks;
-        }
-        // Retornar null para que el controlador solicite al GM
+        // El contenido compartido es efímero: el controlador se lo solicita al GM.
         log('⚠️ No hay token, el contenido debe ser solicitado al GM');
         return null;
       }
@@ -1037,27 +1031,6 @@ export class NotionService {
     // Siempre incluir slug (nunca solo ID) para formato notion.so/nombre-id
     const finalSlug = (slug && slug !== '-') ? slug : 'Untitled';
     return `https://www.notion.so/${finalSlug}-${cleanId}`;
-  }
-
-  /**
-   * Intenta obtener del caché compartido
-   * @private
-   */
-  async _getFromSharedCache(pageId) {
-    if (!this.OBR) return null;
-
-    try {
-      const metadata = await this.OBR.room.getMetadata();
-      const sharedCache = metadata && metadata[ROOM_CONTENT_CACHE_KEY];
-      
-      if (sharedCache && sharedCache[pageId] && sharedCache[pageId].blocks) {
-        log('✅ Usando caché compartido (room metadata) para:', pageId);
-        return sharedCache[pageId].blocks;
-      }
-    } catch (e) {
-      logWarn('No se pudo obtener caché compartido:', e);
-    }
-    return null;
   }
 
   /**

@@ -6,7 +6,11 @@
 
 import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-4';
 import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-4';
-import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
+import {
+  BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
+  BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
+  METADATA_KEY
+} from '../utils/constants.js?v=20260815-1';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import {
@@ -31,17 +35,17 @@ import { Page } from '../models/Page.js';
 import { Category } from '../models/Category.js';
 
 // Services
-import { CacheService } from '../services/CacheService.js?v=20260722-4';
-import { StorageService } from '../services/StorageService.js?v=20260722-4';
-import { NotionService } from '../services/NotionService.js?v=20260722-4';
-import { BroadcastService } from '../services/BroadcastService.js?v=20260722-4';
+import { CacheService } from '../services/CacheService.js?v=20260812-1';
+import { StorageService } from '../services/StorageService.js?v=20260812-1';
+import { NotionService } from '../services/NotionService.js?v=20260812-1';
+import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20260722-4';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260722-4';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260815-1';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -64,6 +68,7 @@ export class ExtensionController {
     this.isCoGM = false; // Co-GM (GM promovido, solo lectura)
     this.roomId = null;
     this.playerId = null;
+    this.connectionId = null;
     this.playerName = null;
     this.config = null;
     this.isInitialized = false;
@@ -93,11 +98,9 @@ export class ExtensionController {
     this.pagesContainer = null;
     this.contentContainer = null;
 
-    // Intervals
-    this.heartbeatInterval = null;
-    
     // Función para desuscribirse de cambios de rol (usa Player.onChange en vez de polling)
     this.roleChangeUnsubscribe = null;
+    this._coGMSyncPromise = null;
   }
 
   /**
@@ -142,9 +145,8 @@ export class ExtensionController {
     
     // Configurar broadcast según rol
     if (this.isGM && !this.isCoGM) {
-      // Master GM: establecer ownership e iniciar heartbeat
+      // Master GM: establecer ownership y limpiar metadata legado.
       await this._establishVaultOwnership();
-      this._startHeartbeat();
       this._setupGMBroadcast();
     } else if (this.isCoGM) {
       // Co-GM: escuchar actualizaciones como player pero también responder a solicitudes de contenido
@@ -551,13 +553,9 @@ export class ExtensionController {
     );
     let saved = localSaved !== false;
 
-    // Si es Master GM, guardar en room metadata y broadcast
+    // El vault persiste localmente; la sala se sincroniza por broadcast.
     if (this.isGM && !this.isCoGM) {
       const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
-      const roomSaved = await this.storageService.saveRoomConfig(configToSave);
-      if (roomSaved === false) {
-        logWarn('No se pudo actualizar el metadata de la sala; la configuración local del GM sí quedó guardada');
-      }
 
       // El vault completo del GM vive en localStorage. Los canales de sala son
       // sincronizaciones auxiliares y no deben revertir el estado visual local.
@@ -565,16 +563,9 @@ export class ExtensionController {
         const visibleConfig = filterVisiblePages(configToSave);
         await this.broadcastService.broadcastVisiblePages(visibleConfig);
 
-        // El vault completo es una sincronización auxiliar para Co-GMs. Un mensaje
-        // demasiado grande no debe deshacer una configuración ya guardada.
-        const fullVaultResult = await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-          config: configToSave
-        });
-        if (fullVaultResult?.success === false) {
-          logWarn('No se pudo enviar el vault completo a los Co-GMs; la configuración principal sí quedó guardada');
-        } else {
-          log('📤 Vault completo enviado a Co-GMs');
-        }
+        // Avisar sin incluir ningún dato privado. Cada Co-GM vuelve a solicitar
+        // el vault mediante su propio intercambio ECDH cifrado y fragmentado.
+        await this.broadcastService.notifyFullVaultUpdated();
       }
     }
 
@@ -714,6 +705,11 @@ export class ExtensionController {
       }
 
       page.visibleToPlayers = newVisibility;
+
+      if (!newVisibility) {
+        const contentId = pageToUpdate.getNotionPageId?.() || pageToUpdate.id;
+        await this.broadcastService.invalidatePage(contentId);
+      }
       
       // Actualizar tokens vinculados a esta página
       await this._updateLinkedTokensVisibility(page.id, page.url, newVisibility);
@@ -812,6 +808,15 @@ export class ExtensionController {
   async _handlePageEdit(page, categoryPath, pageIndex, newData) {
     if (!this.config || !this.isGM) return;
 
+    let safeUrl;
+    if (newData.url !== undefined) {
+      safeUrl = sanitizeHttpUrl(newData.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+        return false;
+      }
+    }
+
     log('✏️ Editando página:', page.name, '->', newData);
 
     // Navegar a la categoría correcta
@@ -831,7 +836,7 @@ export class ExtensionController {
     if (pageToUpdate) {
       // Actualizar todos los campos
       if (newData.name !== undefined) pageToUpdate.name = newData.name;
-      if (newData.url !== undefined) pageToUpdate.url = newData.url;
+      if (safeUrl !== undefined) pageToUpdate.url = safeUrl;
       if (newData.blockTypes !== undefined) pageToUpdate.blockTypes = newData.blockTypes;
       if (newData.visibleToPlayers !== undefined) pageToUpdate.visibleToPlayers = newData.visibleToPlayers;
       if (newData.icon !== undefined) pageToUpdate.icon = newData.icon;
@@ -841,9 +846,11 @@ export class ExtensionController {
       
       await this.saveConfig(this.config);
       this.analyticsService.trackPageEdited(newData.name || page.name);
+      return true;
     } else {
       logError('No se encontró la página:', page.name);
     }
+    return false;
   }
 
   /**
@@ -1519,6 +1526,12 @@ export class ExtensionController {
     ], async (data) => {
       if (!data.name || !data.url) return;
 
+      const safeUrl = sanitizeHttpUrl(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+        return;
+      }
+
       const currentLevel = this._navigateToCategory(categoryPath);
       if (!currentLevel) {
         console.log('📄 ADD PAGE - No se pudo navegar al path');
@@ -1530,7 +1543,7 @@ export class ExtensionController {
       console.log('📄 ADD PAGE - Nivel destino:', currentLevel.name, 'ID:', currentLevel.id);
       
       // Crear instancia de Page con todos los campos (genera ID automático)
-      const newPage = new Page(data.name, data.url, {
+      const newPage = new Page(data.name, safeUrl, {
         visibleToPlayers: data.visibleToPlayers || false,
         blockTypes: null,
         icon: null,
@@ -2030,12 +2043,6 @@ export class ExtensionController {
   cleanup() {
     log('🧹 Limpiando recursos...');
     
-    // Detener intervals
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-    
     if (this.roleChangeUnsubscribe) {
       this.roleChangeUnsubscribe();
       this.roleChangeUnsubscribe = null;
@@ -2091,7 +2098,7 @@ export class ExtensionController {
       cacheService: this.cacheService
     });
     this.broadcastService.setSizeLimitCallback((channel, estimatedKB) => {
-      this._showFeedback(`❌ Content too large to share (${estimatedKB} KB > 64 KB limit)`);
+      this._showFeedback(`❌ Content too large to share (${estimatedKB} KB > 16 KB limit)`);
       this.analyticsService.trackContentTooLarge(estimatedKB * 1024, channel);
     });
 
@@ -2284,8 +2291,8 @@ export class ExtensionController {
     openModalBtn.parentNode.replaceChild(newOpenModalBtn, openModalBtn);
     newOpenModalBtn.addEventListener('click', () => this._openPageInModal(pageInstance));
 
-    // Botón de Share (para todos: GM, coGM y Player) - NO para imágenes
-    if (!pageInstance.isImage()) {
+    // Solo GM/Co-GM puede emitir un handout a toda la sala.
+    if (this.isGM && !pageInstance.isImage()) {
       let shareBtn = document.getElementById('page-share-button-header');
       if (!shareBtn) {
         shareBtn = document.createElement('button');
@@ -2416,6 +2423,10 @@ export class ExtensionController {
    * @private
    */
   async _shareCurrentPageToPlayers(pageData) {
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share a page');
+      return false;
+    }
     if (!pageData) return false;
 
     log('🔗 Compartiendo página:', pageData.name);
@@ -3079,6 +3090,7 @@ export class ExtensionController {
     if (this.isGM && !this.isCoGM) {
       const addButton = document.createElement('button');
       addButton.className = 'icon-button';
+      addButton.id = 'add-button';
       addButton.title = 'Add folder or page';
       addButton.innerHTML = iconHtml('img/icon-add.svg', { className: 'icon-button-icon', alt: 'Add' });
       addButton.addEventListener('click', (e) => this._showAddMenu(addButton));
@@ -3146,6 +3158,7 @@ export class ExtensionController {
 
     // Mostrar/ocultar .notion-gm-only: player real o GM en vista jugador
     document.body.classList.toggle('role-player', this.playerViewMode || !this.isGM);
+    document.getElementById('add-button')?.classList.toggle('hidden', this.playerViewMode);
 
     // Re-renderizar la lista de páginas
     await this.render();
@@ -3271,7 +3284,7 @@ export class ExtensionController {
     const configSize = new TextEncoder().encode(configJson).length;
     const canSync = configSize < 16 * 1024; // 16KB límite
 
-    let pageCount = 0;
+    let pageCount = (config.pages || []).length;
     let categoryCount = 0;
     const countItems = (categories) => {
       for (const cat of categories || []) {
@@ -3288,7 +3301,8 @@ export class ExtensionController {
     if (this.isCoGM) {
       // Co-GM: modo solo lectura
       const owner = await this.storageService.getVaultOwner();
-      const masterGMName = owner?.name || 'Master GM';
+      const players = await this.OBR?.party?.getPlayers?.() || [];
+      const masterGMName = players.find(player => player.id === owner?.id)?.name || 'Master GM';
       vaultStatusBox.innerHTML = `
         <div class="vault-status vault-status--cogm">
           <div class="vault-status__icon">👁️</div>
@@ -3609,6 +3623,32 @@ export class ExtensionController {
           const itemsFormatConfig = this.configParser.toItemsFormat(configJson);
           
           const jsonStr = JSON.stringify(itemsFormatConfig, null, 2);
+
+          // Owlbear embeds extensions in a sandbox where browser downloads can
+          // be ignored without raising an error. Copy the same backup during
+          // the explicit user gesture so there is always a recoverable result.
+          const clipboardWrite = globalThis.navigator?.clipboard?.writeText?.(jsonStr);
+          if (clipboardWrite) {
+            Promise.resolve(clipboardWrite)
+              .then(() => {
+                this.uiRenderer.showSuccessToast(
+                  'Backup copied',
+                  'The JSON is on your clipboard; a file download was also requested.'
+                );
+              })
+              .catch(() => {
+                this.uiRenderer.showInfoToast(
+                  'Backup download requested',
+                  'Clipboard access was unavailable.'
+                );
+              });
+          } else {
+            this.uiRenderer.showInfoToast(
+              'Backup download requested',
+              'Clipboard access was unavailable.'
+            );
+          }
+
           const blob = new Blob([jsonStr], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           
@@ -3618,7 +3658,9 @@ export class ExtensionController {
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-          URL.revokeObjectURL(url);
+          // Dia/Chromium may start consuming the blob asynchronously. Revoking
+          // it in the same task can cancel the download before it begins.
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
           
           // Contar items para analytics
           let itemCount = 0;
@@ -4990,9 +5032,15 @@ export class ExtensionController {
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
     ], async (data) => {
       if (!data.name || !data.url) return;
+
+      const safeUrl = sanitizeHttpUrl(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+        return;
+      }
       
       // Crear instancia de Page
-      const newPage = new Page(data.name, data.url, {
+      const newPage = new Page(data.name, safeUrl, {
         visibleToPlayers: data.visibleToPlayers || false,
         blockTypes: null,
         icon: null,
@@ -5334,6 +5382,9 @@ export class ExtensionController {
       if (typeof this.OBR.player.getId === 'function') {
         this.playerId = await this.OBR.player.getId();
       }
+      if (typeof this.OBR.player.getConnectionId === 'function') {
+        this.connectionId = await this.OBR.player.getConnectionId();
+      }
       if (typeof this.OBR.player.getName === 'function') {
         this.playerName = await this.OBR.player.getName();
       }
@@ -5352,6 +5403,7 @@ export class ExtensionController {
       log('👤 Info del jugador:', {
         roomId: this.roomId,
         playerId: this.playerId,
+        connectionId: this.connectionId,
         playerName: this.playerName,
         isGM: this.isGM,
         isCoGM: this.isCoGM
@@ -5385,25 +5437,28 @@ export class ExtensionController {
         return;
       }
       
-      // Verificar si soy el owner
-      const isMe = owner.id === this.playerId;
+      const players = await this.OBR.party.getPlayers();
+      const ownerHasConnection = Boolean(owner.connectionId);
+      const isMe = owner.id === this.playerId && (
+        !ownerHasConnection || owner.connectionId === this.connectionId
+      );
       log('🔍 ¿Soy el owner?', isMe, '| Mi ID:', this.playerId, '| Owner ID:', owner.id);
-      
-      // Verificar si el owner está inactivo (más de 15 minutos sin heartbeat)
-      const timeSinceLastActivity = Date.now() - (owner.lastHeartbeat || 0);
-      const isStale = timeSinceLastActivity > OWNER_TIMEOUT;
-      const minutesInactive = Math.round(timeSinceLastActivity / 60000);
-      log('🔍 Owner inactivo?', isStale, '| Minutos inactivo:', minutesInactive);
-      
-      // Es Co-GM si hay owner válido, no soy yo, y no está inactivo
-      this.isCoGM = !isMe && !isStale;
+
+      const connectedOwner = players.find(player =>
+        player.id === owner.id &&
+        player.role === 'GM' &&
+        (!ownerHasConnection || player.connectionId === owner.connectionId)
+      );
+
+      // La presencia se obtiene de Party; no ocupa Room metadata ni necesita polling.
+      this.isCoGM = !isMe && Boolean(connectedOwner);
       
       if (this.isCoGM) {
-        log('👁️ [Co-GM] Modo solo lectura - Master GM:', owner.name || 'Desconocido');
+        log('👁️ [Co-GM] Modo solo lectura - Master GM conectado');
       } else if (isMe) {
         log('👑 [Master GM] Soy el vault owner');
-      } else if (isStale) {
-        log('👑 [Master GM] El vault owner anterior está inactivo (', minutesInactive, 'min)');
+      } else {
+        log('👑 [Master GM] El vault owner anterior no está conectado');
       }
     } catch (e) {
       logError('Error detectando Co-GM:', e);
@@ -5430,7 +5485,9 @@ export class ExtensionController {
       // Master GM: cargar de localStorage
       // 1. Intentar cargar de localStorage (configuración completa del GM)
       const localConfig = this.storageService.getLocalConfig();
-      if (localConfig && localConfig.categories && localConfig.categories.length > 0) {
+      // `null` means first run. An explicit empty config is still a valid
+      // persisted vault and must not resurrect the bundled demo after reload.
+      if (localConfig && Array.isArray(localConfig.categories)) {
         config = localConfig;
         configSource = 'localStorage';
         log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
@@ -5470,7 +5527,7 @@ export class ExtensionController {
       // Si no se pudo obtener del Master GM, intentar localStorage (sesión anterior)
       if (!config) {
         const localConfig = this.storageService.getLocalConfig();
-        if (localConfig && localConfig.categories && localConfig.categories.length > 0) {
+        if (localConfig && Array.isArray(localConfig.categories)) {
           config = localConfig;
           configSource = 'localStorage_fallback';
           log('📦 Co-GM: usando config de localStorage como fallback');
@@ -5486,14 +5543,6 @@ export class ExtensionController {
         if (visibleConfig && visibleConfig.categories) {
           config = visibleConfig;
           configSource = 'broadcast';
-        }
-      } else {
-        // GM inactivo: usar room metadata si existe
-        const roomConfig = await this.storageService.getRoomConfig();
-        if (roomConfig && roomConfig.categories) {
-          config = roomConfig;
-          configSource = 'roomMetadata';
-          log('⚠️ GM inactivo, usando configuración de room metadata');
         }
       }
     }
@@ -5563,8 +5612,19 @@ export class ExtensionController {
    */
   _setupGMBroadcast() {
     // Responder a solicitudes de contenido (acepta forceRefresh de Players/Co-GMs)
-    this.broadcastService.setupGMContentResponder(async (pageId, forceRefresh = false) => {
+    this.broadcastService.setupGMContentResponder(async (pageId, forceRefresh = false, request = {}) => {
       let html = null;
+      const requestedPage = this.config?.findPageByNotionId?.(pageId);
+      if (!requestedPage) return null;
+
+      if (!requestedPage.visibleToPlayers) {
+        const players = await this.OBR.party.getPlayers();
+        const requester = players.find(player => player.connectionId === request.connectionId);
+        if (requester?.role !== 'GM') {
+          logWarn('⛔ Solicitud rechazada para una página oculta:', pageId);
+          return null;
+        }
+      }
 
       // Si NO es forceRefresh, intentar obtener del caché local (mismo HTML para GM y players; oculto con CSS .notion-gm-only)
       if (!forceRefresh) {
@@ -5605,19 +5665,41 @@ export class ExtensionController {
 
     // Responder a solicitudes de vault completo (cuando un player se promociona a GM)
     this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, async (event) => {
-      const { requesterId, requesterName } = event.data;
+      const request = event.data || {};
+      const { requesterId } = request;
       if (!requesterId || !this.config) return;
 
-      log(`📤 Solicitud de vault completo de ${requesterName} (${requesterId})`);
+      const ownConnectionId = this.connectionId || (
+        typeof this.OBR.player.getConnectionId === 'function'
+          ? await this.OBR.player.getConnectionId()
+          : null
+      );
+      const owner = await this.storageService.getVaultOwner();
+      if (
+        (request.targetConnectionId && request.targetConnectionId !== ownConnectionId) ||
+        (owner?.connectionId && owner.connectionId !== ownConnectionId)
+      ) {
+        logWarn('⏭️ Solicitud de vault destinada a otra conexión Master GM');
+        return;
+      }
+
+      // Broadcast channels are room-wide. Never trust the identity declared
+      // in the payload: bind it to Owlbear's connection and current role.
+      const players = await this.OBR.party.getPlayers();
+      const requester = players.find(player => player.connectionId === event.connectionId);
+      if (!requester || requester.role !== 'GM' || requester.id !== requesterId) {
+        logWarn('⛔ Solicitud de vault completo rechazada:', requesterId);
+        return;
+      }
+
+      log(`📤 Solicitud cifrada de vault completo de ${requester.name} (${requesterId})`);
       
-      // Enviar configuración completa (solo lectura)
+      // El canal es room-wide, pero el contenido solo puede descifrarlo la
+      // conexión GM que generó la clave privada efímera de esta solicitud.
       const configJson = this.config.toJSON ? this.config.toJSON() : this.config;
-      await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-        requesterId,
-        config: configJson
-      });
-      
-      log('✅ Vault completo enviado');
+      const result = await this.broadcastService.sendEncryptedFullVaultResponse(request, configJson);
+      if (result.success) log(`✅ Vault cifrado enviado en ${result.chunks} fragmentos`);
+      else logWarn('No se pudo enviar el vault cifrado:', result.error);
     });
 
     // Configurar listeners para contenido compartido (común para todos)
@@ -5633,16 +5715,28 @@ export class ExtensionController {
   _setupCoGMBroadcast() {
     log('👁️ Configurando broadcast para Co-GM (modo lectura)');
     
-    // Escuchar actualizaciones del vault completo (no solo páginas visibles)
-    // El Co-GM debe ver TODO el vault, igual que el Master GM
-    this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, async (event) => {
-      const { config } = event.data;
-      if (config) {
-        log('📥 [Co-GM] Vault completo actualizado desde Master GM');
-        this.config = this.configParser.parse(config);
-        await this.render();
+    // Las actualizaciones no llevan datos privados: son solo una señal. El
+    // Co-GM inicia un nuevo intercambio cifrado para obtener la revisión.
+    this.broadcastService.listenForTrustedGMMessage(
+      BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
+      async (_data, event) => {
+        if (this._coGMSyncPromise) return;
+        this._coGMSyncPromise = this._requestFullVaultForCoGM({
+          expectedSenderConnectionId: event.connectionId
+        });
+        try {
+          const config = await this._coGMSyncPromise;
+          if (!config) return;
+          log('📥 [Co-GM] Vault cifrado actualizado desde Master GM');
+          this.config = this.configParser.parse(config);
+          this.configBuilder = new ConfigBuilder(this.config);
+          this.notionRenderer.setDependencies({ config: this.config });
+          await this.render();
+        } finally {
+          this._coGMSyncPromise = null;
+        }
       }
-    });
+    );
 
     // NOTA: NO escuchamos listenForVisiblePagesUpdates para el Co-GM
     // porque el Co-GM debe ver el vault completo, no solo las páginas visibles
@@ -5663,6 +5757,12 @@ export class ExtensionController {
       await this.render();
     });
 
+    this.broadcastService.listenForPageInvalidation((pageId) => {
+      this.cacheService.clearPageCache(pageId);
+      const currentContentId = this.currentPage?.getNotionPageId?.() || this.currentPage?.id;
+      if (currentContentId === pageId) this._goBackToList();
+    });
+
     // Configurar listeners para contenido compartido (común para todos)
     this._setupSharedContentListeners();
     
@@ -5680,8 +5780,8 @@ export class ExtensionController {
     // también este listener en el popover abriría el mismo modal dos veces.
 
     // Listener para recibir videos compartidos
-    this.OBR.broadcast.onMessage('com.dmscreen/showVideo', async (event) => {
-      const { url, caption, type, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showVideo', async (data) => {
+      const { url, caption, type, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (typeof url === 'string' && url) {
@@ -5691,8 +5791,8 @@ export class ExtensionController {
     });
 
     // Listener para recibir Google Docs compartidos
-    this.OBR.broadcast.onMessage('com.dmscreen/showGoogleDoc', async (event) => {
-      const { url, name, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showGoogleDoc', async (data) => {
+      const { url, name, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (typeof url === 'string' && url) {
@@ -5702,8 +5802,8 @@ export class ExtensionController {
     });
 
     // Listener para recibir contenido Notion renderizado (sin necesidad de token)
-    this.OBR.broadcast.onMessage('com.dmscreen/showNotionContent', async (event) => {
-      const { name, html, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showNotionContent', async (data) => {
+      const { name, html, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (html) {
@@ -5716,8 +5816,8 @@ export class ExtensionController {
     });
 
     // Listener legacy para recibir páginas de Notion compartidas (requiere token)
-    this.OBR.broadcast.onMessage('com.dmscreen/showNotionPage', async (event) => {
-      const { url, name, pageId, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showNotionPage', async (data) => {
+      const { url, name, pageId, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (typeof url === 'string' && url) {
@@ -5727,8 +5827,8 @@ export class ExtensionController {
     });
 
     // Listener para recibir contenido genérico compartido
-    this.OBR.broadcast.onMessage('com.dmscreen/showContent', async (event) => {
-      const { url, name, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showContent', async (data) => {
+      const { url, name, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (typeof url === 'string' && url) {
@@ -5748,16 +5848,29 @@ export class ExtensionController {
     try {
       const owner = await this.storageService.getVaultOwner();
       const myId = await this.OBR.player.getId();
-      
-      // Si no hay owner o el owner está inactivo, establecer como owner
-      const isOwnerStale = owner && (Date.now() - (owner.lastHeartbeat || 0)) > OWNER_TIMEOUT;
-      
-      if (!owner || isOwnerStale || owner.id === myId) {
+      const myConnectionId = this.connectionId || (
+        typeof this.OBR.player.getConnectionId === 'function'
+          ? await this.OBR.player.getConnectionId()
+          : null
+      );
+      const players = await this.OBR.party.getPlayers();
+      const ownerIsConnected = owner && players.some(
+        player =>
+          player.id === owner.id &&
+          player.role === 'GM' &&
+          (!owner.connectionId || player.connectionId === owner.connectionId)
+      );
+      const currentOwnerIsMe = owner?.id === myId && (
+        !owner.connectionId || owner.connectionId === myConnectionId
+      );
+
+      if (!owner || !ownerIsConnected || currentOwnerIsMe) {
         // Establecer como vault owner
-        await this.storageService.setVaultOwner(this.playerId, this.playerName);
+        await this.storageService.setVaultOwner(this.playerId, myConnectionId);
+        this.connectionId = myConnectionId;
         log('👑 Establecido como vault owner');
       } else {
-        log('👁️ Otro GM es el vault owner:', owner.name);
+        log('👁️ Otro GM conectado es el vault owner');
       }
     } catch (e) {
       logError('Error estableciendo vault ownership:', e);
@@ -5776,21 +5889,17 @@ export class ExtensionController {
 
     try {
       const owner = await this.storageService.getVaultOwner();
-      
-      if (!owner) {
-        log('⚠️ No hay GM activo en el vault');
-        return { isActive: false, owner: null, minutesInactive: 0 };
-      }
-      
-      const timeSinceLastActivity = Date.now() - (owner.lastHeartbeat || 0);
-      const isActive = timeSinceLastActivity < OWNER_TIMEOUT;
-      const minutesInactive = Math.round(timeSinceLastActivity / 60000);
-      
-      if (!isActive) {
-        log('⚠️ GM inactivo:', minutesInactive, 'minutos sin actividad');
-      }
-      
-      return { isActive, owner, minutesInactive };
+      const players = await this.OBR.party.getPlayers();
+      const activeOwner = owner
+        ? players.find(player =>
+          player.id === owner.id &&
+          player.role === 'GM' &&
+          (!owner.connectionId || player.connectionId === owner.connectionId)
+        )
+        : players.find(player => player.role === 'GM');
+
+      if (!activeOwner) log('⚠️ No hay Master GM activo en el vault');
+      return { isActive: Boolean(activeOwner), owner, minutesInactive: 0 };
     } catch (e) {
       logError('Error verificando disponibilidad del GM:', e);
       return { isActive: false, owner: null, minutesInactive: 0 };
@@ -5836,16 +5945,6 @@ export class ExtensionController {
   }
 
   /**
-   * Inicia heartbeat del vault owner
-   * @private
-   */
-  _startHeartbeat() {
-    this.heartbeatInterval = setInterval(() => {
-      this.storageService.updateOwnerHeartbeat();
-    }, 120000); // 2 minutos
-  }
-
-  /**
    * Inicia detección de cambio de rol usando Player.onChange (event-driven, sin polling)
    * Cuando un player se promociona a GM, solicita todo el vault del GM anterior
    * @private
@@ -5886,40 +5985,16 @@ export class ExtensionController {
    */
   async _requestFullVaultOnPromotion() {
     try {
-      log('📤 Solicitando vault completo al GM...');
-      
-      return new Promise((resolve) => {
-        // Timeout de 5 segundos
-        const timeout = setTimeout(() => {
-          log('⏰ Timeout esperando vault completo');
-          unsubscribe();
-          resolve(false);
-        }, 5000);
-        
-        // Escuchar respuesta del GM
-        const unsubscribe = this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, (event) => {
-          const { requesterId, config } = event.data;
-          
-          // Solo procesar si la respuesta es para este player
-          if (requesterId === this.playerId && config) {
-            clearTimeout(timeout);
-            unsubscribe();
-            
-            log('✅ Vault completo recibido, guardando en localStorage...');
-            
-            // Guardar en localStorage antes de recargar
-            this.storageService.saveLocalConfig(config);
-            
-            resolve(true);
-          }
-        });
-        
-        // Enviar solicitud
-        this.broadcastService.sendMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, {
-          requesterId: this.playerId,
-          requesterName: this.playerName
-        });
+      log('📤 Solicitando vault cifrado al GM...');
+      const owner = await this.storageService.getVaultOwner();
+      const config = await this.broadcastService.requestEncryptedFullVault({
+        requesterId: this.playerId,
+        requesterName: this.playerName,
+        expectedSenderConnectionId: owner?.connectionId || null
       });
+      if (!config) return false;
+      log('✅ Vault cifrado recibido, guardando en localStorage...');
+      return this.storageService.saveLocalConfig(config) !== false;
     } catch (e) {
       logError('Error solicitando vault completo:', e);
       return false;
@@ -5931,39 +6006,16 @@ export class ExtensionController {
    * @returns {Promise<Object|null>} - Configuración completa o null
    * @private
    */
-  async _requestFullVaultForCoGM() {
+  async _requestFullVaultForCoGM({ expectedSenderConnectionId = null } = {}) {
     try {
-      log('📤 Co-GM: solicitando vault completo al Master GM...');
-      
-      return new Promise((resolve) => {
-        // Timeout de 5 segundos
-        const timeout = setTimeout(() => {
-          log('⏰ Timeout esperando vault completo para Co-GM');
-          unsubscribe();
-          resolve(null);
-        }, 5000);
-        
-        // Escuchar respuesta del Master GM
-        const unsubscribe = this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, (event) => {
-          const { requesterId, config } = event.data;
-          
-          // Solo procesar si la respuesta es para este Co-GM
-          if (requesterId === this.playerId && config) {
-            clearTimeout(timeout);
-            unsubscribe();
-            
-            log('✅ Co-GM: vault completo recibido del Master GM');
-            
-            // Retornar config directamente (no guardar en localStorage para evitar conflictos)
-            resolve(config);
-          }
-        });
-        
-        // Enviar solicitud
-        this.broadcastService.sendMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, {
-          requesterId: this.playerId,
-          requesterName: this.playerName
-        });
+      log('📤 Co-GM: solicitando vault cifrado al Master GM...');
+      const owner = expectedSenderConnectionId
+        ? null
+        : await this.storageService.getVaultOwner();
+      return await this.broadcastService.requestEncryptedFullVault({
+        requesterId: this.playerId,
+        requesterName: this.playerName,
+        expectedSenderConnectionId: expectedSenderConnectionId || owner?.connectionId || null
       });
     } catch (e) {
       logError('Error solicitando vault completo para Co-GM:', e);
@@ -6232,14 +6284,11 @@ export class ExtensionController {
     this.configBuilder = new ConfigBuilder(this.config);
     this.storageService.saveLocalConfig(configToSave);
 
-    // Compartir la reparación con la sala solo desde el Master GM.
+    // Compartir la reparación efímeramente solo desde el Master GM.
     if (this.isGM && !this.isCoGM) {
       try {
-        await this.storageService.saveRoomConfig(configToSave);
         this.broadcastService.broadcastVisiblePages(filterVisiblePages(configToSave));
-        await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-          config: configToSave
-        });
+        await this.broadcastService.notifyFullVaultUpdated();
       } catch (error) {
         // La página debe seguir abriéndose aunque falle la persistencia remota.
         logWarn('No se pudo compartir la reparación del título con la sala:', error);
@@ -6687,6 +6736,10 @@ export class ExtensionController {
    * @private
    */
   async _shareVideoToPlayers(url, caption, videoType) {
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share a video');
+      return false;
+    }
     if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
@@ -6787,6 +6840,10 @@ export class ExtensionController {
    * @private
    */
   async _shareGoogleDocToPlayers(url, name) {
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share a document');
+      return false;
+    }
     if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
@@ -7857,6 +7914,10 @@ export class ExtensionController {
    * @private
    */
   async _shareImageToPlayers(url, caption) {
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share an image');
+      return false;
+    }
     if (!this.OBR || !this.OBR.broadcast || !this.OBR.party) {
       logError('OBR.broadcast no disponible');
       return false;

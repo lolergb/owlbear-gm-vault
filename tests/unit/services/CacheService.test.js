@@ -2,7 +2,7 @@
  * @fileoverview Tests unitarios para CacheService
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { CacheService } from '../../../js/services/CacheService.js';
 
 describe('CacheService', () => {
@@ -36,6 +36,15 @@ describe('CacheService', () => {
       
       expect(cacheService.getCachedBlocks('page-1')).toEqual(blocks1);
       expect(cacheService.getCachedBlocks('page-2')).toEqual(blocks2);
+    });
+
+    it('no escribe bloques en Room metadata', async () => {
+      const setMetadata = jest.fn();
+      cacheService.setOBR({ room: { setMetadata } });
+
+      await cacheService.setCachedBlocks('local-only', [{ id: 'block-1' }]);
+
+      expect(setMetadata).not.toHaveBeenCalled();
     });
   });
 
@@ -182,4 +191,3 @@ describe('CacheService', () => {
     });
   });
 });
-

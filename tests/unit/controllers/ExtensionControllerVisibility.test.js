@@ -14,19 +14,20 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function createController(config, { localSaved = true, roomSaved = true } = {}) {
+function createController(config, { localSaved = true } = {}) {
   const controller = Object.create(ExtensionController.prototype);
   controller.config = config;
   controller.isGM = true;
   controller.isCoGM = false;
   controller.configParser = new ConfigParser();
   controller.storageService = {
-    saveLocalConfig: jest.fn(() => localSaved),
-    saveRoomConfig: jest.fn().mockResolvedValue(roomSaved)
+    saveLocalConfig: jest.fn(() => localSaved)
   };
   controller.broadcastService = {
     broadcastVisiblePages: jest.fn().mockResolvedValue(true),
-    sendMessage: jest.fn().mockResolvedValue({ success: true })
+    notifyFullVaultUpdated: jest.fn().mockResolvedValue(true),
+    sendMessage: jest.fn().mockResolvedValue({ success: true }),
+    invalidatePage: jest.fn().mockResolvedValue(true)
   };
   controller.uiRenderer = {
     setConfig: jest.fn(),
@@ -70,7 +71,6 @@ describe('page visibility updates', () => {
     expect(page.visibleToPlayers).toBe(true);
     expect(controller.config.findPageById(page.id).visibleToPlayers).toBe(true);
     expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.storageService.saveRoomConfig).toHaveBeenCalledTimes(1);
     expect(controller.broadcastService.broadcastVisiblePages).toHaveBeenCalledTimes(1);
     expect(controller.uiRenderer.setConfig).toHaveBeenCalledWith(controller.config);
     expect(controller.uiRenderer.updatePageVisibility).toHaveBeenCalledWith(page, true);
@@ -87,6 +87,7 @@ describe('page visibility updates', () => {
       false
     );
     expect(hidden).toBe(true);
+    expect(controller.broadcastService.invalidatePage).toHaveBeenCalledWith(page.id);
     expect(controller._showFeedback).toHaveBeenCalledWith('🙈 Page hidden from players');
     expect(document.querySelectorAll('.visibility-indicator')).toHaveLength(0);
   });
@@ -97,10 +98,7 @@ describe('page visibility updates', () => {
     });
     const category = new Category('Bestiary', { pages: [page] });
     const controller = createController(new Config({ categories: [category] }));
-    controller.broadcastService.sendMessage.mockResolvedValue({
-      success: false,
-      error: 'size_limit'
-    });
+    controller.broadcastService.notifyFullVaultUpdated.mockResolvedValue(false);
 
     const updated = await controller._handleVisibilityChange(
       page,
@@ -113,7 +111,6 @@ describe('page visibility updates', () => {
     expect(page.visibleToPlayers).toBe(true);
     expect(controller.config.findPageById(page.id).visibleToPlayers).toBe(true);
     expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.storageService.saveRoomConfig).toHaveBeenCalledTimes(1);
   });
 
   it('restaura el modelo y no actualiza la UI cuando falla la persistencia local', async () => {
@@ -143,15 +140,13 @@ describe('page visibility updates', () => {
     expect(controller.render).not.toHaveBeenCalled();
   });
 
-  it('mantiene el estado local si falla la sincronización de metadata de la sala', async () => {
+  it('mantiene el estado local si falla la sincronización auxiliar a Co-GMs', async () => {
     const page = new Page('Goblin', 'https://example.com/goblin', {
       id: 'page-goblin'
     });
     const category = new Category('Bestiary', { pages: [page] });
-    const controller = createController(
-      new Config({ categories: [category] }),
-      { roomSaved: false }
-    );
+    const controller = createController(new Config({ categories: [category] }));
+    controller.broadcastService.notifyFullVaultUpdated.mockResolvedValue(false);
 
     const updated = await controller._handleVisibilityChange(
       page,

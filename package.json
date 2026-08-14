@@ -1,6 +1,6 @@
 {
   "name": "owlbear-gm-vault",
-  "version": "1.0.0",
+  "version": "2.1.0-beta.2",
   "description": "Extensión para embebber páginas de Notion en Owlbear Rodeo",
   "type": "module",
   "scripts": {

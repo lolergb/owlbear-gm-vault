@@ -343,7 +343,7 @@ export class AnalyticsService {
   }
 
   /**
-   * Track content too large to share (>64KB broadcast limit)
+   * Track content too large to share (>16 kB broadcast limit)
    * @param {number} size - Tamaño estimado en bytes
    * @param {string} channel - Canal de broadcast
    */

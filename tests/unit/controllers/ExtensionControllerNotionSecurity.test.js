@@ -187,25 +187,21 @@ describe('ExtensionController Notion HTML security boundary', () => {
     const controller = bareController();
     controller.playerId = 'receiver';
     const handlers = new Map();
-    controller.OBR = {
-      broadcast: {
-        onMessage: jest.fn((channel, callback) => {
-          handlers.set(channel, callback);
-          return jest.fn();
-        })
-      }
+    controller.broadcastService = {
+      listenForTrustedGMMessage: jest.fn((channel, callback) => {
+        handlers.set(channel, callback);
+        return jest.fn();
+      })
     };
     controller._showNotionHtmlModal = jest.fn().mockResolvedValue(undefined);
 
     controller._setupSharedContentListeners();
     await handlers.get('com.dmscreen/showNotionContent')({
-      data: {
-        name: 'Spoofed content',
-        html: '<p>Visible</p><img src=x onerror="window.pwned=1"><script>window.pwned=2</script>',
-        pageId: 'embedded-attacker-controlled',
-        contentType: 'embedded',
-        senderId: 'attacker'
-      }
+      name: 'Spoofed content',
+      html: '<p>Visible</p><img src=x onerror="window.pwned=1"><script>window.pwned=2</script>',
+      pageId: 'embedded-attacker-controlled',
+      contentType: 'embedded',
+      senderId: 'attacker'
     });
 
     const [, safeHtml] = controller._showNotionHtmlModal.mock.calls[0];
@@ -320,9 +316,15 @@ describe('ExtensionController Notion HTML security boundary', () => {
     controller.isCoGM = true;
     controller.config = { categories: [] };
     controller.storageService = {
-      getVaultOwner: jest.fn().mockResolvedValue({
-        name: '</span><img src=x onerror="window.pwned=1">'
-      })
+      getVaultOwner: jest.fn().mockResolvedValue({ id: 'master-gm-id' })
+    };
+    controller.OBR = {
+      party: {
+        getPlayers: jest.fn().mockResolvedValue([{
+          id: 'master-gm-id',
+          name: '</span><img src=x onerror="window.pwned=1">'
+        }])
+      }
     };
 
     try {

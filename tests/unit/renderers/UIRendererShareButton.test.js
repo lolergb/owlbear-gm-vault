@@ -45,6 +45,15 @@ afterEach(() => {
 });
 
 describe('UIRenderer page share button', () => {
+  it('oculta Share a Player pero conserva Open modal', () => {
+    const renderer = new UIRenderer();
+    const page = new Page('Goblin', 'https://example.com/goblin');
+    const pageButton = renderer._createPageButton(page, 'room-1', [], 0, false);
+
+    expect(pageButton.querySelector('.page-share-button')).toBeNull();
+    expect(pageButton.querySelector('.page-open-modal-button')).not.toBeNull();
+  });
+
   it('conserva la Promise del callback en el wiring del controlador', () => {
     const controller = Object.create(ExtensionController.prototype);
     const callbackResult = Promise.resolve(true);
