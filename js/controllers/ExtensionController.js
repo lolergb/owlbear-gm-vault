@@ -15,14 +15,16 @@ import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import {
   escapeHtml,
+  normalizePageUrlInput,
   sanitizeEmbeddedHtml,
   sanitizeExternalIframeUrl,
   sanitizeGoogleEmbedUrl,
   sanitizeHttpUrl,
   sanitizeImageUrl,
   sanitizeNotionHtml,
+  sanitizeOneDriveEmbedUrl,
   sanitizeVideoEmbedUrl
-} from '../utils/htmlSecurity.js?v=20260722-4';
+} from '../utils/htmlSecurity.js?v=20260815-2';
 import {
   PAGE_TITLE_FALLBACK,
   getUsablePageTitle,
@@ -45,7 +47,7 @@ import { getImageCacheService } from '../services/ImageCacheService.js?v=2026072
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260815-1';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260815-2';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -383,6 +385,8 @@ export class ExtensionController {
         await this._renderVideoPage(page);
       } else if (page.isGoogleDoc()) {
         this._renderGoogleDocPage(page);
+      } else if (page.isOneDrive()) {
+        this._renderOneDrivePage(page);
       } else {
         this._renderExternalPage(page);
       }
@@ -452,7 +456,8 @@ export class ExtensionController {
                      page.isNotionPage() ? 'notion' : 
                      page.isImage() ? 'image' : 
                      page.isVideo() ? 'video' : 
-                     page.isGoogleDoc() ? 'google_doc' : 'iframe';
+                     page.isGoogleDoc() ? 'google_doc' :
+                     page.isOneDrive() ? 'onedrive' : 'iframe';
     this.analyticsService.trackPageView(page.name, pageType);
 
     // Mostrar el contenedor de Notion y ocultar la lista
@@ -512,6 +517,8 @@ export class ExtensionController {
         await this._renderVideoPage(page);
       } else if (page.isGoogleDoc()) {
         this._renderGoogleDocPage(page);
+      } else if (page.isOneDrive()) {
+        this._renderOneDrivePage(page);
       } else {
         this._renderExternalPage(page);
       }
@@ -810,9 +817,9 @@ export class ExtensionController {
 
     let safeUrl;
     if (newData.url !== undefined) {
-      safeUrl = sanitizeHttpUrl(newData.url);
+      safeUrl = normalizePageUrlInput(newData.url);
       if (!safeUrl) {
-        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
         return false;
       }
     }
@@ -1521,14 +1528,21 @@ export class ExtensionController {
     
     this._showModalForm('Add Page', [
       { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Page name' },
-      { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        required: true,
+        placeholder: 'https://... or <iframe ...>',
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
     ], async (data) => {
       if (!data.name || !data.url) return;
 
-      const safeUrl = sanitizeHttpUrl(data.url);
+      const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
-        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
         return;
       }
 
@@ -2205,6 +2219,8 @@ export class ExtensionController {
     const notionIframe = document.getElementById('notion-iframe');
     const buttonContainer = document.querySelector('.button-container');
 
+    this._cancelOneDriveLoad();
+
     const isSettingsVisible = settingsContainer && !settingsContainer.classList.contains('hidden');
     const isNotionContainerVisible = notionContainer && !notionContainer.classList.contains('hidden');
 
@@ -2451,6 +2467,20 @@ export class ExtensionController {
       // Para Google Docs, compartir la URL de embed
       const embedUrl = this._getGoogleDocEmbedUrl(page.url);
       return this._shareGoogleDocToPlayers(embedUrl, page.name);
+    } else if (page.isOneDrive()) {
+      const embedUrl = sanitizeOneDriveEmbedUrl(page.url);
+      if (!embedUrl) {
+        this._showFeedback('❌ Use the OneDrive Embed link');
+        return false;
+      }
+      const result = await this.broadcastService.sendMessage('com.dmscreen/showContent', {
+        url: embedUrl,
+        name: page.name,
+        senderId: this.playerId
+      });
+      if (result?.success) this._showFeedback('📄 Document shared!');
+      else if (result?.error !== 'size_limit') this._showFeedback('❌ Error sharing document');
+      return result?.success === true;
     } else if (page.hasEmbeddedHtml() && page.htmlContent) {
       // Para páginas con htmlContent embebido (local-first, ej: Obsidian)
       // Funciona igual que Notion: enviar el HTML directamente
@@ -2866,11 +2896,25 @@ export class ExtensionController {
 
     this._showModalForm('Edit Page', [
       { name: 'name', label: 'Name', type: 'text', value: page.name, required: true },
-      { name: 'url', label: 'URL', type: 'url', value: page.url, required: true },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        value: page.url,
+        required: true,
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
+      const safeUrl = normalizePageUrlInput(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return;
+      }
+      data.url = safeUrl;
+
       // Convertir blockTypes de string a array
       if (data.blockTypes && typeof data.blockTypes === 'string') {
         data.blockTypes = data.blockTypes.split(',').map(s => s.trim()).filter(s => s);
@@ -2927,11 +2971,25 @@ export class ExtensionController {
 
     this._showModalForm('Edit Page', [
       { name: 'name', label: 'Name', type: 'text', value: page.name, required: true },
-      { name: 'url', label: 'URL', type: 'url', value: page.url, required: true },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        value: page.url,
+        required: true,
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
+      const safeUrl = normalizePageUrlInput(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return;
+      }
+      data.url = safeUrl;
+
       // Convertir blockTypes de string a array
       if (data.blockTypes && typeof data.blockTypes === 'string') {
         data.blockTypes = data.blockTypes.split(',').map(s => s.trim()).filter(s => s);
@@ -5021,7 +5079,14 @@ export class ExtensionController {
     
     this._showModalForm('Add Page', [
       { name: 'name', label: 'Page name', type: 'text', required: true, placeholder: 'Enter page name' },
-      { name: 'url', label: 'URL', type: 'text', required: true, placeholder: 'https://...' },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        required: true,
+        placeholder: 'https://... or <iframe ...>',
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { 
         name: 'parentFolder', 
         label: 'Folder', 
@@ -5033,9 +5098,9 @@ export class ExtensionController {
     ], async (data) => {
       if (!data.name || !data.url) return;
 
-      const safeUrl = sanitizeHttpUrl(data.url);
+      const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
-        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
         return;
       }
       
@@ -5064,7 +5129,7 @@ export class ExtensionController {
       }
       
         await this.saveConfig(this.config);
-        this.analyticsService.trackPageAdded(data.name, this._detectPageType(data.url));
+        this.analyticsService.trackPageAdded(data.name, this._detectPageType(safeUrl));
     });
   }
 
@@ -5078,6 +5143,12 @@ export class ExtensionController {
     if (/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)) return 'image';
     if (/\.(mp4|webm|mov)$/i.test(url) || url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com')) return 'video';
     if (url.includes('docs.google.com')) return 'google_doc';
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      if (hostname === '1drv.ms' || hostname === 'onedrive.live.com') return 'onedrive';
+    } catch {
+      // The URL is validated before this analytics helper is called.
+    }
     return 'iframe';
   }
 
@@ -6030,9 +6101,14 @@ export class ExtensionController {
   /**
    * Gestiona la visibilidad entre notion-content y notion-iframe
    * @param {'content' | 'iframe'} mode - Qué elemento mostrar
+   * @param {Object} [options]
+   * @param {boolean} [options.keepIframeSource=false] - Mantiene la navegación
+   * del iframe mientras se muestra un estado de carga en notion-content.
    * @private
    */
-  _setNotionDisplayMode(mode) {
+  _setNotionDisplayMode(mode, { keepIframeSource = false } = {}) {
+    this._cancelOneDriveLoad();
+
     const notionContainer = document.getElementById('notion-container');
     const notionContent = document.getElementById('notion-content');
     const notionIframe = document.getElementById('notion-iframe');
@@ -6052,7 +6128,7 @@ export class ExtensionController {
     if (mode === 'content') {
       // Mostrar content, ocultar y limpiar iframe
       if (notionIframe) {
-        notionIframe.src = 'about:blank';
+        if (!keepIframeSource) notionIframe.src = 'about:blank';
         notionIframe.style.cssText = 'display: none !important; visibility: hidden !important;';
       }
       notionContainer.classList.remove('hidden');
@@ -6067,6 +6143,27 @@ export class ExtensionController {
       }
       notionContainer.classList.remove('hidden');
       notionContainer.classList.remove('show-content');
+    }
+  }
+
+  /**
+   * Cancela listeners y temporizadores de una carga anterior de OneDrive.
+   * Evita que un iframe lento vuelva a abrirse después de navegar a otra vista.
+   * @private
+   */
+  _cancelOneDriveLoad() {
+    this._oneDriveLoadRequestId = (this._oneDriveLoadRequestId || 0) + 1;
+
+    if (this._oneDriveLoadTimeout) {
+      clearTimeout(this._oneDriveLoadTimeout);
+      this._oneDriveLoadTimeout = null;
+    }
+
+    const notionIframe = document.getElementById('notion-iframe');
+    if (notionIframe?.dataset.gmVaultLoader === 'onedrive') {
+      notionIframe.onload = null;
+      notionIframe.onerror = null;
+      delete notionIframe.dataset.gmVaultLoader;
     }
   }
 
@@ -6833,6 +6930,88 @@ export class ExtensionController {
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
     
     // El botón de share está ahora en el header
+  }
+
+  /**
+   * Renderiza un documento público de OneDrive Personal usando el enlace
+   * generado por OneDrive en … → Embed → Generate.
+   * @private
+   */
+  _renderOneDrivePage(page) {
+    const embedUrl = sanitizeOneDriveEmbedUrl(page?.url);
+    if (!embedUrl) {
+      this._setNotionDisplayMode('content');
+      const notionContent = document.getElementById('notion-content');
+      if (notionContent) {
+        notionContent.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">☁️</div>
+            <p class="empty-state-text">OneDrive needs an Embed link</p>
+            <p class="empty-state-hint">In OneDrive choose … → Embed → Generate, then paste the iframe or its src URL in this page.</p>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // El visor de Microsoft realiza una redirección antes de inicializar
+    // Office. Mantener el loading estándar visible hasta que termine.
+    this._setNotionDisplayMode('content', { keepIframeSource: true });
+    const previousIframe = document.getElementById('notion-iframe');
+    const notionContent = document.getElementById('notion-content');
+    if (!previousIframe || !notionContent) return;
+
+    // Abrir OneDrive en un iframe nuevo evita confundir el evento load que
+    // about:blank puede dejar encolado al cambiar desde la lista de páginas.
+    const notionIframe = previousIframe.cloneNode(false);
+    notionIframe.removeAttribute('src');
+    previousIframe.replaceWith(notionIframe);
+
+    notionContent.innerHTML = `
+      <div class="empty-state notion-loading">
+        <div class="empty-state-icon">⏳</div>
+        <p class="empty-state-text">Loading OneDrive document</p>
+        <p class="empty-state-hint">Microsoft Office may take a few seconds to open.</p>
+      </div>
+    `;
+
+    const requestId = this._oneDriveLoadRequestId;
+    const showRetryState = (title, hint) => {
+      if (requestId !== this._oneDriveLoadRequestId) return;
+      notionContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">☁️</div>
+          <p class="empty-state-text">${title}</p>
+          <p class="empty-state-hint">${hint}</p>
+          <button type="button" class="btn btn--sm btn--secondary" data-onedrive-retry>🔄 Retry</button>
+        </div>
+      `;
+      notionContent.querySelector('[data-onedrive-retry]')?.addEventListener('click', () => {
+        this._renderOneDrivePage(page);
+      }, { once: true });
+    };
+
+    notionIframe.dataset.gmVaultLoader = 'onedrive';
+    notionIframe.onload = () => {
+      if (requestId !== this._oneDriveLoadRequestId) return;
+      this._setNotionDisplayMode('iframe');
+    };
+    notionIframe.onerror = () => {
+      if (this._oneDriveLoadTimeout) {
+        clearTimeout(this._oneDriveLoadTimeout);
+        this._oneDriveLoadTimeout = null;
+      }
+      showRetryState('Could not load the OneDrive document', 'Check the Embed link and try again.');
+    };
+    notionIframe.title = page?.name || 'OneDrive document';
+    notionIframe.allowFullscreen = true;
+    notionIframe.referrerPolicy = 'no-referrer';
+    notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
+    notionIframe.src = embedUrl;
+
+    this._oneDriveLoadTimeout = setTimeout(() => {
+      showRetryState('OneDrive is taking longer than expected', 'You can keep waiting or retry the document.');
+    }, 20000);
   }
 
   /**

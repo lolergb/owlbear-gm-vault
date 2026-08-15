@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   escapeHtml,
+  isOneDriveUrl,
+  normalizePageUrlInput,
   sanitizeExternalIframeUrl,
   sanitizeEmbeddedHtml,
   sanitizeGoogleEmbedUrl,
@@ -8,10 +10,12 @@ import {
   sanitizeImageUrl,
   sanitizeLinkUrl,
   sanitizeNotionHtml,
+  sanitizeOneDriveEmbedUrl,
   sanitizeVideoEmbedUrl
 } from '../../../js/utils/htmlSecurity.js';
 
 const SIGNED_IMAGE_URL = 'https://assets.example.com/private/map.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test%2F20260722%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Signature=abc123&X-Amz-Expires=3600';
+const ONEDRIVE_EMBED_URL = 'https://1drv.ms/w/c/8480b8199298dc6a/IQSJYPNDDhaHR6l68QswlHANAfzkMRJ6-BOy2ZMGhr-_BsM?em=2';
 
 function fragmentFrom(html) {
   const template = document.createElement('template');
@@ -63,6 +67,30 @@ describe('HTML security helpers', () => {
     expect(sanitizeGoogleEmbedUrl('https://docs.google.com.evil.example/document/d/x/preview')).toBe('');
   });
 
+  it('accepts only official OneDrive Personal Embed URLs', () => {
+    expect(isOneDriveUrl(ONEDRIVE_EMBED_URL)).toBe(true);
+    expect(sanitizeOneDriveEmbedUrl(ONEDRIVE_EMBED_URL)).toBe(ONEDRIVE_EMBED_URL);
+    expect(sanitizeOneDriveEmbedUrl('https://onedrive.live.com/embed?resid=ABC123&authkey=DEF456'))
+      .toBe('https://onedrive.live.com/embed?resid=ABC123&authkey=DEF456');
+
+    expect(sanitizeOneDriveEmbedUrl(
+      'https://1drv.ms/w/c/8480b8199298dc6a/IQCJYPNDDhaHR6l68QswlHANAVALRHpMyZHEZNXc0y-nt6Q'
+    )).toBe('');
+    expect(isOneDriveUrl('https://1drv.ms.evil.example/w/c/file?em=2')).toBe(false);
+    expect(sanitizeOneDriveEmbedUrl(
+      'https://1drv.ms.evil.example/w/c/8480b8199298dc6a/file?em=2'
+    )).toBe('');
+  });
+
+  it('extracts the safe src when the complete OneDrive iframe is pasted', () => {
+    const iframe = `<iframe src="${ONEDRIVE_EMBED_URL}" width="476px" height="288px" frameborder="0" title="PowerPoint Viewer">fallback</iframe>`;
+
+    expect(normalizePageUrlInput(iframe)).toBe(ONEDRIVE_EMBED_URL);
+    expect(normalizePageUrlInput(ONEDRIVE_EMBED_URL)).toBe(ONEDRIVE_EMBED_URL);
+    expect(normalizePageUrlInput('<iframe src="https://evil.example/embed"></iframe>')).toBe('');
+    expect(normalizePageUrlInput('<iframe src="javascript:alert(1)"></iframe>')).toBe('');
+  });
+
   it('rejects same-origin and non-HTTPS iframe URLs', () => {
     expect(sanitizeExternalIframeUrl(
       'https://vault.example/html/video-viewer.html?url=javascript%3Aalert(1)',
@@ -77,13 +105,16 @@ describe('HTML security helpers', () => {
     const fragment = fragmentFrom(sanitizeNotionHtml(`
       <iframe class="generic" src="https://embed.example/map"></iframe>
       <iframe class="youtube" src="https://www.youtube.com/embed/AbCdEf012_-"></iframe>
+      <iframe class="onedrive" src="${ONEDRIVE_EMBED_URL}"></iframe>
     `));
     const genericSandbox = fragment.querySelector('.generic').getAttribute('sandbox');
     const youtubeSandbox = fragment.querySelector('.youtube').getAttribute('sandbox');
+    const oneDriveSandbox = fragment.querySelector('.onedrive').getAttribute('sandbox');
 
     expect(genericSandbox).toContain('allow-scripts');
     expect(genericSandbox).not.toContain('allow-same-origin');
     expect(youtubeSandbox).toContain('allow-same-origin');
+    expect(oneDriveSandbox).toContain('allow-same-origin');
   });
 });
 

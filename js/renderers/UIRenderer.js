@@ -9,7 +9,7 @@ import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl }
 import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
-import { escapeHtml, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260722-4';
+import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260815-2';
 
 /**
  * Renderizador de interfaz de usuario
@@ -441,7 +441,7 @@ export class UIRenderer {
       linkIconHtml = ico('img/icon-figma.svg', 'Figma');
     } else if (url.includes('github.com') || url.includes('github.io')) {
       linkIconHtml = ico('img/icon-github.svg', 'GitHub');
-    } else if (url.includes('onedrive.live.com') || url.includes('1drv.ms')) {
+    } else if (isOneDriveUrl(url)) {
       linkIconHtml = ico('img/icon-onedrive.svg', 'OneDrive');
     } else if (url.includes('codepen.io')) {
       linkIconHtml = ico('img/icon-codepen.svg', 'CodePen');

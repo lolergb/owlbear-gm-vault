@@ -131,7 +131,7 @@ describe('ExtensionController CRUD ordering', () => {
     expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
     expect(controller.uiRenderer.showErrorToast).toHaveBeenCalledWith(
       'Invalid URL',
-      'Use a complete HTTP or HTTPS URL.'
+      'Use a complete URL or a OneDrive Embed iframe.'
     );
   });
 

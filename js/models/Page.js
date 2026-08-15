@@ -96,6 +96,20 @@ export class Page {
   }
 
   /**
+   * Verifica si esta página pertenece a OneDrive Personal
+   * @returns {boolean}
+   */
+  isOneDrive() {
+    if (!this.url) return false;
+    try {
+      const hostname = new URL(this.url).hostname.toLowerCase();
+      return hostname === '1drv.ms' || hostname === 'onedrive.live.com';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Verifica si esta página es una imagen
    * @returns {boolean}
    */
@@ -128,12 +142,13 @@ export class Page {
 
   /**
    * Obtiene el tipo de contenido de la página
-   * @returns {'embedded-html'|'notion'|'google-doc'|'image'|'video'|'external'}
+   * @returns {'embedded-html'|'notion'|'google-doc'|'onedrive'|'image'|'video'|'external'}
    */
   getContentType() {
     if (this.hasEmbeddedHtml()) return 'embedded-html';
     if (this.isNotionPage()) return 'notion';
     if (this.isGoogleDoc()) return 'google-doc';
+    if (this.isOneDrive()) return 'onedrive';
     if (this.isImage()) return 'image';
     if (this.isVideo()) return 'video';
     return 'external';
@@ -213,4 +228,3 @@ export class Page {
 }
 
 export default Page;
-
