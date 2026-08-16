@@ -7,6 +7,7 @@
  */
 
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
+import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
 
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
@@ -395,11 +396,18 @@ export class AnalyticsService {
    * Track page added
    * @param {string} pageName - Nombre de la página
    * @param {string} pageType - Tipo de página
+   * @param {Object} metadata - Metadatos seguros del origen de la página
    */
-  trackPageAdded(pageName, pageType = 'unknown') {
+  trackPageAdded(pageName, pageType = 'unknown', metadata = {}) {
     this.trackEvent('page_added', {
       page_name: pageName,
-      page_type: pageType
+      page_type: pageType,
+      ...buildPageAddedMetadata({
+        url: metadata.url,
+        pageType,
+        creationMethod: metadata.creationMethod,
+        isEmbedCode: metadata.isEmbedCode
+      })
     });
   }
 

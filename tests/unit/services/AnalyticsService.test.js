@@ -104,6 +104,27 @@ describe('AnalyticsService beta events', () => {
     });
   });
 
+  it('tracks safe page creation metadata without forwarding the full URL', () => {
+    const service = createService();
+
+    service.trackPageAdded('Campaign notes', 'onedrive', {
+      url: 'https://1drv.ms/w/c/private-document-id?secret=do-not-send',
+      creationMethod: 'manual',
+      isEmbedCode: true
+    });
+
+    expect(service.trackEvent).toHaveBeenCalledWith('page_added', {
+      page_name: 'Campaign notes',
+      page_type: 'onedrive',
+      url_domain: '1drv.ms',
+      embed_provider: 'onedrive',
+      creation_method: 'manual',
+      is_embed_code: true
+    });
+    expect(JSON.stringify(service.trackEvent.mock.calls[0])).not.toContain('private-document-id');
+    expect(JSON.stringify(service.trackEvent.mock.calls[0])).not.toContain('do-not-send');
+  });
+
   it('normalizes unexpected values instead of forwarding arbitrary content', () => {
     const service = createService();
 

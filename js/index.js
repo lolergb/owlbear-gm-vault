@@ -1,6 +1,7 @@
 // Los logs iniciales se ejecutan después de definir la función log()
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+import { buildPageAddedMetadata } from './utils/pageAnalytics.js?v=20260816-1';
 
 // Sistema de logs controlado por variable de entorno de Netlify
 let DEBUG_MODE = false;
@@ -439,10 +440,16 @@ function trackFolderAdded(folderName) {
 /**
  * Track page added event
  */
-function trackPageAdded(pageName, pageType = 'unknown') {
+function trackPageAdded(pageName, pageType = 'unknown', metadata = {}) {
   trackEvent('page_added', {
     page_name: pageName,
-    page_type: pageType
+    page_type: pageType,
+    ...buildPageAddedMetadata({
+      url: metadata.url,
+      pageType,
+      creationMethod: metadata.creationMethod,
+      isEmbedCode: metadata.isEmbedCode
+    })
   });
 }
 
@@ -6891,7 +6898,11 @@ async function addPageToPageListSimple(categoryPath, roomId) {
           pageType = linkType.type;
         }
       }
-      trackPageAdded(data.name, pageType);
+      trackPageAdded(data.name, pageType, {
+        url: data.url,
+        creationMethod: 'manual',
+        isEmbedCode: /^<iframe\b/i.test(String(data.url).trim())
+      });
       
       // Recargar la vista
       const pageList = document.getElementById("page-list");

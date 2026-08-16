@@ -105,6 +105,15 @@ describe('ExtensionController OneDrive support', () => {
     expect(target.pages[0].visibleToPlayers).toBe(true);
     expect(controller.saveConfig).toHaveBeenCalled();
     expect(controller.uiRenderer.showErrorToast).not.toHaveBeenCalled();
+    expect(controller.analyticsService.trackPageAdded).toHaveBeenCalledWith(
+      'Campaign notes',
+      'onedrive',
+      {
+        url: ONEDRIVE_EMBED_URL,
+        creationMethod: 'manual',
+        isEmbedCode: true
+      }
+    );
   });
 
   it('shares only trusted OneDrive Embed URLs with players', async () => {

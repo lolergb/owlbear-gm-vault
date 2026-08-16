@@ -1540,6 +1540,7 @@ export class ExtensionController {
     ], async (data) => {
       if (!data.name || !data.url) return;
 
+      const isEmbedCode = /^<iframe\b/i.test(String(data.url).trim());
       const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
         this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
@@ -1580,6 +1581,11 @@ export class ExtensionController {
       currentLevel.order.push({ type: 'page', index: newIndex });
       
       await this.saveConfig(this.config);
+      this.analyticsService?.trackPageAdded?.(data.name, this._detectPageType(safeUrl), {
+        url: safeUrl,
+        creationMethod: 'manual',
+        isEmbedCode
+      });
     });
   }
 
@@ -5098,6 +5104,7 @@ export class ExtensionController {
     ], async (data) => {
       if (!data.name || !data.url) return;
 
+      const isEmbedCode = /^<iframe\b/i.test(String(data.url).trim());
       const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
         this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
@@ -5129,7 +5136,11 @@ export class ExtensionController {
       }
       
         await this.saveConfig(this.config);
-        this.analyticsService.trackPageAdded(data.name, this._detectPageType(safeUrl));
+        this.analyticsService.trackPageAdded(data.name, this._detectPageType(safeUrl), {
+          url: safeUrl,
+          creationMethod: 'manual',
+          isEmbedCode
+        });
     });
   }
 
