@@ -8,9 +8,11 @@
 
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
 import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
+import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
+const VAULT_ANALYTICS_KEY_PREFIX = 'gm_vault_analytics_';
 
 /**
  * Servicio de Analytics
@@ -24,6 +26,64 @@ export class AnalyticsService {
     this.isBeta = false;
     this.environment = 'unknown';
     this.deployContext = 'unknown';
+    this.vaultInstanceId = null;
+    this.vaultState = 'unknown';
+    this.vaultAnalyticsStorageKey = null;
+    this.vaultAnalyticsState = null;
+    this.firstUserContentCreatedTracked = false;
+  }
+
+  /**
+   * Attach anonymous, room-local context to analytics. The Owlbear room ID is
+   * only used to select a localStorage record and is never sent to Mixpanel.
+   */
+  setVaultContext({ roomId, vaultState } = {}) {
+    this.vaultState = ['empty', 'demo', 'configured'].includes(vaultState)
+      ? vaultState
+      : 'unknown';
+
+    try {
+      const localRoomKey = String(roomId || 'default');
+      this.vaultAnalyticsStorageKey = `${VAULT_ANALYTICS_KEY_PREFIX}${localRoomKey}`;
+      const stored = localStorage.getItem(this.vaultAnalyticsStorageKey);
+      const parsed = stored ? JSON.parse(stored) : {};
+      const now = Date.now();
+
+      this.vaultAnalyticsState = {
+        vaultInstanceId: parsed.vaultInstanceId || this._createAnonymousVaultId(),
+        firstOpenedAt: Number.isFinite(parsed.firstOpenedAt) ? parsed.firstOpenedAt : now,
+        firstUserContentCreatedAt: Number.isFinite(parsed.firstUserContentCreatedAt)
+          ? parsed.firstUserContentCreatedAt
+          : null
+      };
+      this.vaultInstanceId = this.vaultAnalyticsState.vaultInstanceId;
+      this.firstUserContentCreatedTracked = Boolean(
+        this.vaultAnalyticsState.firstUserContentCreatedAt
+      );
+      this._persistVaultAnalyticsState();
+    } catch (_error) {
+      this.vaultAnalyticsState = null;
+      this.vaultInstanceId = this._createAnonymousVaultId();
+    }
+  }
+
+  _createAnonymousVaultId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `vault_${crypto.randomUUID()}`;
+    }
+    return `vault_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  _persistVaultAnalyticsState() {
+    if (!this.vaultAnalyticsStorageKey || !this.vaultAnalyticsState) return;
+    try {
+      localStorage.setItem(
+        this.vaultAnalyticsStorageKey,
+        JSON.stringify(this.vaultAnalyticsState)
+      );
+    } catch (_error) {
+      // Analytics persistence must never affect the product.
+    }
   }
 
   /**
@@ -242,6 +302,8 @@ export class AnalyticsService {
           time: Math.floor(Date.now() / 1000),
           $insert_id: Math.random().toString(36).substring(2, 15),
           role: userRole,
+          ...(this.vaultInstanceId ? { vault_instance_id: this.vaultInstanceId } : {}),
+          vault_state: this.vaultState,
           ...properties,
           environment: this.environment,
           deploy_context: this.deployContext
@@ -304,10 +366,18 @@ export class AnalyticsService {
    * @param {string} pageName - Nombre de la página
    * @param {string} pageType - Tipo: notion, image, video, iframe
    */
-  trackPageView(pageName, pageType = 'unknown') {
+  trackPageView(pageName, pageType = 'unknown', metadata = {}) {
     this.trackEvent('page_view', {
       page_name: pageName,
-      page_type: pageType
+      page_type: pageType,
+      content_origin: normalizeContentOrigin(metadata.contentOrigin, metadata.url)
+    });
+  }
+
+  /** Track exploration of bundled content without forwarding its title or URL. */
+  trackDemoContentOpened(pageType = 'unknown') {
+    this.trackEvent('demo_content_opened', {
+      page_type: String(pageType || 'unknown').slice(0, 30)
     });
   }
 
@@ -402,6 +472,7 @@ export class AnalyticsService {
     this.trackEvent('page_added', {
       page_name: pageName,
       page_type: pageType,
+      content_origin: normalizeContentOrigin(metadata.contentOrigin, metadata.url),
       ...buildPageAddedMetadata({
         url: metadata.url,
         pageType,
@@ -409,6 +480,38 @@ export class AnalyticsService {
         isEmbedCode: metadata.isEmbedCode
       })
     });
+  }
+
+  /**
+   * One-time activation milestone per local vault. Demo pages do not call this.
+   * Returns true only when a new milestone was emitted.
+   */
+  trackFirstUserContentCreated({ creationMethod, pageType, contentOrigin = 'user' } = {}) {
+    if (!this.mixpanelEnabled || !this.mixpanelToken) return false;
+    if (this.firstUserContentCreatedTracked) return false;
+
+    const now = Date.now();
+    const startedAt = this.vaultAnalyticsState?.firstOpenedAt || now;
+    if (this.vaultAnalyticsState) {
+      this.vaultAnalyticsState.firstUserContentCreatedAt = now;
+      this._persistVaultAnalyticsState();
+    }
+    this.firstUserContentCreatedTracked = true;
+    this.vaultState = 'configured';
+
+    this.trackEvent('first_user_content_created', {
+      creation_method: this._normalizeEnum(
+        creationMethod,
+        ['manual', 'notion', 'url', 'file']
+      ),
+      page_type: this._normalizeEnum(
+        pageType,
+        ['notion', 'image', 'video', 'google_doc', 'onedrive', 'iframe', 'multiple']
+      ),
+      content_origin: normalizeContentOrigin(contentOrigin),
+      time_to_first_content_seconds: Math.max(0, Math.round((now - startedAt) / 1000))
+    });
+    return true;
   }
 
   /**

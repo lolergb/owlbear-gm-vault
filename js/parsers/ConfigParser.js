@@ -165,7 +165,8 @@ export class ConfigParser {
       blockTypes: pageJson.blockTypes || null,
       icon: pageJson.icon || null,
       linkedTokenId: pageJson.linkedTokenId || null,
-      htmlContent: pageJson.htmlContent || null
+      htmlContent: pageJson.htmlContent || null,
+      origin: pageJson.origin
     });
   }
 
@@ -394,6 +395,7 @@ export class ConfigParser {
     if (page.blockTypes) migrated.blockTypes = page.blockTypes;
     if (page.icon) migrated.icon = page.icon;
     if (page.linkedTokenId) migrated.linkedTokenId = page.linkedTokenId;
+    if (page.origin) migrated.origin = page.origin;
 
     return migrated;
   }
@@ -499,6 +501,7 @@ export class ConfigParser {
     if (page.blockTypes) item.blockTypes = page.blockTypes;
     if (page.icon) item.icon = page.icon;
     if (page.linkedTokenId) item.linkedTokenId = page.linkedTokenId;
+    if (page.origin) item.origin = page.origin;
 
     return item;
   }
@@ -592,6 +595,7 @@ export class ConfigParser {
     if (item.blockTypes) page.blockTypes = item.blockTypes;
     if (item.icon) page.icon = item.icon;
     if (item.linkedTokenId) page.linkedTokenId = item.linkedTokenId;
+    if (item.origin) page.origin = item.origin;
 
     return page;
   }

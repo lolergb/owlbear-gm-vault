@@ -9,7 +9,7 @@ import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl }
 import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
-import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260815-2';
+import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260816-1';
 
 /**
  * Renderizador de interfaz de usuario

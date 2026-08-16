@@ -6,6 +6,7 @@
  */
 
 import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js';
+import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
 
 /**
  * Genera un ID único para páginas
@@ -34,6 +35,7 @@ export class Page {
    * @param {Object} [options.icon] - Icono de la página
    * @param {string} [options.linkedTokenId] - ID del token vinculado
    * @param {string} [options.htmlContent] - HTML pre-renderizado (local-first, sin URL)
+   * @param {'demo'|'user'|'import'} [options.origin] - Origen controlado para analytics
    */
   constructor(name, url, options = {}) {
     this.id = options.id || generatePageId();
@@ -44,6 +46,7 @@ export class Page {
     this.icon = options.icon || null;
     this.linkedTokenId = options.linkedTokenId || null;
     this.htmlContent = options.htmlContent || null;
+    this.origin = normalizeContentOrigin(options.origin, url);
   }
 
   /**
@@ -166,7 +169,8 @@ export class Page {
       blockTypes: this.blockTypes ? [...this.blockTypes] : null,
       icon: this.icon ? { ...this.icon } : null,
       linkedTokenId: this.linkedTokenId,
-      htmlContent: this.htmlContent
+      htmlContent: this.htmlContent,
+      origin: this.origin
     });
   }
 
@@ -206,6 +210,10 @@ export class Page {
       json.htmlContent = this.htmlContent;
     }
 
+    if (this.origin) {
+      json.origin = this.origin;
+    }
+
     return json;
   }
 
@@ -222,7 +230,8 @@ export class Page {
       blockTypes: json.blockTypes,
       icon: json.icon,
       linkedTokenId: json.linkedTokenId,
-      htmlContent: json.htmlContent
+      htmlContent: json.htmlContent,
+      origin: json.origin
     });
   }
 }

@@ -116,6 +116,7 @@ describe('AnalyticsService beta events', () => {
     expect(service.trackEvent).toHaveBeenCalledWith('page_added', {
       page_name: 'Campaign notes',
       page_type: 'onedrive',
+      content_origin: 'user',
       url_domain: '1drv.ms',
       embed_provider: 'onedrive',
       creation_method: 'manual',
@@ -123,6 +124,53 @@ describe('AnalyticsService beta events', () => {
     });
     expect(JSON.stringify(service.trackEvent.mock.calls[0])).not.toContain('private-document-id');
     expect(JSON.stringify(service.trackEvent.mock.calls[0])).not.toContain('do-not-send');
+  });
+
+  it('tracks first user content only once per anonymous vault', () => {
+    localStorage.clear();
+    const service = createService();
+    service.mixpanelEnabled = true;
+    service.mixpanelToken = 'mixpanel-test-token';
+    service.setVaultContext({ roomId: 'private-room-id', vaultState: 'demo' });
+
+    expect(service.trackFirstUserContentCreated({
+      creationMethod: 'manual',
+      pageType: 'image'
+    })).toBe(true);
+    expect(service.trackFirstUserContentCreated({
+      creationMethod: 'manual',
+      pageType: 'image'
+    })).toBe(false);
+
+    expect(service.trackEvent).toHaveBeenCalledTimes(1);
+    expect(service.trackEvent).toHaveBeenCalledWith('first_user_content_created', {
+      creation_method: 'manual',
+      page_type: 'image',
+      content_origin: 'user',
+      time_to_first_content_seconds: expect.any(Number)
+    });
+    expect(service.vaultState).toBe('configured');
+    expect(service.vaultInstanceId).toMatch(/^vault_/);
+    expect(localStorage.getItem('gm_vault_analytics_private-room-id')).not.toContain('private-room-id');
+  });
+
+  it('tags demo page views separately from user content', () => {
+    const service = createService();
+
+    service.trackPageView('Quick Start', 'notion', {
+      contentOrigin: 'demo',
+      url: 'https://private.example/demo'
+    });
+    service.trackDemoContentOpened('notion');
+
+    expect(service.trackEvent).toHaveBeenNthCalledWith(1, 'page_view', {
+      page_name: 'Quick Start',
+      page_type: 'notion',
+      content_origin: 'demo'
+    });
+    expect(service.trackEvent).toHaveBeenNthCalledWith(2, 'demo_content_opened', {
+      page_type: 'notion'
+    });
   });
 
   it('normalizes unexpected values instead of forwarding arbitrary content', () => {

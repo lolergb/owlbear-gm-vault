@@ -28,7 +28,9 @@ function createController(config) {
     sendMessage: jest.fn().mockResolvedValue({ success: true })
   };
   controller.analyticsService = {
-    trackPageMoved: jest.fn()
+    trackPageMoved: jest.fn(),
+    trackPageEdited: jest.fn(),
+    trackFirstUserContentCreated: jest.fn()
   };
   controller.uiRenderer = new UIRenderer();
   controller.pagesContainer = document.createElement('div');
@@ -151,6 +153,31 @@ describe('ExtensionController CRUD ordering', () => {
     expect(updated).toBe(false);
     expect(controller.config.categories[0].pages[0].url).toBe('https://example.com/safe');
     expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
+  });
+
+  it('counts replacing a demo URL as the first user-created content', async () => {
+    const page = new Page(
+      'Demo video',
+      'https://www.youtube.com/watch?v=YE7VzlLtp-4',
+      { id: 'page-demo' }
+    );
+    const category = new Category('Demo', { id: 'category-demo', pages: [page] });
+    const controller = createController(new Config({ categories: [category] }));
+
+    const updated = await controller._handlePageEdit(
+      page,
+      [{ id: category.id, name: category.name }],
+      0,
+      { url: 'https://example.com/my-map.png' }
+    );
+
+    expect(updated).toBe(true);
+    expect(page.origin).toBe('user');
+    expect(controller.analyticsService.trackFirstUserContentCreated).toHaveBeenCalledWith({
+      creationMethod: 'manual',
+      pageType: 'image',
+      contentOrigin: 'user'
+    });
   });
 
   it('hides the GM Add control while previewing Player view', async () => {

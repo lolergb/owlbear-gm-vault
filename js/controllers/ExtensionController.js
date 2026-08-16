@@ -24,7 +24,7 @@ import {
   sanitizeNotionHtml,
   sanitizeOneDriveEmbedUrl,
   sanitizeVideoEmbedUrl
-} from '../utils/htmlSecurity.js?v=20260815-2';
+} from '../utils/htmlSecurity.js?v=20260816-1';
 import {
   PAGE_TITLE_FALLBACK,
   getUsablePageTitle,
@@ -42,12 +42,17 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260722-4';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260816-1';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
+import {
+  getVaultState,
+  markContentOrigin,
+  normalizeContentOrigin
+} from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260815-2';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260816-1';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -138,6 +143,15 @@ export class ExtensionController {
     
     // Obtener configuración
     await this._loadConfig();
+
+    // Analytics starts only after room and config are known so every event can
+    // distinguish an example vault from a configured one. The room ID remains
+    // local; Mixpanel receives only a generated anonymous vault identifier.
+    this.analyticsService.setVaultContext({
+      roomId: this.roomId,
+      vaultState: getVaultState(this.config)
+    });
+    await this.analyticsService.init();
     
     // Configurar UI
     this._setupUI(options);
@@ -458,7 +472,13 @@ export class ExtensionController {
                      page.isVideo() ? 'video' : 
                      page.isGoogleDoc() ? 'google_doc' :
                      page.isOneDrive() ? 'onedrive' : 'iframe';
-    this.analyticsService.trackPageView(page.name, pageType);
+    this.analyticsService.trackPageView(page.name, pageType, {
+      contentOrigin: page.origin,
+      url: page.url
+    });
+    if (page.origin === 'demo') {
+      this.analyticsService.trackDemoContentOpened(pageType);
+    }
 
     // Mostrar el contenedor de Notion y ocultar la lista
     const notionContainer = document.getElementById('notion-container');
@@ -841,9 +861,15 @@ export class ExtensionController {
     }
     
     if (pageToUpdate) {
+      const previousOrigin = pageToUpdate.origin;
       // Actualizar todos los campos
       if (newData.name !== undefined) pageToUpdate.name = newData.name;
-      if (safeUrl !== undefined) pageToUpdate.url = safeUrl;
+      if (safeUrl !== undefined) {
+        pageToUpdate.url = safeUrl;
+        // Replacing an example URL is another valid path to creating the GM's
+        // first piece of content.
+        pageToUpdate.origin = normalizeContentOrigin(undefined, safeUrl);
+      }
       if (newData.blockTypes !== undefined) pageToUpdate.blockTypes = newData.blockTypes;
       if (newData.visibleToPlayers !== undefined) pageToUpdate.visibleToPlayers = newData.visibleToPlayers;
       if (newData.icon !== undefined) pageToUpdate.icon = newData.icon;
@@ -853,6 +879,13 @@ export class ExtensionController {
       
       await this.saveConfig(this.config);
       this.analyticsService.trackPageEdited(newData.name || page.name);
+      if (previousOrigin === 'demo' && pageToUpdate.origin !== 'demo') {
+        this.analyticsService?.trackFirstUserContentCreated?.({
+          creationMethod: 'manual',
+          pageType: this._detectPageType(pageToUpdate.url),
+          contentOrigin: 'user'
+        });
+      }
       return true;
     } else {
       logError('No se encontró la página:', page.name);
@@ -1581,10 +1614,17 @@ export class ExtensionController {
       currentLevel.order.push({ type: 'page', index: newIndex });
       
       await this.saveConfig(this.config);
-      this.analyticsService?.trackPageAdded?.(data.name, this._detectPageType(safeUrl), {
+      const pageType = this._detectPageType(safeUrl);
+      this.analyticsService?.trackPageAdded?.(data.name, pageType, {
         url: safeUrl,
         creationMethod: 'manual',
-        isEmbedCode
+        isEmbedCode,
+        contentOrigin: 'user'
+      });
+      this.analyticsService?.trackFirstUserContentCreated?.({
+        creationMethod: 'manual',
+        pageType,
+        contentOrigin: 'user'
       });
     });
   }
@@ -2124,8 +2164,6 @@ export class ExtensionController {
 
     // Analytics Service
     this.analyticsService.setOBR(this.OBR);
-    // Iniciar analytics (mostrará banner de cookies si es necesario)
-    this.analyticsService.init();
 
     // Notion Renderer - config se actualizará después de cargarlo
     this.notionRenderer.setDependencies({
@@ -4133,6 +4171,7 @@ export class ExtensionController {
 
           // Aplicar según el modo seleccionado
           if (importedCategories.length > 0 || importedRootPages.length > 0) {
+            markContentOrigin(importedCategories, importedRootPages, 'import');
             let finalCategories;
             let finalPages;
             
@@ -4231,6 +4270,11 @@ export class ExtensionController {
               mode: importMode,
               destinationType: destinationId === 'root' ? 'root' : 'folder',
               itemCount: pagesImported
+            });
+            this.analyticsService?.trackFirstUserContentCreated?.({
+              creationMethod: 'notion',
+              pageType: 'multiple',
+              contentOrigin: 'import'
             });
 
             // Volver a la lista
@@ -4451,6 +4495,7 @@ export class ExtensionController {
         log(`Converted from legacy format: ${importedCategories.length} categories`);
       }
       const importedPages = importedConfig.pages || [];
+      markContentOrigin(importedCategories, importedPages, 'import');
       log(`Imported categories:`, JSON.stringify(importedCategories.map(c => ({ name: c.name, items: c.items?.length || 0 }))));
 
       // Obtener config actual y convertir a formato items[]
@@ -4527,6 +4572,11 @@ export class ExtensionController {
         mode: importMode,
         destinationType: destinationId === 'root' ? 'root' : 'folder',
         itemCount: importedPagesCount
+      });
+      this.analyticsService?.trackFirstUserContentCreated?.({
+        creationMethod: source,
+        pageType: 'multiple',
+        contentOrigin: 'import'
       });
 
       // Mostrar resultado
@@ -5136,10 +5186,17 @@ export class ExtensionController {
       }
       
         await this.saveConfig(this.config);
-        this.analyticsService.trackPageAdded(data.name, this._detectPageType(safeUrl), {
+        const pageType = this._detectPageType(safeUrl);
+        this.analyticsService.trackPageAdded(data.name, pageType, {
           url: safeUrl,
           creationMethod: 'manual',
-          isEmbedCode
+          isEmbedCode,
+          contentOrigin: 'user'
+        });
+        this.analyticsService?.trackFirstUserContentCreated?.({
+          creationMethod: 'manual',
+          pageType,
+          contentOrigin: 'user'
         });
     });
   }

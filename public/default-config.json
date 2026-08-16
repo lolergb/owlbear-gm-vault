@@ -6,21 +6,25 @@
         {
           "type": "page",
           "name": "Quick Start",
+          "origin": "demo",
           "url": "https://app.notion.com/p/Quick-Start-Beta-3b8d4856c90e8092aa7fd83915f6e55e?source=copy_link"
         },
         {
           "type": "page",
           "name": "Race - Elf",
+          "origin": "demo",
           "url": "https://www.5esrd.com/wp-content/uploads/2016/12/DeanSpencer-elfrogue-reduced.png"
         },
         {
           "type": "page",
           "name": "Enemy — Goblin (Link to token)",
+          "origin": "demo",
           "url": "https://www.5esrd.com/gamemastering/monsters-foes/monsters-by-type/humanoids/goblin/"
         },
         {
           "type": "page",
           "name": "SRD CC 5.1",
+          "origin": "demo",
           "url": "https://media.wizards.com/2023/downloads/dnd/SRD_CC_v5.1.pdf"
         }
       ]
@@ -31,6 +35,7 @@
         {
           "type": "page",
           "name": "Template",
+          "origin": "demo",
           "url": "https://www.notion.so/Session-Notes-Template-2d8d4856c90e806eb8fffd6f055eaf3b"
         }
       ]
@@ -45,6 +50,7 @@
             {
               "type": "page",
               "name": "Scene — The Watched Crossroads",
+              "origin": "demo",
               "url": "https://www.notion.so/Scene-The-Watched-Crossroads-2d8d4856c90e804185b4cf910d4817c1"
             }
           ]
@@ -56,6 +62,7 @@
             {
               "type": "page",
               "name": "Maera",
+              "origin": "demo",
               "url": "https://www.notion.so/Maera-Manos-Secas-2d8d4856c90e8030b014dbbb7bf5306d"
             }
           ]
@@ -68,26 +75,31 @@
         {
           "type": "page",
           "name": "Presentation",
+          "origin": "demo",
           "url": "https://docs.google.com/presentation/d/1oIMHW9qRPMSauD16w6uxTbRBtSZGaTBWC57OnM7MKnU"
         },
         {
           "type": "page",
           "name": "Spreadsheet",
+          "origin": "demo",
           "url": "https://docs.google.com/spreadsheets/d/1YG2RgqGYro4nedTnCiaaUxDHGHoyxSQlLtqUAGua010"
         },
         {
           "type": "page",
           "name": "Document",
+          "origin": "demo",
           "url": "https://docs.google.com/document/d/1tza3tqn9gAFn5ppfm4eR2oz5JSAvXMa0LZ-EpJaQ7n0"
         },
         {
           "type": "page",
           "name": "Video (Vimeo)",
+          "origin": "demo",
           "url": "https://vimeo.com/253905163"
         },
         {
           "type": "page",
           "name": "Video (YouTube)",
+          "origin": "demo",
           "url": "https://www.youtube.com/watch?v=YE7VzlLtp-4"
         }
       ]

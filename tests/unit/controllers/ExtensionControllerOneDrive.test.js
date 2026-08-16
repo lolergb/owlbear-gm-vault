@@ -111,7 +111,8 @@ describe('ExtensionController OneDrive support', () => {
       {
         url: ONEDRIVE_EMBED_URL,
         creationMethod: 'manual',
-        isEmbedCode: true
+        isEmbedCode: true,
+        contentOrigin: 'user'
       }
     );
   });
