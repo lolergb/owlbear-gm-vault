@@ -21,6 +21,8 @@ export class AnalyticsService {
     this.mixpanelEnabled = false;
     this.mixpanelDistinctId = null;
     this.isBeta = false;
+    this.environment = 'unknown';
+    this.deployContext = 'unknown';
   }
 
   /**
@@ -43,13 +45,22 @@ export class AnalyticsService {
     // - Es un deploy-preview de Netlify
     // - Es localhost
     // - No es el dominio de producción
-    const isBeta = 
-      origin.includes('deploy-preview') ||
-      hostname === 'localhost' ||
+    const isDeployPreview = origin.includes('deploy-preview');
+    const isLocal = hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
       hostname.includes('.local');
+    const isBranchDeploy = hostname.includes('--') && hostname.includes('netlify.app');
+    const isBeta = isDeployPreview || isLocal || isBranchDeploy || hostname.includes('beta');
     
     this.isBeta = isBeta;
+    this.environment = isBeta ? 'beta' : 'production';
+    this.deployContext = isDeployPreview
+      ? 'deploy-preview'
+      : isBranchDeploy
+        ? 'branch-deploy'
+        : isLocal
+          ? 'dev'
+          : 'production';
     log(`📊 Entorno detectado: ${isBeta ? 'BETA (sin analytics)' : 'PRODUCCIÓN'}`);
     return isBeta;
   }
@@ -165,6 +176,9 @@ export class AnalyticsService {
       const response = await fetch('/.netlify/functions/get-mixpanel-token');
       if (response.ok) {
         const data = await response.json();
+        this.environment = data.environment || this.environment;
+        this.deployContext = data.deployContext || this.deployContext;
+        this.isBeta = typeof data.isBeta === 'boolean' ? data.isBeta : this.isBeta;
         if (data.enabled && data.token) {
           this.mixpanelToken = data.token;
           this.mixpanelEnabled = true;
@@ -224,7 +238,10 @@ export class AnalyticsService {
           time: Math.floor(Date.now() / 1000),
           $insert_id: Math.random().toString(36).substring(2, 15),
           role: userRole,
-          ...properties
+          ...properties,
+          environment: this.environment,
+          deploy_context: this.deployContext,
+          is_beta: this.isBeta
         }
       };
 
@@ -277,6 +294,18 @@ export class AnalyticsService {
    */
   trackExtensionOpened() {
     this.trackEvent('extension_opened');
+  }
+
+  trackBetaBannerViewed() {
+    return this.trackEvent('beta_banner_viewed');
+  }
+
+  trackBetaBannerClicked() {
+    return this.trackEvent('beta_banner_clicked');
+  }
+
+  trackBetaBannerDismissed() {
+    return this.trackEvent('beta_banner_dismissed');
   }
 
   /**

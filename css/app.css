@@ -1779,6 +1779,41 @@
   }
 
 /* ============================================
+   BETA PROMOTION BANNER
+   ============================================ */
+.beta-promotion-banner {
+  animation: beta-banner-enter var(--transition-normal) ease-out;
+}
+
+.beta-promotion-banner__copy {
+  display: block;
+}
+
+.beta-promotion-banner__title {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--font-line-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.beta-promotion-banner__description {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.beta-promotion-banner__cta {
+  color: var(--color-accent-primary-contrast);
+  text-decoration: none;
+}
+
+@keyframes beta-banner-enter {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ============================================
    COOKIE CONSENT BANNER
    ============================================ */
 .cookie-consent-banner {

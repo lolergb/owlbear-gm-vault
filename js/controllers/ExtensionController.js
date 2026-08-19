@@ -32,6 +32,7 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js';
 // UI
 import { ModalManager } from '../ui/ModalManager.js';
 import { EventHandlers } from '../ui/EventHandlers.js';
+import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
 
 /**
  * Controlador principal de la extensión
@@ -70,6 +71,12 @@ export class ExtensionController {
     // UI Components
     this.modalManager = new ModalManager();
     this.eventHandlers = new EventHandlers();
+    this.betaPromotionBanner = new BetaPromotionBanner({
+      analyticsService: this.analyticsService
+    });
+    this.analyticsInitPromise = null;
+    this.betaPromotionTask = null;
+    this.betaPromotionCancelled = false;
 
     // Elementos DOM
     this.pagesContainer = null;
@@ -91,6 +98,7 @@ export class ExtensionController {
     console.log('🚀 Inicializando ExtensionController...');
     
     this.OBR = OBR;
+    this.betaPromotionCancelled = false;
     
     // Debug: verificar estructura de OBR
     console.log('📦 OBR disponible:', !!OBR);
@@ -177,6 +185,7 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
+      this._scheduleBetaPromotion();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -1661,6 +1670,7 @@ export class ExtensionController {
    */
   cleanup() {
     log('🧹 Limpiando recursos...');
+    this.betaPromotionCancelled = true;
     
     // Detener intervals
     if (this.heartbeatInterval) {
@@ -1675,8 +1685,39 @@ export class ExtensionController {
     
     // Limpiar broadcast
     this.broadcastService.cleanup();
+    this.betaPromotionBanner.remove();
     
     log('✅ Recursos limpiados');
+  }
+
+  /**
+   * Programa la promoción sin bloquear el flujo principal de inicialización.
+   * @private
+   */
+  _scheduleBetaPromotion() {
+    this.betaPromotionTask = this._showBetaPromotion();
+  }
+
+  /**
+   * Confirma el rol directamente con Owlbear y falla de forma segura.
+   * @private
+   */
+  async _showBetaPromotion() {
+    try {
+      const role = await this.OBR?.player?.getRole?.();
+      if (role !== 'GM' || this.betaPromotionCancelled) return false;
+
+      await this.analyticsInitPromise;
+      if (this.betaPromotionCancelled) return false;
+
+      return this.betaPromotionBanner.show({
+        isGM: true,
+        userId: this.playerId
+      });
+    } catch (error) {
+      logWarn('No se pudo verificar el rol para mostrar la promoción beta:', error);
+      return false;
+    }
   }
 
   // ============================================
@@ -1730,7 +1771,7 @@ export class ExtensionController {
     // Analytics Service
     this.analyticsService.setOBR(this.OBR);
     // Iniciar analytics (mostrará banner de cookies si es necesario)
-    this.analyticsService.init();
+    this.analyticsInitPromise = this.analyticsService.init();
 
     // Notion Renderer - config se actualizará después de cargarlo
     this.notionRenderer.setDependencies({
@@ -7587,4 +7628,3 @@ export class ExtensionController {
 }
 
 export default ExtensionController;
-
