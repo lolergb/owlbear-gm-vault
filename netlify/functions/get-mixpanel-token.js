@@ -3,6 +3,21 @@
  * The token is stored in Netlify environment variable MIXPANEL_TOKEN
  */
 
+function getDeployMetadata() {
+  const knownContexts = new Set(['production', 'deploy-preview', 'branch-deploy', 'dev']);
+  const rawContext = String(process.env.CONTEXT || '').toLowerCase();
+  const deployContext = knownContexts.has(rawContext) ? rawContext : 'unknown';
+  const environment = deployContext === 'production'
+    ? 'production'
+    : deployContext === 'unknown' ? 'unknown' : 'beta';
+
+  return {
+    environment,
+    deployContext,
+    isBeta: environment === 'beta'
+  };
+}
+
 exports.handler = async (event, context) => {
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -30,6 +45,7 @@ exports.handler = async (event, context) => {
 
   try {
     const token = process.env.MIXPANEL_TOKEN;
+    const deployMetadata = getDeployMetadata();
     
     if (!token) {
       return {
@@ -38,7 +54,7 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
         },
-        body: JSON.stringify({ token: null, enabled: false })
+        body: JSON.stringify({ token: null, enabled: false, ...deployMetadata })
       };
     }
     
@@ -50,7 +66,7 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, OPTIONS'
       },
-      body: JSON.stringify({ token, enabled: true })
+      body: JSON.stringify({ token, enabled: true, ...deployMetadata })
     };
   } catch (error) {
     console.error('Error getting Mixpanel token:', error);
@@ -63,4 +79,3 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
