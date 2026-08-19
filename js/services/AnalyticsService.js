@@ -383,6 +383,31 @@ export class AnalyticsService {
     this.trackEvent('extension_opened');
   }
 
+  trackAnnouncementViewed({ campaignId, campaignVersion, role } = {}) {
+    this.trackEvent('announcement_viewed', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
+  trackAnnouncementAction({ campaignId, campaignVersion, actionId, role } = {}) {
+    this.trackEvent('announcement_action_clicked', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      action_id: String(actionId || 'unknown').slice(0, 80),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
+  trackAnnouncementDismissed({ campaignId, campaignVersion, role } = {}) {
+    this.trackEvent('announcement_dismissed', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
   /**
    * Track page view
    * @param {string} pageName - Nombre de la página

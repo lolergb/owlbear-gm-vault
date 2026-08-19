@@ -1889,6 +1889,60 @@
   }
 }
 
+/* ============================================
+   PRODUCT ANNOUNCEMENT
+   ============================================ */
+.announcement-banner {
+  animation: announcement-banner-enter var(--transition-normal);
+}
+
+.announcement-banner__copy {
+  min-width: 0;
+}
+
+.announcement-banner__title {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--font-line-sm);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.announcement-banner__message {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.announcement-banner__action {
+  color: var(--color-accent-primary-contrast);
+  text-decoration: none;
+}
+
+.announcement-banner__action.btn--ghost {
+  color: var(--color-text-primary);
+}
+
+@keyframes announcement-banner-enter {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-banner {
+    animation: none;
+  }
+}
+
 /* Animación pulse para iconos de carga (reloj) */
 @keyframes pulse {
   0%, 100% {

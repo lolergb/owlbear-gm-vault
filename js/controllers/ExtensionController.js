@@ -61,6 +61,8 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260819-1';
+import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
  * Controlador principal de la extensión
@@ -100,6 +102,11 @@ export class ExtensionController {
     // UI Components
     this.modalManager = new ModalManager();
     this.eventHandlers = new EventHandlers();
+    this.announcementBanner = new AnnouncementBanner({
+      analyticsService: this.analyticsService
+    });
+    this.announcementTask = null;
+    this.announcementCancelled = false;
 
     // Elementos DOM
     this.pagesContainer = null;
@@ -119,6 +126,7 @@ export class ExtensionController {
     console.log('🚀 Inicializando ExtensionController...');
     
     this.OBR = OBR;
+    this.announcementCancelled = false;
     
     // Debug: verificar estructura de OBR
     console.log('📦 OBR disponible:', !!OBR);
@@ -212,6 +220,7 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
+      this._scheduleAnnouncement();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -2102,6 +2111,7 @@ export class ExtensionController {
    */
   cleanup() {
     log('🧹 Limpiando recursos...');
+    this.announcementCancelled = true;
     
     if (this.roleChangeUnsubscribe) {
       this.roleChangeUnsubscribe();
@@ -2110,8 +2120,39 @@ export class ExtensionController {
     
     // Limpiar broadcast
     this.broadcastService.cleanup();
+    this.announcementBanner.remove();
     
     log('✅ Recursos limpiados');
+  }
+
+  /**
+   * Starts announcement evaluation without extending the initialization path.
+   * @private
+   */
+  _scheduleAnnouncement() {
+    this.announcementTask = this._showConfiguredAnnouncement();
+  }
+
+  /**
+   * Verifies the current role directly with Owlbear and fails closed.
+   * @private
+   */
+  async _showConfiguredAnnouncement(campaign = ACTIVE_ANNOUNCEMENT_CAMPAIGN) {
+    if (!campaign || this.announcementCancelled) return false;
+
+    try {
+      const role = await this.OBR?.player?.getRole?.();
+      if (!role || this.announcementCancelled) return false;
+
+      return this.announcementBanner.show({
+        campaign,
+        role,
+        userId: this.playerId
+      });
+    } catch (error) {
+      logWarn('No se pudo verificar el rol para mostrar el aviso:', error);
+      return false;
+    }
   }
 
   // ============================================
