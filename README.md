@@ -256,11 +256,11 @@ You can link pages directly to tokens/characters in the scene:
 
 - **Each user has their own token:** Configure your token once and use it in all rooms
 - **Each room is independent:** Pages are configured per room, but the token is shared
-- **Private token:** Your token is stored locally in your browser, only you can see it
+- **Private token:** Your token is stored locally and sent to the same-origin proxy only in request headers; it is never placed in a URL
 - **Notion URLs:** You can use private pages (they don't need to be public) if you share them with your integration
 - **Icons:** Pages automatically show their Notion icon
 - **Images:** Click on any image to view it at full size
-- **Change token:** Click **🔑** → Delete Token to go back to using the server token (if configured)
+- **Change token:** Click **🔑** → Delete Token to remove your personal connection; the built-in demos can still use the dedicated demo integration when configured
 - **Player visibility:** By default, all pages are hidden from players. Use the **👁️** button to make pages visible
 - **Content sharing:** Players don't need a Notion token to view pages shared by the GM
 - **GM must be online:** The GM needs to have the extension open for players to receive shared content
@@ -326,13 +326,19 @@ We track the following events to measure usage and identify popular features:
 - `token_configured` - When you save your Notion token
 - `token_removed` - When you remove your Notion token
 - `json_imported` - When you import JSON configuration (includes item count)
+- `vault_import_completed` - When an import finishes (source, mode, root/folder destination and item count; no file, URL or folder names)
+- `vault_import_failed` - When an import fails (source, stage and technical error type; no content values)
 - `json_exported` - When you export JSON configuration (includes item count)
 
 **Sharing & Integration:**
 - `image_shared` - When GM shares an image with players
+- `image_share_completed` - Delivery outcome for a live image share (recipient, delivered, failed and unresolved counts)
+- `image_viewer_opened` - When the responsive image viewer opens (detail or shared context)
+- `image_viewer_zoom_changed` - When a GM or player switches between Fit and 100%
 - `visibility_toggled` - When GM changes page visibility
 - `page_linked_to_token` - When GM links a page to a scene token
 - `page_viewed_from_token` - When viewing a page from token context menu
+- `token_page_search_used` - Use of search while linking a page to a token (query length and result counts only; never the query text)
 
 **Error & Limits:**
 - `storage_limit_reached` - When localStorage is full
@@ -345,6 +351,8 @@ We track the following events to measure usage and identify popular features:
 Each event includes:
 - **Event name** - The action performed
 - **User role** - Whether you're a GM or Player
+- **Environment** - Whether the event came from beta or production
+- **Deploy context** - Production, deploy preview or branch deploy
 - **Distinct ID** - A unique identifier (your Owlbear player ID or an anonymous ID)
 - **Timestamp** - When the event occurred
 - **Event-specific properties** - Relevant context (e.g., page name, page type)

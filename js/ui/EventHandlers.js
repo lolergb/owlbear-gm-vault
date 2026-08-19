@@ -4,7 +4,8 @@
  * Centraliza el manejo de eventos de la interfaz.
  */
 
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.js?v=20260722-4';
+import { escapeHtml, sanitizeImageUrl } from '../utils/htmlSecurity.js?v=20260722-4';
 
 /**
  * Clase para manejar eventos de la UI
@@ -357,7 +358,7 @@ export class EventHandlers {
       title: 'Export Configuration',
       content: `
         <div class="export-container">
-          <textarea readonly class="export-textarea">${json}</textarea>
+          <textarea readonly class="export-textarea">${escapeHtml(json)}</textarea>
           <button class="copy-button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
             Copy to Clipboard
           </button>
@@ -412,12 +413,15 @@ export class EventHandlers {
   handleOpenImageModal(imageUrl, caption = '') {
     if (!this.modalManager) return;
 
+    const safeImageUrl = sanitizeImageUrl(imageUrl);
+    if (!safeImageUrl) return;
+
     this.modalManager.showCustom({
       title: caption || 'Image',
       className: 'image-modal',
       content: `
         <div class="image-modal-content">
-          <img src="${imageUrl}" alt="${caption}" />
+          <img src="${escapeHtml(safeImageUrl)}" alt="${escapeHtml(caption)}" />
         </div>
       `
     });
@@ -425,4 +429,3 @@ export class EventHandlers {
 }
 
 export default EventHandlers;
-

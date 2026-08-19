@@ -56,7 +56,7 @@ body.role-player .notion-gm-only {
   justify-content: center;
 }
 
-.notion-page-cover .notion-image-container img,
+.notion-page-cover .notion-image-container > img,
 .notion-cover-image {
   width: 100%;
   height: auto;
@@ -312,7 +312,8 @@ body.role-player .notion-gm-only {
   border-radius: var(--radius-sm);
   padding: var(--font-size-base);
   margin: var(--font-size-base) 0;
-  overflow-x: auto;
+  max-width: 100%;
+  overflow-x: hidden;
   font-family: var(--font-family-mono);
   font-size: 85%;
   line-height: 1.5;
@@ -320,7 +321,9 @@ body.role-player .notion-gm-only {
 
 .notion-content .notion-code code {
   color: var(--color-text-primary);
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .notion-table-wrapper {

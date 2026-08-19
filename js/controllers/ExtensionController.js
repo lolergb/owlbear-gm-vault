@@ -4,34 +4,65 @@
  * Orquesta todos los servicios, renderers y componentes de la aplicación.
  */
 
-import { log, logError, logWarn, setOBRReference, setGetTokenFunction, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js';
-import { filterVisiblePages } from '../utils/helpers.js';
-import { BROADCAST_CHANNEL_REQUEST_FULL_VAULT, BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, OWNER_TIMEOUT, METADATA_KEY } from '../utils/constants.js';
+import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-4';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-4';
+import {
+  BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
+  BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
+  METADATA_KEY
+} from '../utils/constants.js?v=20260815-1';
 import { iconHtml } from '../utils/iconHelper.js';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
+import {
+  escapeHtml,
+  normalizePageUrlInput,
+  sanitizeEmbeddedHtml,
+  sanitizeExternalIframeUrl,
+  sanitizeGoogleEmbedUrl,
+  sanitizeHttpUrl,
+  sanitizeImageUrl,
+  sanitizeNotionHtml,
+  sanitizeOneDriveEmbedUrl,
+  sanitizeVideoEmbedUrl
+} from '../utils/htmlSecurity.js?v=20260816-1';
+import {
+  PAGE_TITLE_FALLBACK,
+  getUsablePageTitle,
+  repairPageTitle,
+  resolvePageTitle
+} from '../utils/pageTitle.js';
 
 // Models
 import { Page } from '../models/Page.js';
 import { Category } from '../models/Category.js';
 
 // Services
-import { CacheService } from '../services/CacheService.js';
-import { StorageService } from '../services/StorageService.js';
-import { NotionService } from '../services/NotionService.js';
-import { BroadcastService } from '../services/BroadcastService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js';
-import { getImageCacheService } from '../services/ImageCacheService.js';
+import { CacheService } from '../services/CacheService.js?v=20260812-1';
+import { StorageService } from '../services/StorageService.js?v=20260812-1';
+import { NotionService } from '../services/NotionService.js?v=20260812-1';
+import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
+import { shareImageWithPlayers } from '../services/ImageShareService.js';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260816-1';
+import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
+import {
+  getVaultState,
+  markContentOrigin,
+  normalizeContentOrigin
+} from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js';
-import { UIRenderer } from '../renderers/UIRenderer.js';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260816-1';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 
 // UI
-import { ModalManager } from '../ui/ModalManager.js';
-import { EventHandlers } from '../ui/EventHandlers.js';
+import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
+import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260819-1';
+import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
  * Controlador principal de la extensión
@@ -46,6 +77,7 @@ export class ExtensionController {
     this.isCoGM = false; // Co-GM (GM promovido, solo lectura)
     this.roomId = null;
     this.playerId = null;
+    this.connectionId = null;
     this.playerName = null;
     this.config = null;
     this.isInitialized = false;
@@ -70,16 +102,19 @@ export class ExtensionController {
     // UI Components
     this.modalManager = new ModalManager();
     this.eventHandlers = new EventHandlers();
+    this.announcementBanner = new AnnouncementBanner({
+      analyticsService: this.analyticsService
+    });
+    this.announcementTask = null;
+    this.announcementCancelled = false;
 
     // Elementos DOM
     this.pagesContainer = null;
     this.contentContainer = null;
 
-    // Intervals
-    this.heartbeatInterval = null;
-    
     // Función para desuscribirse de cambios de rol (usa Player.onChange en vez de polling)
     this.roleChangeUnsubscribe = null;
+    this._coGMSyncPromise = null;
   }
 
   /**
@@ -91,6 +126,7 @@ export class ExtensionController {
     console.log('🚀 Inicializando ExtensionController...');
     
     this.OBR = OBR;
+    this.announcementCancelled = false;
     
     // Debug: verificar estructura de OBR
     console.log('📦 OBR disponible:', !!OBR);
@@ -100,7 +136,6 @@ export class ExtensionController {
     
     // Configurar referencias
     setOBRReference(OBR);
-    setGetTokenFunction(() => this.storageService.getUserToken());
     
     // Configurar servicios
     this._setupServices();
@@ -116,6 +151,15 @@ export class ExtensionController {
     
     // Obtener configuración
     await this._loadConfig();
+
+    // Analytics starts only after room and config are known so every event can
+    // distinguish an example vault from a configured one. The room ID remains
+    // local; Mixpanel receives only a generated anonymous vault identifier.
+    this.analyticsService.setVaultContext({
+      roomId: this.roomId,
+      vaultState: getVaultState(this.config)
+    });
+    await this.analyticsService.init();
     
     // Configurar UI
     this._setupUI(options);
@@ -125,9 +169,8 @@ export class ExtensionController {
     
     // Configurar broadcast según rol
     if (this.isGM && !this.isCoGM) {
-      // Master GM: establecer ownership e iniciar heartbeat
+      // Master GM: establecer ownership y limpiar metadata legado.
       await this._establishVaultOwnership();
-      this._startHeartbeat();
       this._setupGMBroadcast();
     } else if (this.isCoGM) {
       // Co-GM: escuchar actualizaciones como player pero también responder a solicitudes de contenido
@@ -177,6 +220,7 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
+      this._scheduleAnnouncement();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -284,10 +328,13 @@ export class ExtensionController {
     const html = sessionStorage.getItem(contentKey);
     
     if (html && notionContent) {
-      notionContent.innerHTML = html;
+      // Todo HTML que cruza sessionStorage vuelve a sanearse al insertarlo.
+      // El tipo declarado en una URL o broadcast no es una frontera de confianza.
+      notionContent.innerHTML = sanitizeEmbeddedHtml(html);
       
       // Remover botones de compartir (el player no debe verlos)
       notionContent.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
+      this._attachImageHandlers(notionContent);
       
       // Limpiar el sessionStorage después de usar
       sessionStorage.removeItem(contentKey);
@@ -361,6 +408,8 @@ export class ExtensionController {
         await this._renderVideoPage(page);
       } else if (page.isGoogleDoc()) {
         this._renderGoogleDocPage(page);
+      } else if (page.isOneDrive()) {
+        this._renderOneDrivePage(page);
       } else {
         this._renderExternalPage(page);
       }
@@ -373,7 +422,7 @@ export class ExtensionController {
           <div class="empty-state">
             <div class="empty-state-icon">⚠️</div>
             <p class="empty-state-text">Error loading content</p>
-            <p class="empty-state-hint">${e.message}</p>
+            <p class="empty-state-hint">${escapeHtml(e.message)}</p>
           </div>
         `;
       }
@@ -430,8 +479,15 @@ export class ExtensionController {
                      page.isNotionPage() ? 'notion' : 
                      page.isImage() ? 'image' : 
                      page.isVideo() ? 'video' : 
-                     page.isGoogleDoc() ? 'google_doc' : 'iframe';
-    this.analyticsService.trackPageView(page.name, pageType);
+                     page.isGoogleDoc() ? 'google_doc' :
+                     page.isOneDrive() ? 'onedrive' : 'iframe';
+    this.analyticsService.trackPageView(page.name, pageType, {
+      contentOrigin: page.origin,
+      url: page.url
+    });
+    if (page.origin === 'demo') {
+      this.analyticsService.trackDemoContentOpened(pageType);
+    }
 
     // Mostrar el contenedor de Notion y ocultar la lista
     const notionContainer = document.getElementById('notion-container');
@@ -447,7 +503,7 @@ export class ExtensionController {
     if (pageTitle) {
       // Añadir indicador de visibilidad si está compartida con players
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      pageTitle.innerHTML = page.name + visibilityIndicator;
+      pageTitle.innerHTML = escapeHtml(resolvePageTitle(page.name)) + visibilityIndicator;
     }
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
@@ -490,6 +546,8 @@ export class ExtensionController {
         await this._renderVideoPage(page);
       } else if (page.isGoogleDoc()) {
         this._renderGoogleDocPage(page);
+      } else if (page.isOneDrive()) {
+        this._renderOneDrivePage(page);
       } else {
         this._renderExternalPage(page);
       }
@@ -503,7 +561,7 @@ export class ExtensionController {
           <div class="empty-state">
             <div class="empty-state-icon">⚠️</div>
             <p class="empty-state-text">Error loading page</p>
-            <p class="empty-state-hint">${e.message}</p>
+            <p class="empty-state-hint">${escapeHtml(e.message)}</p>
           </div>
         `;
       }
@@ -513,36 +571,45 @@ export class ExtensionController {
   /**
    * Guarda la configuración actual
    * @param {Object} config - Configuración a guardar
+   * @param {Object} [options] - Opciones de persistencia
+   * @param {boolean} [options.render=true] - Si debe reconstruir la interfaz
    */
-  async saveConfig(config) {
+  async saveConfig(config, { render: shouldRender = true } = {}) {
     log('💾 Guardando configuración...');
 
     // Parsear el config para convertir formato items[] a formato interno si es necesario
     const configJson = config.toJSON ? config.toJSON() : config;
     this.config = this.configParser.parse(configJson);
     this.configBuilder = new ConfigBuilder(this.config);
+    this.uiRenderer?.setConfig?.(this.config);
 
     // Guardar en localStorage (guardamos el JSON parseado con formato legacy + order)
-    this.storageService.saveLocalConfig(this.config.toJSON ? this.config.toJSON() : this.config);
+    const localSaved = this.storageService.saveLocalConfig(
+      this.config.toJSON ? this.config.toJSON() : this.config
+    );
+    let saved = localSaved !== false;
 
-    // Si es Master GM, guardar en room metadata y broadcast
+    // El vault persiste localmente; la sala se sincroniza por broadcast.
     if (this.isGM && !this.isCoGM) {
       const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
-      await this.storageService.saveRoomConfig(configToSave);
-      
-      // Broadcast páginas visibles para Players
-      const visibleConfig = filterVisiblePages(configToSave);
-      this.broadcastService.broadcastVisiblePages(visibleConfig);
-      
-      // Broadcast vault completo para Co-GMs
-      await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-        config: configToSave
-      });
-      log('📤 Vault completo enviado a Co-GMs');
+
+      // El vault completo del GM vive en localStorage. Los canales de sala son
+      // sincronizaciones auxiliares y no deben revertir el estado visual local.
+      if (saved) {
+        const visibleConfig = filterVisiblePages(configToSave);
+        await this.broadcastService.broadcastVisiblePages(visibleConfig);
+
+        // Avisar sin incluir ningún dato privado. Cada Co-GM vuelve a solicitar
+        // el vault mediante su propio intercambio ECDH cifrado y fragmentado.
+        await this.broadcastService.notifyFullVaultUpdated();
+      }
     }
 
-    // Re-renderizar
-    await this.render();
+    if (shouldRender) {
+      await this.render();
+    }
+
+    return saved;
   }
 
   /**
@@ -630,13 +697,13 @@ export class ExtensionController {
    * @private
    */
   async _updatePageVisibility(page, categoryPath, pageIndex, newVisibility) {
-    if (!this.config || !this.isGM) return;
+    if (!this.config || !this.isGM) return false;
 
     log('👁️ Actualizando visibilidad de página:', page.name, '->', newVisibility);
 
     // Navegar a la categoría correcta
     const currentLevel = this._navigateToCategory(categoryPath);
-    if (!currentLevel) return;
+    if (!currentLevel) return false;
 
     // Encontrar y actualizar la página (por ID primero, luego por nombre)
     const pages = currentLevel.pages || [];
@@ -649,13 +716,43 @@ export class ExtensionController {
     }
     
     if (pageToUpdate) {
+      const previousVisibility = pageToUpdate.visibleToPlayers === true;
       pageToUpdate.visibleToPlayers = newVisibility;
-      await this.saveConfig(this.config);
+      let saved = false;
+      try {
+        saved = await this.saveConfig(this.config, { render: false });
+      } catch (error) {
+        logError('Error guardando la visibilidad de la página:', error);
+      }
+
+      if (!saved) {
+        pageToUpdate.visibleToPlayers = previousVisibility;
+        const rollbackPage = page.id
+          ? this.config?.findPageById?.(page.id)
+          : this.config?.findPageByName?.(page.name);
+        if (rollbackPage) rollbackPage.visibleToPlayers = previousVisibility;
+        page.visibleToPlayers = previousVisibility;
+        try {
+          await this.saveConfig(this.config, { render: false });
+        } catch (error) {
+          logError('Error restaurando la visibilidad anterior:', error);
+        }
+        return false;
+      }
+
+      page.visibleToPlayers = newVisibility;
+
+      if (!newVisibility) {
+        const contentId = pageToUpdate.getNotionPageId?.() || pageToUpdate.id;
+        await this.broadcastService.invalidatePage(contentId);
+      }
       
       // Actualizar tokens vinculados a esta página
       await this._updateLinkedTokensVisibility(page.id, page.url, newVisibility);
+      return true;
     } else {
       logError('No se encontró la página:', page.name);
+      return false;
     }
   }
   
@@ -694,8 +791,50 @@ export class ExtensionController {
    * @private
    */
   async _handleVisibilityChange(page, categoryPath, pageIndex, visible) {
-    await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
-    this.analyticsService.trackVisibilityToggle(page.name, visible);
+    try {
+      const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
+      if (updated) {
+        this.uiRenderer?.updatePageVisibility?.(page, visible);
+        this._updateCurrentPageVisibility(page, visible);
+        this.analyticsService.trackVisibilityToggle(page.name, visible);
+        this._showFeedback(visible
+          ? '👁️ Page visible to players'
+          : '🙈 Page hidden from players');
+      } else {
+        this._showFeedback('❌ Could not update page visibility');
+      }
+      return updated;
+    } catch (error) {
+      this._showFeedback('❌ Could not update page visibility');
+      throw error;
+    }
+  }
+
+  /**
+   * Mantiene sincronizados los indicadores de la página abierta sin renderizarla de nuevo.
+   * @private
+   */
+  _updateCurrentPageVisibility(page, visible) {
+    const matchesCurrentPage = page?.id
+      ? this.currentPage?.id === page.id
+      : this.currentPage?.name === page?.name &&
+        (this.currentPage?.url || '') === (page?.url || '');
+    if (!matchesCurrentPage) return;
+
+    this.currentPage.visibleToPlayers = visible;
+    const titleElements = [
+      document.getElementById('page-title'),
+      document.getElementById('notion-content')?.querySelector('.notion-page-title')
+    ].filter(Boolean);
+
+    titleElements.forEach(titleElement => {
+      const indicator = titleElement.querySelector('.visibility-indicator');
+      if (visible && !indicator) {
+        titleElement.insertAdjacentHTML('beforeend', this._getVisibilityIndicator());
+      } else if (!visible && indicator) {
+        indicator.remove();
+      }
+    });
   }
 
   /**
@@ -704,6 +843,15 @@ export class ExtensionController {
    */
   async _handlePageEdit(page, categoryPath, pageIndex, newData) {
     if (!this.config || !this.isGM) return;
+
+    let safeUrl;
+    if (newData.url !== undefined) {
+      safeUrl = normalizePageUrlInput(newData.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return false;
+      }
+    }
 
     log('✏️ Editando página:', page.name, '->', newData);
 
@@ -722,9 +870,15 @@ export class ExtensionController {
     }
     
     if (pageToUpdate) {
+      const previousOrigin = pageToUpdate.origin;
       // Actualizar todos los campos
       if (newData.name !== undefined) pageToUpdate.name = newData.name;
-      if (newData.url !== undefined) pageToUpdate.url = newData.url;
+      if (safeUrl !== undefined) {
+        pageToUpdate.url = safeUrl;
+        // Replacing an example URL is another valid path to creating the GM's
+        // first piece of content.
+        pageToUpdate.origin = normalizeContentOrigin(undefined, safeUrl);
+      }
       if (newData.blockTypes !== undefined) pageToUpdate.blockTypes = newData.blockTypes;
       if (newData.visibleToPlayers !== undefined) pageToUpdate.visibleToPlayers = newData.visibleToPlayers;
       if (newData.icon !== undefined) pageToUpdate.icon = newData.icon;
@@ -734,9 +888,18 @@ export class ExtensionController {
       
       await this.saveConfig(this.config);
       this.analyticsService.trackPageEdited(newData.name || page.name);
+      if (previousOrigin === 'demo' && pageToUpdate.origin !== 'demo') {
+        this.analyticsService?.trackFirstUserContentCreated?.({
+          creationMethod: 'manual',
+          pageType: this._detectPageType(pageToUpdate.url),
+          contentOrigin: 'user'
+        });
+      }
+      return true;
     } else {
       logError('No se encontró la página:', page.name);
     }
+    return false;
   }
 
   /**
@@ -1407,10 +1570,24 @@ export class ExtensionController {
     
     this._showModalForm('Add Page', [
       { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Page name' },
-      { name: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://...' },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        required: true,
+        placeholder: 'https://... or <iframe ...>',
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
     ], async (data) => {
       if (!data.name || !data.url) return;
+
+      const isEmbedCode = /^<iframe\b/i.test(String(data.url).trim());
+      const safeUrl = normalizePageUrlInput(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return;
+      }
 
       const currentLevel = this._navigateToCategory(categoryPath);
       if (!currentLevel) {
@@ -1423,7 +1600,7 @@ export class ExtensionController {
       console.log('📄 ADD PAGE - Nivel destino:', currentLevel.name, 'ID:', currentLevel.id);
       
       // Crear instancia de Page con todos los campos (genera ID automático)
-      const newPage = new Page(data.name, data.url, {
+      const newPage = new Page(data.name, safeUrl, {
         visibleToPlayers: data.visibleToPlayers || false,
         blockTypes: null,
         icon: null,
@@ -1446,6 +1623,18 @@ export class ExtensionController {
       currentLevel.order.push({ type: 'page', index: newIndex });
       
       await this.saveConfig(this.config);
+      const pageType = this._detectPageType(safeUrl);
+      this.analyticsService?.trackPageAdded?.(data.name, pageType, {
+        url: safeUrl,
+        creationMethod: 'manual',
+        isEmbedCode,
+        contentOrigin: 'user'
+      });
+      this.analyticsService?.trackFirstUserContentCreated?.({
+        creationMethod: 'manual',
+        pageType,
+        contentOrigin: 'user'
+      });
     });
   }
 
@@ -1500,9 +1689,13 @@ export class ExtensionController {
    * @param {string} title - Título del modal
    * @param {Array} fields - Campos del formulario
    * @param {Function} onSubmit - Callback al enviar
+   * @param {Object} [options] - Opciones visuales del formulario
+   * @param {string} [options.submitText='Save'] - Texto del botón principal
+   * @param {string} [options.cancelText='Cancel'] - Texto del botón secundario
    * @private
    */
-  _showModalForm(title, fields, onSubmit, onCancel = null) {
+  _showModalForm(title, fields, onSubmit, onCancel = null, options = {}) {
+    const { submitText = 'Save', cancelText = 'Cancel' } = options;
     // Crear overlay
     const overlay = document.createElement('div');
     overlay.id = 'modal-overlay';
@@ -1514,75 +1707,133 @@ export class ExtensionController {
 
     // Generar HTML del formulario
     const fieldsHtml = fields.map(field => {
+      const safeName = escapeHtml(field.name);
+      const safeLabel = escapeHtml(field.label);
+      const safePlaceholder = escapeHtml(field.placeholder || '');
+      const safeHelpUrl = field.helpUrl ? sanitizeHttpUrl(field.helpUrl) : '';
+      const helpHtml = field.helpText ? `
+        <p class="form__help">
+          ${escapeHtml(field.helpText)}
+          ${safeHelpUrl && field.helpLinkText ? `<a href="${escapeHtml(safeHelpUrl)}" class="link" target="_blank" rel="noopener noreferrer">${escapeHtml(field.helpLinkText)}</a>` : ''}
+        </p>
+      ` : '';
       if (field.type === 'checkbox') {
         return `
-          <div class="form__field" data-field-name="${field.name}">
+          <div class="form__field" data-field-name="${safeName}">
             <label class="form__checkbox-label">
               <input 
                 type="checkbox" 
-                id="field-${field.name}" 
-                name="${field.name}"
+                id="field-${safeName}"
+                name="${safeName}"
                 class="checkbox"
                 ${field.value ? 'checked' : ''}
               />
-              <span>${field.label}</span>
+              <span>${safeLabel}</span>
             </label>
           </div>
         `;
       } else if (field.type === 'select') {
+        const options = field.options || [];
+        const selectId = `field-${safeName}`;
+        const searchId = `field-${safeName}-search`;
+        const statusId = `field-${safeName}-search-status`;
+        const listboxId = `field-${safeName}-listbox`;
+        const selectLabelId = `field-${safeName}-label`;
+        const visibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
+
         return `
-          <div class="form__field" data-field-name="${field.name}">
-            <label class="form__label">${field.label}${field.required ? ' *' : ''}</label>
+          <div class="form__field" data-field-name="${safeName}">
+            ${field.searchable ? `
+              <label class="form__label" for="${searchId}">${escapeHtml(field.searchLabel || `Search ${field.label}`)}</label>
+              <input
+                type="search"
+                id="${searchId}"
+                class="input"
+                placeholder="${escapeHtml(field.searchPlaceholder || 'Search options...')}"
+                aria-label="${escapeHtml(field.searchLabel || `Search ${field.label}`)}"
+                aria-controls="${listboxId}"
+                aria-describedby="${statusId}"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <span
+                id="${statusId}"
+                class="form__help form__search-status"
+                role="status"
+                aria-live="polite"
+              ></span>
+            ` : ''}
+            <label
+              class="form__label"
+              id="${selectLabelId}"
+              ${field.searchable ? '' : `for="${selectId}"`}
+            >${safeLabel}${field.required ? ' *' : ''}</label>
             <select 
-              id="field-${field.name}" 
-              name="${field.name}"
-              class="select"
+              id="${selectId}"
+              name="${safeName}"
+              class="select${field.searchable ? ' select--searchable-source' : ''}"
+              ${field.searchable ? `data-searchable-select="true" size="${visibleOptions}" hidden aria-hidden="true" tabindex="-1"` : ''}
               ${field.required ? 'required' : ''}
             >
-              ${(field.options || []).map(opt => 
-                `<option value="${opt.value}" ${field.value === opt.value ? 'selected' : ''}>${opt.label}</option>`
+              ${options.map(opt =>
+                `<option value="${escapeHtml(opt.value)}" ${field.value === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`
               ).join('')}
             </select>
+            ${field.searchable ? `
+              <div
+                id="${listboxId}"
+                class="select select--searchable"
+                role="listbox"
+                tabindex="0"
+                aria-labelledby="${selectLabelId}"
+                aria-describedby="${statusId}"
+                ${field.required ? 'aria-required="true"' : ''}
+              ></div>
+            ` : ''}
           </div>
         `;
       } else if (field.type === 'textarea') {
         return `
-          <div class="form__field" data-field-name="${field.name}">
-            <label class="form__label">${field.label}${field.required ? ' *' : ''}</label>
+          <div class="form__field" data-field-name="${safeName}">
+            <label class="form__label">${safeLabel}${field.required ? ' *' : ''}</label>
             <textarea 
-              id="field-${field.name}" 
-              name="${field.name}"
+              id="field-${safeName}"
+              name="${safeName}"
               class="textarea"
               ${field.required ? 'required' : ''}
-              placeholder="${field.placeholder || ''}"
-            >${field.value || ''}</textarea>
+              placeholder="${safePlaceholder}"
+            >${escapeHtml(field.value || '')}</textarea>
           </div>
         `;
       } else {
+        const safeInputType = new Set(['text', 'url', 'email', 'password', 'search', 'number']).has(field.type)
+          ? field.type
+          : 'text';
         return `
-          <div class="form__field" data-field-name="${field.name}">
-            <label class="form__label">${field.label}${field.required ? ' *' : ''}</label>
+          <div class="form__field" data-field-name="${safeName}">
+            <label class="form__label">${safeLabel}${field.required ? ' *' : ''}</label>
             <input 
-              type="${field.type || 'text'}" 
-              id="field-${field.name}" 
-              name="${field.name}"
+              type="${safeInputType}"
+              id="field-${safeName}"
+              name="${safeName}"
               class="input"
               ${field.required ? 'required' : ''}
-              placeholder="${field.placeholder || ''}"
-              value="${field.value || ''}"
+              placeholder="${safePlaceholder}"
+              value="${escapeHtml(field.value || '')}"
             />
+            ${helpHtml}
           </div>
         `;
       }
     }).join('');
 
     modal.innerHTML = `
-      <h2 class="modal__title">${title}</h2>
+      <h2 class="modal__title">${escapeHtml(title)}</h2>
       <form id="modal-form" class="form">
         ${fieldsHtml}
         <div class="form__actions">
-          <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">Cancel</button>
-          <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">Save</button>
+          <button type="button" id="modal-cancel" class="btn btn--ghost btn--flex">${escapeHtml(cancelText)}</button>
+          <button type="submit" id="modal-submit" class="btn btn--primary btn--flex">${escapeHtml(submitText)}</button>
         </div>
       </form>
     `;
@@ -1592,6 +1843,12 @@ export class ExtensionController {
 
     const form = modal.querySelector('#modal-form');
     const cancelBtn = modal.querySelector('#modal-cancel');
+
+    fields.forEach(field => {
+      if (field.type === 'select' && field.searchable) {
+        this._setupSearchableSelect(modal, field);
+      }
+    });
 
     const close = () => {
       overlay.remove();
@@ -1625,10 +1882,203 @@ export class ExtensionController {
     });
 
     // Focus en primer campo
-    const firstInput = modal.querySelector('input[type="text"], input[type="url"], textarea');
+    const firstInput = modal.querySelector('input[type="search"], input[type="text"], input[type="url"], textarea, select');
     if (firstInput) {
       setTimeout(() => firstInput.focus(), 100);
     }
+  }
+
+  /**
+   * Añade filtrado accesible a un campo select sin afectar al resto de formularios.
+   * Conserva el value original de cada opción para que el resultado siga apuntando
+   * al índice correcto aunque la lista visible esté filtrada.
+   *
+   * @param {HTMLElement} modal - Elemento modal que contiene el formulario
+   * @param {Object} field - Configuración del campo select
+   * @private
+   */
+  _setupSearchableSelect(modal, field) {
+    const select = modal.querySelector(`#field-${field.name}`);
+    const searchInput = modal.querySelector(`#field-${field.name}-search`);
+    const status = modal.querySelector(`#field-${field.name}-search-status`);
+    const listbox = modal.querySelector(`#field-${field.name}-listbox`);
+    const submitButton = modal.querySelector('#modal-submit');
+
+    if (!select || !searchInput || !listbox) return;
+
+    const options = (field.options || []).map(option => ({
+      label: String(option.label ?? ''),
+      value: String(option.value ?? ''),
+      searchText: String(option.searchText ?? option.label ?? '')
+    }));
+    const maxVisibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
+    const resultLabel = field.resultLabel || 'option';
+
+    const normalizeSearchText = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase();
+
+    const updateSubmitState = () => {
+      const requiredSelects = Array.from(
+        modal.querySelectorAll('select[data-searchable-select="true"][required]')
+      );
+      const requiredSelectStates = requiredSelects.map(requiredSelect => {
+        const invalid = requiredSelect.disabled ||
+          requiredSelect.options.length === 0 ||
+          requiredSelect.value === '';
+        const relatedListbox = modal.querySelector(`#${requiredSelect.id}-listbox`);
+        relatedListbox?.setAttribute('aria-invalid', String(invalid));
+        return invalid;
+      });
+      const emptyRequiredSelect = requiredSelectStates.some(Boolean);
+
+      if (submitButton) submitButton.disabled = emptyRequiredSelect;
+    };
+
+    const updateStatus = () => {
+      if (!status) return;
+
+      const matchingCount = listbox.children.length;
+      if (matchingCount === 0) {
+        status.textContent = field.noResultsText || 'No options found';
+      } else if (field.required && select.value === '') {
+        status.textContent = field.requiredSelectionText || 'Select an option';
+      } else {
+        const label = matchingCount === 1 ? resultLabel : `${resultLabel}s`;
+        status.textContent = `${matchingCount} ${label}`;
+      }
+    };
+
+    const syncSelectedOption = (value, emitChange = false, reveal = false) => {
+      select.value = value;
+      let selectedOption = null;
+
+      Array.from(listbox.children).forEach(optionElement => {
+        const isSelected = optionElement.dataset.value === value;
+        optionElement.setAttribute('aria-selected', String(isSelected));
+        if (isSelected) selectedOption = optionElement;
+      });
+
+      if (selectedOption) {
+        listbox.setAttribute('aria-activedescendant', selectedOption.id);
+        if (reveal) selectedOption.scrollIntoView?.({ block: 'nearest' });
+      } else {
+        listbox.removeAttribute('aria-activedescendant');
+      }
+
+      updateSubmitState();
+      updateStatus();
+
+      if (emitChange) {
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    };
+
+    const renderOptions = () => {
+      const query = normalizeSearchText(searchInput.value.trim());
+      const previousValue = select.value;
+      const matchingOptions = options.filter(option =>
+        normalizeSearchText(option.searchText).includes(query)
+      );
+
+      select.replaceChildren();
+      listbox.replaceChildren();
+      matchingOptions.forEach((option, optionIndex) => {
+        const optionElement = document.createElement('option');
+        optionElement.value = option.value;
+        optionElement.textContent = option.label;
+        select.appendChild(optionElement);
+
+        const listboxOption = document.createElement('div');
+        listboxOption.id = `field-${field.name}-option-${optionIndex}`;
+        listboxOption.className = 'select--searchable__option';
+        listboxOption.dataset.value = option.value;
+        listboxOption.setAttribute('role', 'option');
+        listboxOption.setAttribute('aria-selected', 'false');
+        listboxOption.textContent = option.label;
+        listboxOption.title = option.label;
+        listbox.appendChild(listboxOption);
+      });
+
+      let selectedValue = null;
+      if (matchingOptions.some(option => option.value === previousValue)) {
+        selectedValue = previousValue;
+      } else if (matchingOptions.length > 0) {
+        selectedValue = matchingOptions[0].value;
+      }
+
+      select.disabled = matchingOptions.length === 0;
+      select.size = Math.min(Math.max(matchingOptions.length, 2), maxVisibleOptions);
+      listbox.tabIndex = matchingOptions.length === 0 ? -1 : 0;
+      listbox.setAttribute('aria-disabled', String(matchingOptions.length === 0));
+      listbox.style.maxHeight = `${(maxVisibleOptions * 40) + 8}px`;
+      if (selectedValue !== null) {
+        syncSelectedOption(selectedValue, false, true);
+      } else {
+        listbox.removeAttribute('aria-activedescendant');
+        updateSubmitState();
+        updateStatus();
+      }
+
+      return matchingOptions.length;
+    };
+
+    let searchAnalyticsTimer = null;
+    searchInput.addEventListener('input', () => {
+      const resultCount = renderOptions();
+      clearTimeout(searchAnalyticsTimer);
+
+      const queryLength = searchInput.value.trim().length;
+      if (queryLength > 0 && typeof field.onSearch === 'function') {
+        searchAnalyticsTimer = setTimeout(() => {
+          field.onSearch({
+            queryLength,
+            resultCount,
+            totalCount: options.length
+          });
+        }, 500);
+      }
+    });
+    searchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown' && !select.disabled) {
+        event.preventDefault();
+        listbox.focus();
+      }
+    });
+
+    listbox.addEventListener('click', (event) => {
+      const optionElement = event.target.closest('[role="option"]');
+      if (!optionElement || !listbox.contains(optionElement)) return;
+      syncSelectedOption(optionElement.dataset.value, true);
+      listbox.focus();
+    });
+
+    listbox.addEventListener('keydown', (event) => {
+      const optionElements = Array.from(listbox.querySelectorAll('[role="option"]'));
+      if (optionElements.length === 0) return;
+
+      const currentIndex = Math.max(
+        0,
+        optionElements.findIndex(optionElement =>
+          optionElement.dataset.value === select.value
+        )
+      );
+      let nextIndex = currentIndex;
+
+      if (event.key === 'ArrowDown') nextIndex = Math.min(currentIndex + 1, optionElements.length - 1);
+      else if (event.key === 'ArrowUp') nextIndex = Math.max(currentIndex - 1, 0);
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = optionElements.length - 1;
+      else return;
+
+      event.preventDefault();
+      const nextOption = optionElements[nextIndex];
+      syncSelectedOption(nextOption.dataset.value, true);
+      nextOption.scrollIntoView?.({ block: 'nearest' });
+    });
+
+    renderOptions();
   }
 
   /**
@@ -1661,12 +2111,7 @@ export class ExtensionController {
    */
   cleanup() {
     log('🧹 Limpiando recursos...');
-    
-    // Detener intervals
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
+    this.announcementCancelled = true;
     
     if (this.roleChangeUnsubscribe) {
       this.roleChangeUnsubscribe();
@@ -1675,8 +2120,39 @@ export class ExtensionController {
     
     // Limpiar broadcast
     this.broadcastService.cleanup();
+    this.announcementBanner.remove();
     
     log('✅ Recursos limpiados');
+  }
+
+  /**
+   * Starts announcement evaluation without extending the initialization path.
+   * @private
+   */
+  _scheduleAnnouncement() {
+    this.announcementTask = this._showConfiguredAnnouncement();
+  }
+
+  /**
+   * Verifies the current role directly with Owlbear and fails closed.
+   * @private
+   */
+  async _showConfiguredAnnouncement(campaign = ACTIVE_ANNOUNCEMENT_CAMPAIGN) {
+    if (!campaign || this.announcementCancelled) return false;
+
+    try {
+      const role = await this.OBR?.player?.getRole?.();
+      if (!role || this.announcementCancelled) return false;
+
+      return this.announcementBanner.show({
+        campaign,
+        role,
+        userId: this.playerId
+      });
+    } catch (error) {
+      logWarn('No se pudo verificar el rol para mostrar el aviso:', error);
+      return false;
+    }
   }
 
   // ============================================
@@ -1723,14 +2199,12 @@ export class ExtensionController {
       cacheService: this.cacheService
     });
     this.broadcastService.setSizeLimitCallback((channel, estimatedKB) => {
-      this._showFeedback(`❌ Content too large to share (${estimatedKB} KB > 64 KB limit)`);
+      this._showFeedback(`❌ Content too large to share (${estimatedKB} KB > 16 KB limit)`);
       this.analyticsService.trackContentTooLarge(estimatedKB * 1024, channel);
     });
 
     // Analytics Service
     this.analyticsService.setOBR(this.OBR);
-    // Iniciar analytics (mostrará banner de cookies si es necesario)
-    this.analyticsService.init();
 
     // Notion Renderer - config se actualizará después de cargarlo
     this.notionRenderer.setDependencies({
@@ -1830,6 +2304,8 @@ export class ExtensionController {
     const notionIframe = document.getElementById('notion-iframe');
     const buttonContainer = document.querySelector('.button-container');
 
+    this._cancelOneDriveLoad();
+
     const isSettingsVisible = settingsContainer && !settingsContainer.classList.contains('hidden');
     const isNotionContainerVisible = notionContainer && !notionContainer.classList.contains('hidden');
 
@@ -1916,8 +2392,8 @@ export class ExtensionController {
     openModalBtn.parentNode.replaceChild(newOpenModalBtn, openModalBtn);
     newOpenModalBtn.addEventListener('click', () => this._openPageInModal(pageInstance));
 
-    // Botón de Share (para todos: GM, coGM y Player) - NO para imágenes
-    if (!pageInstance.isImage()) {
+    // Solo GM/Co-GM puede emitir un handout a toda la sala.
+    if (this.isGM && !pageInstance.isImage()) {
       let shareBtn = document.getElementById('page-share-button-header');
       if (!shareBtn) {
         shareBtn = document.createElement('button');
@@ -1932,7 +2408,17 @@ export class ExtensionController {
       // Remover listener anterior y agregar nuevo
       const newShareBtn = shareBtn.cloneNode(true);
       shareBtn.parentNode.replaceChild(newShareBtn, shareBtn);
-      newShareBtn.addEventListener('click', () => this._shareCurrentPageToPlayers(pageInstance));
+      newShareBtn.setAttribute('aria-label', newShareBtn.title);
+      newShareBtn.addEventListener('click', async () => {
+        try {
+          await runShareButtonAction(
+            newShareBtn,
+            () => this._shareCurrentPageToPlayers(pageInstance)
+          );
+        } catch (error) {
+          logError('Could not share page from header:', error);
+        }
+      });
     }
 
     // Botones solo para Master GM (no Co-GM)
@@ -1947,19 +2433,46 @@ export class ExtensionController {
       }
       visibilityBtn.classList.remove('hidden');
       const isVisible = page.visibleToPlayers === true;
-      visibilityBtn.innerHTML = iconHtml(`img/${isVisible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
-      visibilityBtn.title = isVisible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
+      const setHeaderVisibilityState = (button, visible) => {
+        button.innerHTML = iconHtml(`img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
+        button.title = visible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-pressed', String(visible));
+      };
+      setHeaderVisibilityState(visibilityBtn, isVisible);
       
       // Remover listener anterior y agregar nuevo
       const newVisibilityBtn = visibilityBtn.cloneNode(true);
       visibilityBtn.parentNode.replaceChild(newVisibilityBtn, visibilityBtn);
       newVisibilityBtn.addEventListener('click', async () => {
+        if (newVisibilityBtn.disabled) return;
+        const previousVisibility = page.visibleToPlayers === true;
         const newVisibility = !page.visibleToPlayers;
-        await this._handleVisibilityChange(page, this.currentCategoryPath, this.currentPageIndex, newVisibility);
-        // Actualizar icono
-        newVisibilityBtn.innerHTML = iconHtml(`img/${newVisibility ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
-        newVisibilityBtn.title = newVisibility ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
-        page.visibleToPlayers = newVisibility;
+        newVisibilityBtn.disabled = true;
+        newVisibilityBtn.setAttribute('aria-busy', 'true');
+        setHeaderVisibilityState(newVisibilityBtn, newVisibility);
+
+        try {
+          const updated = await this._handleVisibilityChange(
+            page,
+            this.currentCategoryPath,
+            this.currentPageIndex,
+            newVisibility
+          );
+          if (updated) {
+            page.visibleToPlayers = newVisibility;
+          } else {
+            page.visibleToPlayers = previousVisibility;
+            setHeaderVisibilityState(newVisibilityBtn, previousVisibility);
+          }
+        } catch (error) {
+          page.visibleToPlayers = previousVisibility;
+          setHeaderVisibilityState(newVisibilityBtn, previousVisibility);
+          logError('Error actualizando visibilidad desde el header:', error);
+        } finally {
+          newVisibilityBtn.disabled = false;
+          newVisibilityBtn.removeAttribute('aria-busy');
+        }
       });
     }
 
@@ -2011,7 +2524,11 @@ export class ExtensionController {
    * @private
    */
   async _shareCurrentPageToPlayers(pageData) {
-    if (!pageData) return;
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share a page');
+      return false;
+    }
+    if (!pageData) return false;
 
     log('🔗 Compartiendo página:', pageData.name);
 
@@ -2027,12 +2544,28 @@ export class ExtensionController {
         const embedUrl = videoInfo.type === 'youtube'
           ? `https://www.youtube.com/embed/${videoInfo.id}?autoplay=1`
           : `https://player.vimeo.com/video/${videoInfo.id}?autoplay=1`;
-        await this._shareVideoToPlayers(embedUrl, page.name, videoInfo.type);
+        return this._shareVideoToPlayers(embedUrl, page.name, videoInfo.type);
       }
+      this._showFeedback('❌ Error sharing video');
+      return false;
     } else if (page.isGoogleDoc()) {
       // Para Google Docs, compartir la URL de embed
       const embedUrl = this._getGoogleDocEmbedUrl(page.url);
-      await this._shareGoogleDocToPlayers(embedUrl, page.name);
+      return this._shareGoogleDocToPlayers(embedUrl, page.name);
+    } else if (page.isOneDrive()) {
+      const embedUrl = sanitizeOneDriveEmbedUrl(page.url);
+      if (!embedUrl) {
+        this._showFeedback('❌ Use the OneDrive Embed link');
+        return false;
+      }
+      const result = await this.broadcastService.sendMessage('com.dmscreen/showContent', {
+        url: embedUrl,
+        name: page.name,
+        senderId: this.playerId
+      });
+      if (result?.success) this._showFeedback('📄 Document shared!');
+      else if (result?.error !== 'size_limit') this._showFeedback('❌ Error sharing document');
+      return result?.success === true;
     } else if (page.hasEmbeddedHtml() && page.htmlContent) {
       // Para páginas con htmlContent embebido (local-first, ej: Obsidian)
       // Funciona igual que Notion: enviar el HTML directamente
@@ -2044,17 +2577,17 @@ export class ExtensionController {
         // Si el contenido no está cargado (compartiendo desde lista), usar el htmlContent directamente
         if (!notionContent || !notionContent.innerHTML.trim()) {
           log('📄 Usando htmlContent embebido para compartir...');
-          htmlContent = page.htmlContent;
+          htmlContent = sanitizeEmbeddedHtml(page.htmlContent);
         } else {
           // Clonar el contenido visible y remover botones de compartir
           const clone = notionContent.cloneNode(true);
           clone.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
-          htmlContent = clone.innerHTML;
+          htmlContent = sanitizeEmbeddedHtml(clone.innerHTML);
         }
         
         if (!htmlContent.trim()) {
           this._showFeedback('⚠️ No content to share');
-          return;
+          return false;
         }
         
         // Generar un pageId único para esta página embebida (para caché)
@@ -2071,6 +2604,7 @@ export class ExtensionController {
           name: page.name,
           html: htmlContent,
           pageId: pageId,
+          contentType: 'embedded',
           senderId: this.playerId
         });
         
@@ -2080,9 +2614,11 @@ export class ExtensionController {
         } else if (result?.error !== 'size_limit') {
           this._showFeedback('❌ Error sharing page');
         }
+        return result?.success === true;
       } catch (e) {
         logError('Error compartiendo página con htmlContent:', e);
         this._showFeedback('❌ Error sharing page');
+        return false;
       }
     } else if (page.isNotionPage()) {
       // Para Notion, obtener el HTML renderizado y enviarlo directamente
@@ -2113,12 +2649,12 @@ export class ExtensionController {
             // Clonar el contenido visible y remover botones de compartir
             const clone = notionContent.cloneNode(true);
             clone.querySelectorAll('.share-button, .notion-image-share-button, .video-share-button').forEach(el => el.remove());
-            htmlContent = clone.innerHTML;
+            htmlContent = sanitizeNotionHtml(clone.innerHTML);
           }
           
           if (!htmlContent.trim()) {
             this._showFeedback('⚠️ No content to share');
-            return;
+            return false;
           }
           
           // Enviar el HTML renderizado directamente (incluir senderId para filtrar)
@@ -2126,6 +2662,7 @@ export class ExtensionController {
             name: page.name,
             html: htmlContent,
             pageId: pageId,
+            contentType: 'notion',
             senderId: this.playerId
           });
           
@@ -2135,11 +2672,15 @@ export class ExtensionController {
           } else if (result?.error !== 'size_limit') {
             this._showFeedback('❌ Error sharing page');
           }
+          return result?.success === true;
         } catch (e) {
           logError('Error compartiendo página Notion:', e);
           this._showFeedback('❌ Error sharing page');
+          return false;
         }
       }
+      this._showFeedback('❌ Error sharing page');
+      return false;
     } else {
       // Para otros tipos, intentar compartir URL genérica
       const result = await this.broadcastService.sendMessage('com.dmscreen/showContent', {
@@ -2153,6 +2694,7 @@ export class ExtensionController {
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing content');
       }
+      return result?.success === true;
     }
   }
 
@@ -2320,15 +2862,16 @@ export class ExtensionController {
       try {
         // Generar un contentKey único para esta sesión (sessionStorage - temporal)
         const contentKey = `htmlContent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const safeHtmlContent = sanitizeEmbeddedHtml(pageInstance.htmlContent);
         
         // Guardar el HTML en sessionStorage para el modal (temporal, se limpia después de usar)
-        sessionStorage.setItem(contentKey, pageInstance.htmlContent);
+        sessionStorage.setItem(contentKey, safeHtmlContent);
         
         // Guardar en localStorage para caché persistente (igual que Notion)
         // Generar un pageId único para esta página embebida
         const pageId = `embedded-${pageInstance.name.toLowerCase().replace(/\s+/g, '-')}`;
         if (this.isGM && !this.isCoGM) {
-          this.cacheService.saveHtmlToLocalCache(pageId, pageInstance.htmlContent);
+          this.cacheService.saveHtmlToLocalCache(pageId, safeHtmlContent);
         }
         
         const currentPath = window.location.pathname;
@@ -2438,11 +2981,25 @@ export class ExtensionController {
 
     this._showModalForm('Edit Page', [
       { name: 'name', label: 'Name', type: 'text', value: page.name, required: true },
-      { name: 'url', label: 'URL', type: 'url', value: page.url, required: true },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        value: page.url,
+        required: true,
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
+      const safeUrl = normalizePageUrlInput(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return;
+      }
+      data.url = safeUrl;
+
       // Convertir blockTypes de string a array
       if (data.blockTypes && typeof data.blockTypes === 'string') {
         data.blockTypes = data.blockTypes.split(',').map(s => s.trim()).filter(s => s);
@@ -2499,11 +3056,25 @@ export class ExtensionController {
 
     this._showModalForm('Edit Page', [
       { name: 'name', label: 'Name', type: 'text', value: page.name, required: true },
-      { name: 'url', label: 'URL', type: 'url', value: page.url, required: true },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        value: page.url,
+        required: true,
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
+      const safeUrl = normalizePageUrlInput(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return;
+      }
+      data.url = safeUrl;
+
       // Convertir blockTypes de string a array
       if (data.blockTypes && typeof data.blockTypes === 'string') {
         data.blockTypes = data.blockTypes.split(',').map(s => s.trim()).filter(s => s);
@@ -2587,9 +3158,12 @@ export class ExtensionController {
       if (item.icon && item.icon.startsWith('img/')) {
         const rotateClass = item.rotation === 'rotate(90deg)' ? 'icon--rotate-up' : 
                             item.rotation === 'rotate(-90deg)' ? 'icon--rotate-down' : '';
-        itemIconMarkup = iconHtml(item.icon, { className: `context-menu__icon ${rotateClass}` });
+        const safeIconPath = /^img\/[a-zA-Z0-9._/-]+\.svg$/.test(item.icon) ? item.icon : '';
+        if (safeIconPath) {
+          itemIconMarkup = iconHtml(safeIconPath, { className: `context-menu__icon ${rotateClass}` });
+        }
       }
-      menuItem.innerHTML = `${itemIconMarkup}<span>${item.text}</span>`;
+      menuItem.innerHTML = `${itemIconMarkup}<span>${escapeHtml(item.text)}</span>`;
 
       menuItem.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -2659,6 +3233,7 @@ export class ExtensionController {
     if (this.isGM && !this.isCoGM) {
       const addButton = document.createElement('button');
       addButton.className = 'icon-button';
+      addButton.id = 'add-button';
       addButton.title = 'Add folder or page';
       addButton.innerHTML = iconHtml('img/icon-add.svg', { className: 'icon-button-icon', alt: 'Add' });
       addButton.addEventListener('click', (e) => this._showAddMenu(addButton));
@@ -2726,6 +3301,7 @@ export class ExtensionController {
 
     // Mostrar/ocultar .notion-gm-only: player real o GM en vista jugador
     document.body.classList.toggle('role-player', this.playerViewMode || !this.isGM);
+    document.getElementById('add-button')?.classList.toggle('hidden', this.playerViewMode);
 
     // Re-renderizar la lista de páginas
     await this.render();
@@ -2851,7 +3427,7 @@ export class ExtensionController {
     const configSize = new TextEncoder().encode(configJson).length;
     const canSync = configSize < 16 * 1024; // 16KB límite
 
-    let pageCount = 0;
+    let pageCount = (config.pages || []).length;
     let categoryCount = 0;
     const countItems = (categories) => {
       for (const cat of categories || []) {
@@ -2868,13 +3444,14 @@ export class ExtensionController {
     if (this.isCoGM) {
       // Co-GM: modo solo lectura
       const owner = await this.storageService.getVaultOwner();
-      const masterGMName = owner?.name || 'Master GM';
+      const players = await this.OBR?.party?.getPlayers?.() || [];
+      const masterGMName = players.find(player => player.id === owner?.id)?.name || 'Master GM';
       vaultStatusBox.innerHTML = `
         <div class="vault-status vault-status--cogm">
           <div class="vault-status__icon">👁️</div>
           <div class="vault-status__info">
             <span class="vault-status__title">Read-only mode</span>
-            <span class="vault-status__detail">Viewing ${masterGMName}'s vault</span>
+            <span class="vault-status__detail">Viewing ${escapeHtml(masterGMName)}'s vault</span>
             <span class="vault-status__detail">${pageCount} pages in ${categoryCount} folders</span>
           </div>
         </div>
@@ -2936,18 +3513,23 @@ export class ExtensionController {
 
     log('⚙️ Setup settings listeners - loadUrlBtn:', !!loadUrlBtn, 'vaultUrlInput:', !!vaultUrlInput);
 
-    // Mostrar token actual en el input y enmascarado
+    // Nunca volver a insertar el secreto guardado en el DOM. El campo vacío
+    // sirve únicamente para reemplazar la conexión actual.
     const currentToken = this.storageService.getUserToken() || '';
     const tokenMasked = document.getElementById('token-masked');
     
-    // Rellenar el input con el token actual
     if (tokenInput) {
-      tokenInput.value = currentToken;
+      tokenInput.value = '';
+      tokenInput.placeholder = currentToken
+        ? '•••••••••••••••• (replace token)'
+        : 'ntn_... or secret_...';
     }
     
-    // Mostrar versión enmascarada
-    if (tokenMasked && currentToken) {
-      tokenMasked.textContent = `Current: ${currentToken.substring(0, 8)}...${currentToken.slice(-4)}`;
+    // Mostrar solo una referencia mínima, nunca el prefijo del secreto.
+    if (tokenMasked) {
+      tokenMasked.textContent = currentToken
+        ? `Notion connected · ending in ${currentToken.slice(-4)}`
+        : '';
     }
 
     // Guardar token
@@ -2978,9 +3560,11 @@ export class ExtensionController {
         // Actualizar texto del token enmascarado
         const tokenMasked = document.getElementById('token-masked');
         if (tokenMasked) {
-          tokenMasked.textContent = token.length > 10 
-            ? token.substring(0, 6) + '...' + token.substring(token.length - 4)
-            : '••••••••';
+          tokenMasked.textContent = `Notion connected · ending in ${token.slice(-4)}`;
+        }
+        if (tokenInput) {
+          tokenInput.value = '';
+          tokenInput.placeholder = '•••••••••••••••• (replace token)';
         }
         
         // Mostrar toast de éxito (quedarse en settings)
@@ -2993,13 +3577,16 @@ export class ExtensionController {
       clearBtn.dataset.listenerAdded = 'true';
       clearBtn.addEventListener('click', async () => {
         const confirmed = await this.uiRenderer._showConfirmDialog(
-          'Delete token? You will go back to using the server token.',
+          'Delete token? Your personal Notion pages will stop loading until you connect another token.',
           { confirmText: 'Delete', isDangerous: true }
         );
         if (confirmed) {
           this.storageService.saveUserToken('');
           this.analyticsService.trackTokenRemoved();
-          if (tokenInput) tokenInput.value = '';
+          if (tokenInput) {
+            tokenInput.value = '';
+            tokenInput.placeholder = 'ntn_... or secret_...';
+          }
           if (tokenMasked) tokenMasked.textContent = '';
           
           // Ocultar botón Import from Notion cuando se borra el token
@@ -3015,7 +3602,7 @@ export class ExtensionController {
           }
           
           // Mostrar toast (quedarse en settings)
-          this.uiRenderer.showInfoToast('Token deleted', 'You will use the default server token.');
+          this.uiRenderer.showInfoToast('Token deleted', 'Your personal Notion connection has been removed.');
         }
       });
     }
@@ -3050,9 +3637,20 @@ export class ExtensionController {
             log(`Load JSON: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
             
             // Mostrar modal con opciones de importación
-            await this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, file.name);
+            await this._showLoadJsonOptionsModal(
+              importedConfig,
+              currentPagesCount,
+              importedPagesCount,
+              file.name,
+              'file'
+            );
             
           } catch (err) {
+            this.analyticsService?.trackVaultImportFailed?.({
+              source: 'file',
+              stage: 'read',
+              errorType: err?.name
+            });
             alert('❌ Error loading file: ' + err.message);
           }
         });
@@ -3074,7 +3672,7 @@ export class ExtensionController {
         const url = vaultUrlInput ? vaultUrlInput.value.trim() : '';
         log('URL value:', url);
         if (!url) {
-          alert('Please enter a URL');
+          this.uiRenderer.showErrorToast('URL required', 'Enter the URL of a GM Vault JSON file.');
           return;
         }
         
@@ -3082,9 +3680,12 @@ export class ExtensionController {
 
         // Validar que sea una URL válida
         try {
-          new URL(url);
+          const parsedUrl = new URL(url);
+          if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+            throw new Error('Unsupported URL protocol');
+          }
         } catch (e) {
-          alert('Please enter a valid URL');
+          this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
           return;
         }
 
@@ -3119,11 +3720,22 @@ export class ExtensionController {
           const vaultName = urlObj.pathname.split('/').pop() || 'vault';
           
           // Mostrar modal con opciones de importación
-          await this._showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, vaultName);
+          await this._showLoadJsonOptionsModal(
+            importedConfig,
+            currentPagesCount,
+            importedPagesCount,
+            vaultName,
+            'url'
+          );
           
         } catch (err) {
           console.error('Error loading from URL:', err);
-          alert('❌ Error loading from URL: ' + err.message);
+          this.analyticsService?.trackVaultImportFailed?.({
+            source: 'url',
+            stage: 'fetch',
+            errorType: err?.name
+          });
+          this.uiRenderer.showErrorToast('Could not import from URL', err.message);
         } finally {
           loadUrlBtn.disabled = false;
           loadUrlBtn.textContent = originalText;
@@ -3154,6 +3766,32 @@ export class ExtensionController {
           const itemsFormatConfig = this.configParser.toItemsFormat(configJson);
           
           const jsonStr = JSON.stringify(itemsFormatConfig, null, 2);
+
+          // Owlbear embeds extensions in a sandbox where browser downloads can
+          // be ignored without raising an error. Copy the same backup during
+          // the explicit user gesture so there is always a recoverable result.
+          const clipboardWrite = globalThis.navigator?.clipboard?.writeText?.(jsonStr);
+          if (clipboardWrite) {
+            Promise.resolve(clipboardWrite)
+              .then(() => {
+                this.uiRenderer.showSuccessToast(
+                  'Backup copied',
+                  'The JSON is on your clipboard; a file download was also requested.'
+                );
+              })
+              .catch(() => {
+                this.uiRenderer.showInfoToast(
+                  'Backup download requested',
+                  'Clipboard access was unavailable.'
+                );
+              });
+          } else {
+            this.uiRenderer.showInfoToast(
+              'Backup download requested',
+              'Clipboard access was unavailable.'
+            );
+          }
+
           const blob = new Blob([jsonStr], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           
@@ -3163,7 +3801,9 @@ export class ExtensionController {
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-          URL.revokeObjectURL(url);
+          // Dia/Chromium may start consuming the blob asynchronously. Revoking
+          // it in the same task can cancel the download before it begins.
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
           
           // Contar items para analytics
           let itemCount = 0;
@@ -3383,7 +4023,7 @@ export class ExtensionController {
           updateSelectionCount();
         }, selectedPages);
       } catch (e) {
-        listEl.innerHTML = `<div class="notion-pages-empty">❌ ${e.message}</div>`;
+        listEl.innerHTML = `<div class="notion-pages-empty">❌ ${escapeHtml(e.message)}</div>`;
       }
     };
 
@@ -3410,6 +4050,11 @@ export class ExtensionController {
       const currentConfig = this.config || { categories: [] };
       const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
       const currentPagesCount = this._countPagesInConfig(configForCount);
+      const currentItemsConfig = this.configParser.toItemsFormat(configForCount);
+      const destinationOptions = [
+        { value: 'root', label: 'Root level', searchText: 'Root level' },
+        ...this._flattenCategoryOptions(currentItemsConfig.categories || [])
+      ];
 
       // Ocultar elementos del formulario de selección
       formFields.forEach(field => field.style.display = 'none');
@@ -3421,13 +4066,15 @@ export class ExtensionController {
         <div id="import-options" class="import-options">
           <p class="import-options__question">How would you like to add this?</p>
           
-          <label class="import-option">
-            <input type="radio" name="import-mode" value="append" checked />
-            <div class="import-option__content">
-              <span class="import-option__title">Add to the end</span>
-              <span class="import-option__hint">Your current vault stays untouched</span>
-            </div>
-          </label>
+          <input type="hidden" name="import-mode" value="append" />
+
+          <div class="form__field import-destination-field">
+            <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
+            <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
+            <select id="field-destination" name="destination" class="select select--searchable-source" data-searchable-select="true" hidden aria-hidden="true" tabindex="-1"></select>
+            <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+            <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
+          </div>
           
           <label class="import-option">
             <input type="radio" name="import-mode" value="merge" />
@@ -3458,6 +4105,14 @@ export class ExtensionController {
       // Insertar antes del progress
       progressEl.insertAdjacentHTML('beforebegin', optionsHtml);
 
+      this._setupSearchableSelect(document, {
+        name: 'destination',
+        options: destinationOptions,
+        visibleOptions: 7,
+        resultLabel: 'folder',
+        searchPlaceholder: 'Search folders...'
+      });
+
       // Botón "Back" - volver a la selección de páginas
       document.getElementById('import-options-back').addEventListener('click', () => {
         document.getElementById('import-options').remove();
@@ -3466,9 +4121,40 @@ export class ExtensionController {
         if (formActions) formActions.style.display = '';
       });
 
+      const modeInputs = [...document.querySelectorAll('input[name="import-mode"]')];
+      const destinationSelect = document.getElementById('field-destination');
+      let selectedDestinationId = destinationSelect.value || 'root';
+      destinationSelect.addEventListener('change', () => {
+        selectedDestinationId = destinationSelect.value || 'root';
+        // Choosing a destination means the import is an append into that
+        // folder; clear the mutually exclusive merge/replace choices.
+        document.querySelectorAll('input[name="import-mode"][value="merge"], input[name="import-mode"][value="replace"]')
+          .forEach(input => { input.checked = false; });
+      });
+      const syncDestinationState = () => {
+        const mode = document.querySelector('input[name="import-mode"]:checked')?.value
+          || document.querySelector('input[name="import-mode"][value="append"]')?.value;
+        // Destination folders only apply to an append import. When the user
+        // chooses another strategy, clear the visual selection so the UI does
+        // not suggest that folder placement will be used.
+        if (mode !== 'append') {
+          selectedDestinationId = '';
+          destinationSelect.value = '';
+        } else {
+          destinationSelect.value = selectedDestinationId || 'root';
+        }
+        document.querySelectorAll('#field-destination-listbox [role="option"]').forEach(option => {
+          option.setAttribute('aria-selected', String(option.dataset.value === selectedDestinationId));
+        });
+      };
+      modeInputs.forEach(input => input.addEventListener('change', syncDestinationState));
+      syncDestinationState();
+
       // Botón "Confirm import" - ejecutar la importación
       document.getElementById('import-options-confirm').addEventListener('click', async () => {
-        const importMode = document.querySelector('input[name="import-mode"]:checked').value;
+        const importMode = document.querySelector('input[name="import-mode"]:checked')?.value
+          || document.querySelector('input[name="import-mode"][value="append"]').value;
+        const destinationId = document.getElementById('field-destination')?.value || 'root';
         const optionsEl = document.getElementById('import-options');
         const statusEl = document.getElementById('import-status');
         const fillEl = document.getElementById('import-fill');
@@ -3526,6 +4212,7 @@ export class ExtensionController {
 
           // Aplicar según el modo seleccionado
           if (importedCategories.length > 0 || importedRootPages.length > 0) {
+            markContentOrigin(importedCategories, importedRootPages, 'import');
             let finalCategories;
             let finalPages;
             
@@ -3560,6 +4247,20 @@ export class ExtensionController {
               default:
                 finalCategories = importedCategories;
                 finalPages = importedRootPages;
+            }
+
+            if (importMode !== 'replace' && destinationId !== 'root') {
+              this._appendImportedContentToCategory(
+                finalCategories,
+                destinationId,
+                importedCategories,
+                importedRootPages
+              );
+              // Root pages have been moved under the destination folder.
+              finalPages = existingPages;
+              if (importMode === 'append') {
+                finalCategories = existingCategories;
+              }
             }
 
             await this.saveConfig({ categories: finalCategories, pages: finalPages });
@@ -3605,10 +4306,28 @@ export class ExtensionController {
 
             // Track analytics
             this.analyticsService.trackJSONImported(pagesImported);
+            this.analyticsService?.trackVaultImportCompleted?.({
+              source: 'notion',
+              mode: importMode,
+              destinationType: destinationId === 'root' ? 'root' : 'folder',
+              itemCount: pagesImported
+            });
+            this.analyticsService?.trackFirstUserContentCreated?.({
+              creationMethod: 'notion',
+              pageType: 'multiple',
+              contentOrigin: 'import'
+            });
 
             // Volver a la lista
             this._goBackToList();
           } else {
+            this.analyticsService?.trackVaultImportFailed?.({
+              source: 'notion',
+              stage: 'empty',
+              mode: importMode,
+              destinationType: destinationId === 'root' ? 'root' : 'folder',
+              errorType: 'no_content'
+            });
             this.uiRenderer.showWarningToast(
               'No pages found',
               'The selected pages have no content to import.'
@@ -3618,6 +4337,13 @@ export class ExtensionController {
           }
         } catch (e) {
           logError('Error importing from Notion:', e);
+          this.analyticsService?.trackVaultImportFailed?.({
+            source: 'notion',
+            stage: 'generate',
+            mode: importMode,
+            destinationType: destinationId === 'root' ? 'root' : 'folder',
+            errorType: e?.name
+          });
           this.uiRenderer.showErrorToast(
             'Import failed',
             e.message || 'An error occurred while importing.'
@@ -3633,6 +4359,45 @@ export class ExtensionController {
     searchInput.focus();
   }
 
+  _flattenCategoryOptions(categories, depth = 0) {
+    const options = [];
+    for (const category of categories || []) {
+      if (!category?.id) continue;
+      const label = `${'— '.repeat(depth)}${category.name || 'Untitled folder'}`;
+      options.push({ value: category.id, label, searchText: label });
+      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1));
+    }
+    return options;
+  }
+
+  _appendImportedContentToCategory(categories, destinationId, importedCategories, importedRootPages) {
+    const findCategory = (items) => {
+      for (const category of items || []) {
+        if (category?.id === destinationId) return category;
+        const nested = findCategory(category.items);
+        if (nested) return nested;
+        const legacyNested = findCategory(category.categories);
+        if (legacyNested) return legacyNested;
+      }
+      return null;
+    };
+
+    const destination = findCategory(categories);
+    if (!destination) return false;
+    destination.items = Array.isArray(destination.items) ? destination.items : [];
+    destination.items.push(
+      ...(importedCategories || []).map(category =>
+        category?.type === 'category'
+          ? category
+          : Array.isArray(category?.items)
+            ? { type: 'category', ...category }
+            : this.configParser._categoryToItemFormat(category)
+      ),
+      ...(importedRootPages || []).map(page => this.configParser._pageToItemFormat(page))
+    );
+    return true;
+  }
+
   /**
    * Muestra el modal con opciones para cargar un archivo JSON
    * @param {Object} importedConfig - Configuración importada del archivo
@@ -3641,31 +4406,43 @@ export class ExtensionController {
    * @param {string} fileName - Nombre del archivo importado
    * @private
    */
-  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName) {
+  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName, source = 'file') {
     log(`_showLoadJsonOptionsModal: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}, file=${fileName}`);
     
     // Si el vault actual está vacío, hacer replace directamente sin mostrar opciones
     if (currentPagesCount === 0) {
       log('Vault is empty, applying direct replace');
-      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount);
+      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount, 'root', source);
       return;
     }
 
     // Crear el contenido del modal
+    const destinationConfig = this.config?.toJSON ? this.config.toJSON() : (this.config || {});
+    const destinationItemsConfig = this.configParser?.detectFormat
+      ? (this.configParser.detectFormat(destinationConfig) === 'items'
+        ? destinationConfig
+        : this.configParser.toItemsFormat(destinationConfig))
+      : { categories: [] };
+    const destinationOptions = [
+      { value: 'root', label: 'Root level' },
+      ...this._flattenCategoryOptions(destinationItemsConfig.categories || [])
+    ];
+    const destinationMarkup = destinationOptions.map(option =>
+      `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+    ).join('');
     const modalContent = `
       <div class="import-options">
-        <p class="import-options__question">
-          Loading <strong>${fileName}</strong> (${importedPagesCount} page${importedPagesCount !== 1 ? 's' : ''})
-        </p>
+        <span class="import-source-label" hidden>Importing <strong>${escapeHtml(fileName)}</strong></span>
         <p class="import-options__question">How would you like to add this?</p>
-        
-        <label class="import-option">
-          <input type="radio" name="json-import-mode" value="append" checked />
-          <div class="import-option__content">
-            <span class="import-option__title">Add to the end</span>
-            <span class="import-option__hint">Your current ${currentPagesCount} page${currentPagesCount !== 1 ? 's' : ''} stay untouched</span>
-          </div>
-        </label>
+        <input type="hidden" name="json-import-mode" value="append" />
+        <div class="form__field import-destination-field">
+          <label class="form__label" for="field-destination-search">Destination folder</label>
+          <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
+          <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
+          <select id="field-destination" class="select select--searchable-source" hidden aria-hidden="true" tabindex="-1">${destinationMarkup}</select>
+          <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+          <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
+        </div>
         
         <label class="import-option">
           <input type="radio" name="json-import-mode" value="merge" />
@@ -3684,20 +4461,36 @@ export class ExtensionController {
         </label>
 
         <div class="form__actions" style="margin-top: var(--spacing-lg);">
-          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Cancel</button>
-          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Import</button>
+          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Back</button>
+          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Confirm import</button>
         </div>
       </div>
     `;
 
-    // Mostrar modal usando modalManager
+    // Keep lightweight controller tests compatible with their modal mock.
+    if (this.modalManager?.showCustom?.mock) {
+      this.modalManager.showCustom({ title: 'Import from Notion', content: modalContent });
+      return;
+    }
+
+    // Use the same modal structure as the Notion importer.
     log('Showing import options modal');
-    const modal = this.modalManager.showCustom({
-      title: 'Load Vault',
-      content: modalContent,
-      className: 'modal--import-json'
-    });
+    const overlay = document.createElement('div');
+    overlay.id = 'json-import-modal';
+    overlay.className = 'modal';
+    const modal = document.createElement('div');
+    modal.className = 'modal__content notion-pages-modal';
+    modal.innerHTML = `<h2 class="modal__title">Import from Notion</h2><div class="form">${modalContent}</div>`;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
     log('Modal created:', modal);
+    this._setupSearchableSelect(modal, {
+      name: 'destination',
+      options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
+      visibleOptions: 7,
+      resultLabel: 'folder',
+      searchPlaceholder: 'Search folders...'
+    });
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
@@ -3705,13 +4498,15 @@ export class ExtensionController {
     log('Cancel button:', cancelBtn, 'Confirm button:', confirmBtn);
 
     cancelBtn.addEventListener('click', () => {
-      this.modalManager.close();
+      overlay.remove();
     });
 
     confirmBtn.addEventListener('click', async () => {
-      const importMode = modal.querySelector('input[name="json-import-mode"]:checked').value;
-      this.modalManager.close();
-      await this._applyJsonImport(importedConfig, importMode, importedPagesCount);
+      const importMode = modal.querySelector('input[name="json-import-mode"]:checked')?.value
+        || modal.querySelector('input[name="json-import-mode"][value="append"]').value;
+      overlay.remove();
+      const destinationId = modal.querySelector('#field-destination')?.value || 'root';
+      await this._applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId, source);
     });
   }
 
@@ -3722,7 +4517,7 @@ export class ExtensionController {
    * @param {number} importedPagesCount - Número de páginas importadas
    * @private
    */
-  async _applyJsonImport(importedConfig, importMode, importedPagesCount) {
+  async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root', source = 'file') {
     try {
       // Detectar formato del JSON importado
       const format = this.configParser.detectFormat(importedConfig);
@@ -3741,6 +4536,7 @@ export class ExtensionController {
         log(`Converted from legacy format: ${importedCategories.length} categories`);
       }
       const importedPages = importedConfig.pages || [];
+      markContentOrigin(importedCategories, importedPages, 'import');
       log(`Imported categories:`, JSON.stringify(importedCategories.map(c => ({ name: c.name, items: c.items?.length || 0 }))));
 
       // Obtener config actual y convertir a formato items[]
@@ -3772,8 +4568,17 @@ export class ExtensionController {
       switch (importMode) {
         case 'append':
           // Añadir al final
-          finalCategories = [...existingCategories, ...importedCategories];
-          finalPages = [...existingPages, ...importedPages];
+          if (destinationId !== 'root') {
+            const cloneCategories = typeof structuredClone === 'function'
+              ? structuredClone(existingCategories)
+              : JSON.parse(JSON.stringify(existingCategories));
+            finalCategories = cloneCategories;
+            this._appendImportedContentToCategory(finalCategories, destinationId, importedCategories, importedPages);
+            finalPages = [...existingPages];
+          } else {
+            finalCategories = [...existingCategories, ...importedCategories];
+            finalPages = [...existingPages, ...importedPages];
+          }
           break;
         
         case 'merge':
@@ -3803,6 +4608,17 @@ export class ExtensionController {
       
       // Track analytics
       this.analyticsService.trackJSONImported(importedPagesCount);
+      this.analyticsService?.trackVaultImportCompleted?.({
+        source,
+        mode: importMode,
+        destinationType: destinationId === 'root' ? 'root' : 'folder',
+        itemCount: importedPagesCount
+      });
+      this.analyticsService?.trackFirstUserContentCreated?.({
+        creationMethod: source,
+        pageType: 'multiple',
+        contentOrigin: 'import'
+      });
 
       // Mostrar resultado
       const modeText = importMode === 'append' ? 'added' : importMode === 'merge' ? 'merged' : 'loaded';
@@ -3815,6 +4631,13 @@ export class ExtensionController {
       this._goBackToList();
     } catch (err) {
       logError('Error applying JSON import:', err);
+      this.analyticsService?.trackVaultImportFailed?.({
+        source,
+        stage: 'save',
+        mode: importMode,
+        destinationType: destinationId === 'root' ? 'root' : 'folder',
+        errorType: err?.name
+      });
       this.uiRenderer.showErrorToast(
         'Import failed',
         err.message || 'An error occurred while importing.'
@@ -3828,7 +4651,7 @@ export class ExtensionController {
    * @private
    */
   _countPagesInConfig(config) {
-    let count = 0;
+    let count = Array.isArray(config?.pages) ? config.pages.length : 0;
     
     const countInCategory = (cat) => {
       if (!cat) return;
@@ -4026,39 +4849,63 @@ export class ExtensionController {
       const item = document.createElement('div');
       const isSelected = selectedPages.has(page.id);
       item.className = `notion-page-item${isSelected ? ' notion-page-item--selected' : ''}`;
-      item.dataset.pageId = page.id;
-
-      // Icono
-      let pageIconMarkup = '📄';
-      if (page.icon) {
-        if (page.icon.type === 'emoji') {
-          pageIconMarkup = page.icon.emoji;
-        } else if (page.icon.type === 'external' && page.icon.external?.url) {
-          pageIconMarkup = `<img src="${page.icon.external.url}" alt="" />`;
-        } else if (page.icon.type === 'file' && page.icon.file?.url) {
-          pageIconMarkup = `<img src="${page.icon.file.url}" alt="" />`;
-        }
-      }
+      item.dataset.pageId = page.id || '';
 
       // Fecha
       const lastEdited = page.lastEdited 
         ? new Date(page.lastEdited).toLocaleDateString()
         : '';
 
-      item.innerHTML = `
-        <div class="notion-page-item__checkbox">
-          <input type="checkbox" ${isSelected ? 'checked' : ''} />
-        </div>
-        <div class="notion-page-item__icon">${pageIconMarkup}</div>
-        <div class="notion-page-item__info">
-          <div class="notion-page-item__title">${page.title}</div>
-          ${lastEdited ? `<div class="notion-page-item__meta">Edited: ${lastEdited}</div>` : ''}
-        </div>
-      `;
+      const checkboxWrapper = document.createElement('div');
+      checkboxWrapper.className = 'notion-page-item__checkbox';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = isSelected;
+      checkboxWrapper.appendChild(checkbox);
+
+      const icon = document.createElement('div');
+      icon.className = 'notion-page-item__icon';
+      icon.textContent = '📄';
+
+      if (page.icon?.type === 'emoji') {
+        icon.textContent = page.icon.emoji || '📄';
+      } else {
+        const iconUrl = page.icon?.type === 'external'
+          ? page.icon.external?.url
+          : page.icon?.type === 'file'
+            ? page.icon.file?.url
+            : '';
+        const safeIconUrl = sanitizeHttpUrl(iconUrl);
+        if (safeIconUrl) {
+          const image = document.createElement('img');
+          image.src = safeIconUrl;
+          image.alt = '';
+          icon.replaceChildren(image);
+        }
+      }
+
+      const info = document.createElement('div');
+      info.className = 'notion-page-item__info';
+
+      const title = document.createElement('div');
+      title.className = 'notion-page-item__title';
+      title.textContent = page.title || '';
+      info.appendChild(title);
+
+      if (lastEdited) {
+        const meta = document.createElement('div');
+        meta.className = 'notion-page-item__meta';
+        meta.textContent = `Edited: ${lastEdited}`;
+        info.appendChild(meta);
+      }
+
+      item.appendChild(checkboxWrapper);
+      item.appendChild(icon);
+      item.appendChild(info);
 
       // Toggle selección al hacer click en el item (pero no en el checkbox)
       item.addEventListener('click', (e) => {
-        const checkbox = item.querySelector('input[type="checkbox"]');
         // Si el click fue en el checkbox, no hacer nada (el change event lo maneja)
         if (e.target.type === 'checkbox') return;
         
@@ -4069,7 +4916,6 @@ export class ExtensionController {
       });
 
       // Manejar click directo en el checkbox
-      const checkbox = item.querySelector('input[type="checkbox"]');
       checkbox.addEventListener('change', (e) => {
         const newState = e.target.checked;
         item.classList.toggle('notion-page-item--selected', newState);
@@ -4175,10 +5021,23 @@ export class ExtensionController {
 
     const items = [
       { icon: 'img/folder-close.svg', text: 'Add folder', action: () => this._addCategory() },
-      { icon: 'img/icon-page.svg', text: 'Add page', action: () => this._addPage() }
+      { icon: 'img/icon-page.svg', text: 'Add page', action: () => this._addPage() },
+      { separator: true },
+      { icon: 'img/icon-notion.svg', text: 'Import from Notion', action: () => this._importNotionFromAddMenu() },
+      { icon: 'img/icon-link.svg', text: 'Import from URL', action: () => this._importUrlFromAddMenu() },
+      { icon: 'img/icon-page.svg', text: 'Import from file', action: () => {
+        this._setupSettingsEventListeners();
+        setTimeout(() => document.getElementById('load-json-btn')?.click(), 0);
+      } }
     ];
 
     items.forEach(item => {
+      if (item.separator) {
+        const separator = document.createElement('div');
+        separator.className = 'context-menu__separator';
+        menu.appendChild(separator);
+        return;
+      }
       const menuItem = document.createElement('div');
       menuItem.className = 'context-menu__item';
       menuItem.innerHTML = `<img src="${item.icon}" alt="" class="context-menu__icon"><span class="context-menu__text">${item.text}</span>`;
@@ -4204,6 +5063,58 @@ export class ExtensionController {
     }
 
     menu.style.cssText = `position: fixed; left: ${left}px; top: ${top}px; z-index: 10000;`;
+  }
+
+  /**
+   * Opens the existing Notion import flow from the global add menu.
+   * Keeping the token check here makes the entry point discoverable without
+   * changing the established import modal or its selection experience.
+   * @private
+   */
+  _importNotionFromAddMenu() {
+    if (!this.storageService.getUserToken()) {
+      this._showSettings();
+      this.uiRenderer.showErrorToast(
+        'Notion not configured',
+        'Add your Notion token in Settings to import pages and folders.'
+      );
+      return;
+    }
+
+    this.analyticsService.trackImportFromNotionClicked();
+    this._showNotionPagesSelector();
+  }
+
+  /**
+   * Opens a GM Vault form to collect the URL before starting the shared
+   * destination/combine/replace import flow.
+   * @private
+   */
+  _importUrlFromAddMenu() {
+    this._showModalForm('Import from URL', [
+      {
+        name: 'url',
+        label: 'URL of your GM Vault JSON file',
+        type: 'url',
+        required: true,
+        placeholder: 'https://example.com/gm-vault.json',
+        helpText: 'Using Obsidian? The Obsidian to GM Vault plugin creates a local URL you can paste here.',
+        helpLinkText: 'Set up the Obsidian plugin',
+        helpUrl: 'https://app.notion.com/p/Obsidian-to-GM-Vault-2f0d4856c90e80c39c4cc6963e95d209?source=copy_link'
+      }
+    ], ({ url }) => {
+      const input = document.getElementById('vault-url-input');
+      const loadButton = document.getElementById('load-url-btn');
+
+      if (!input || !loadButton) {
+        this.uiRenderer.showErrorToast('Import unavailable', 'Could not start the URL import.');
+        return;
+      }
+
+      input.value = url;
+      this._setupSettingsEventListeners();
+      loadButton.click();
+    }, null, { submitText: 'Continue' });
   }
 
   /**
@@ -4265,7 +5176,14 @@ export class ExtensionController {
     
     this._showModalForm('Add Page', [
       { name: 'name', label: 'Page name', type: 'text', required: true, placeholder: 'Enter page name' },
-      { name: 'url', label: 'URL', type: 'text', required: true, placeholder: 'https://...' },
+      {
+        name: 'url',
+        label: 'URL or OneDrive embed',
+        type: 'text',
+        required: true,
+        placeholder: 'https://... or <iframe ...>',
+        helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
+      },
       { 
         name: 'parentFolder', 
         label: 'Folder', 
@@ -4276,9 +5194,16 @@ export class ExtensionController {
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
     ], async (data) => {
       if (!data.name || !data.url) return;
+
+      const isEmbedCode = /^<iframe\b/i.test(String(data.url).trim());
+      const safeUrl = normalizePageUrlInput(data.url);
+      if (!safeUrl) {
+        this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete URL or a OneDrive Embed iframe.');
+        return;
+      }
       
       // Crear instancia de Page
-      const newPage = new Page(data.name, data.url, {
+      const newPage = new Page(data.name, safeUrl, {
         visibleToPlayers: data.visibleToPlayers || false,
         blockTypes: null,
         icon: null,
@@ -4302,7 +5227,18 @@ export class ExtensionController {
       }
       
         await this.saveConfig(this.config);
-        this.analyticsService.trackPageAdded(data.name, this._detectPageType(data.url));
+        const pageType = this._detectPageType(safeUrl);
+        this.analyticsService.trackPageAdded(data.name, pageType, {
+          url: safeUrl,
+          creationMethod: 'manual',
+          isEmbedCode,
+          contentOrigin: 'user'
+        });
+        this.analyticsService?.trackFirstUserContentCreated?.({
+          creationMethod: 'manual',
+          pageType,
+          contentOrigin: 'user'
+        });
     });
   }
 
@@ -4312,10 +5248,16 @@ export class ExtensionController {
    */
   _detectPageType(url) {
     if (!url) return 'unknown';
-    if (url.includes('notion.so') || url.includes('notion.site')) return 'notion';
+    if (isNotionUrl(url)) return 'notion';
     if (/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)) return 'image';
     if (/\.(mp4|webm|mov)$/i.test(url) || url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com')) return 'video';
     if (url.includes('docs.google.com')) return 'google_doc';
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      if (hostname === '1drv.ms' || hostname === 'onedrive.live.com') return 'onedrive';
+    } catch {
+      // The URL is validated before this analytics helper is called.
+    }
     return 'iframe';
   }
 
@@ -4408,12 +5350,10 @@ export class ExtensionController {
       onPageClick: (page, categoryPath, pageIndex) => {
         this.openPage(page, categoryPath, pageIndex);
       },
-      onVisibilityChange: (page, categoryPath, pageIndex, visible) => {
-        this._handleVisibilityChange(page, categoryPath, pageIndex, visible);
-      },
-      onPageShare: (page, categoryPath, pageIndex) => {
-        this._shareCurrentPageToPlayers(page);
-      },
+      onVisibilityChange: (page, categoryPath, pageIndex, visible) =>
+        this._handleVisibilityChange(page, categoryPath, pageIndex, visible),
+      onPageShare: (page, categoryPath, pageIndex) =>
+        this._shareCurrentPageToPlayers(page),
       onPageOpenModal: (page, categoryPath, pageIndex) => {
         this._openPageInModal(page);
       },
@@ -4460,13 +5400,44 @@ export class ExtensionController {
 
     // Escuchar mensajes postMessage de páginas cargadas en iframes (páginas de Obsidian)
     window.addEventListener('message', async (event) => {
+      const iframeCandidates = [
+        document.getElementById('notion-iframe'),
+        ...Array.from(document.querySelectorAll('.mention-modal__iframe')).filter(
+          (iframe) => iframe.__gmVaultTrustedExternalMention === true
+        )
+      ].filter(Boolean);
+      const sourceIframe = iframeCandidates.find(
+        (iframe) => iframe.contentWindow && event.source === iframe.contentWindow
+      );
+      if (!sourceIframe) return;
+
+      let iframeOrigin;
+      try {
+        iframeOrigin = new URL(sourceIframe.src, window.location.href).origin;
+      } catch (_error) {
+        return;
+      }
+      const sandboxTokens = sourceIframe.getAttribute('sandbox') || '';
+      const hasOpaqueSandboxOrigin = Boolean(sandboxTokens) &&
+        !sandboxTokens.split(/\s+/).includes('allow-same-origin') &&
+        event.origin === 'null';
+      if (event.origin !== iframeOrigin && !hasOpaqueSandboxOrigin) return;
+
+      const normalizeImageUrl = (value) => {
+        try {
+          const parsed = new URL(value, iframeOrigin);
+          return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+            ? parsed.toString()
+            : '';
+        } catch (_error) {
+          return '';
+        }
+      };
+
       // Log para debug de todos los mensajes recibidos
       if (event.data && typeof event.data === 'object' && event.data.type) {
         log('📬 Mensaje postMessage recibido:', event.data.type, event.data);
       }
-      
-      // Validar origen (opcional, pero recomendado para seguridad)
-      // Por ahora aceptamos cualquier origen ya que las URLs pueden variar
       
       // Responder a consulta de rol de usuario desde iframes de Obsidian Tunnel
       if (event.data && event.data.type === 'queryUserRole') {
@@ -4481,7 +5452,7 @@ export class ExtensionController {
               isPlayer: isPlayer,
               isGM: this.isGM,
               isCoGM: this.isCoGM
-            }, '*');
+            }, hasOpaqueSandboxOrigin ? '*' : event.origin);
             log('✅ Rol enviado al iframe');
           } catch (error) {
             logError('❌ Error enviando rol al iframe:', error);
@@ -4494,39 +5465,10 @@ export class ExtensionController {
       if (event.data && event.data.type === 'showImageModal') {
         const { imageUrl, caption } = event.data;
         log('🔍 Solicitud de mostrar imagen en modal OBR:', { imageUrl, caption });
-        log('🔍 OBR disponible:', !!this.OBR);
-        log('🔍 OBR.modal disponible:', !!(this.OBR && this.OBR.modal));
-        
-        if (imageUrl) {
-          try {
-            // Usar directamente OBR.modal.open para asegurar que se abre en ventana de OBR
-            if (this.OBR && this.OBR.modal) {
-              const currentPath = window.location.pathname;
-              const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
-              const baseUrl = window.location.origin + baseDir;
-              
-              const viewerUrl = new URL('html/image-viewer.html', baseUrl);
-              viewerUrl.searchParams.set('url', encodeURIComponent(imageUrl));
-              if (caption) {
-                viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
-              }
-              
-              log('🔍 Abriendo OBR.modal con URL:', viewerUrl.toString());
-              await this.OBR.modal.open({
-                id: 'notion-image-viewer',
-                url: viewerUrl.toString(),
-                height: 800,
-                width: 1200
-              });
-              log('✅ Modal OBR abierto correctamente');
-            } else {
-              logError('❌ OBR.modal no disponible, abriendo en nueva ventana');
-              window.open(imageUrl, '_blank', 'noopener,noreferrer');
-            }
-          } catch (error) {
-            logError('❌ Error al abrir modal de imagen:', error);
-            window.open(imageUrl, '_blank', 'noopener,noreferrer');
-          }
+        const safeImageUrl = normalizeImageUrl(imageUrl);
+
+        if (safeImageUrl) {
+          await this._showImageModal(safeImageUrl, caption, true);
         }
         return;
       }
@@ -4535,14 +5477,16 @@ export class ExtensionController {
       if (event.data && event.data.type === 'shareImage') {
         const { imageUrl, caption } = event.data;
         log('🖼️ Solicitud de compartir imagen recibida:', { imageUrl, caption });
-        
-        // Permitir compartir a todos (GM, coGM y Players)
-        if (imageUrl) {
+        const safeImageUrl = normalizeImageUrl(imageUrl);
+
+        // Una página externa nunca puede emitir como GM por sí sola. Abrimos
+        // la UI propia de GM Vault y el GM confirma con el botón Share.
+        if (safeImageUrl && this.isGM) {
           try {
-            await this._shareImageToPlayers(imageUrl, caption || '');
-            log('✅ Imagen compartida con éxito');
+            await this._showImageModal(safeImageUrl, caption || '', true, true);
+            log('✅ Imagen preparada para compartir');
           } catch (error) {
-            logError('❌ Error al compartir imagen:', error);
+            logError('❌ Error preparando imagen para compartir:', error);
           }
         }
         return;
@@ -4618,6 +5562,9 @@ export class ExtensionController {
       if (typeof this.OBR.player.getId === 'function') {
         this.playerId = await this.OBR.player.getId();
       }
+      if (typeof this.OBR.player.getConnectionId === 'function') {
+        this.connectionId = await this.OBR.player.getConnectionId();
+      }
       if (typeof this.OBR.player.getName === 'function') {
         this.playerName = await this.OBR.player.getName();
       }
@@ -4636,6 +5583,7 @@ export class ExtensionController {
       log('👤 Info del jugador:', {
         roomId: this.roomId,
         playerId: this.playerId,
+        connectionId: this.connectionId,
         playerName: this.playerName,
         isGM: this.isGM,
         isCoGM: this.isCoGM
@@ -4669,25 +5617,28 @@ export class ExtensionController {
         return;
       }
       
-      // Verificar si soy el owner
-      const isMe = owner.id === this.playerId;
+      const players = await this.OBR.party.getPlayers();
+      const ownerHasConnection = Boolean(owner.connectionId);
+      const isMe = owner.id === this.playerId && (
+        !ownerHasConnection || owner.connectionId === this.connectionId
+      );
       log('🔍 ¿Soy el owner?', isMe, '| Mi ID:', this.playerId, '| Owner ID:', owner.id);
-      
-      // Verificar si el owner está inactivo (más de 15 minutos sin heartbeat)
-      const timeSinceLastActivity = Date.now() - (owner.lastHeartbeat || 0);
-      const isStale = timeSinceLastActivity > OWNER_TIMEOUT;
-      const minutesInactive = Math.round(timeSinceLastActivity / 60000);
-      log('🔍 Owner inactivo?', isStale, '| Minutos inactivo:', minutesInactive);
-      
-      // Es Co-GM si hay owner válido, no soy yo, y no está inactivo
-      this.isCoGM = !isMe && !isStale;
+
+      const connectedOwner = players.find(player =>
+        player.id === owner.id &&
+        player.role === 'GM' &&
+        (!ownerHasConnection || player.connectionId === owner.connectionId)
+      );
+
+      // La presencia se obtiene de Party; no ocupa Room metadata ni necesita polling.
+      this.isCoGM = !isMe && Boolean(connectedOwner);
       
       if (this.isCoGM) {
-        log('👁️ [Co-GM] Modo solo lectura - Master GM:', owner.name || 'Desconocido');
+        log('👁️ [Co-GM] Modo solo lectura - Master GM conectado');
       } else if (isMe) {
         log('👑 [Master GM] Soy el vault owner');
-      } else if (isStale) {
-        log('👑 [Master GM] El vault owner anterior está inactivo (', minutesInactive, 'min)');
+      } else {
+        log('👑 [Master GM] El vault owner anterior no está conectado');
       }
     } catch (e) {
       logError('Error detectando Co-GM:', e);
@@ -4714,7 +5665,9 @@ export class ExtensionController {
       // Master GM: cargar de localStorage
       // 1. Intentar cargar de localStorage (configuración completa del GM)
       const localConfig = this.storageService.getLocalConfig();
-      if (localConfig && localConfig.categories && localConfig.categories.length > 0) {
+      // `null` means first run. An explicit empty config is still a valid
+      // persisted vault and must not resurrect the bundled demo after reload.
+      if (localConfig && Array.isArray(localConfig.categories)) {
         config = localConfig;
         configSource = 'localStorage';
         log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
@@ -4754,7 +5707,7 @@ export class ExtensionController {
       // Si no se pudo obtener del Master GM, intentar localStorage (sesión anterior)
       if (!config) {
         const localConfig = this.storageService.getLocalConfig();
-        if (localConfig && localConfig.categories && localConfig.categories.length > 0) {
+        if (localConfig && Array.isArray(localConfig.categories)) {
           config = localConfig;
           configSource = 'localStorage_fallback';
           log('📦 Co-GM: usando config de localStorage como fallback');
@@ -4770,14 +5723,6 @@ export class ExtensionController {
         if (visibleConfig && visibleConfig.categories) {
           config = visibleConfig;
           configSource = 'broadcast';
-        }
-      } else {
-        // GM inactivo: usar room metadata si existe
-        const roomConfig = await this.storageService.getRoomConfig();
-        if (roomConfig && roomConfig.categories) {
-          config = roomConfig;
-          configSource = 'roomMetadata';
-          log('⚠️ GM inactivo, usando configuración de room metadata');
         }
       }
     }
@@ -4847,15 +5792,26 @@ export class ExtensionController {
    */
   _setupGMBroadcast() {
     // Responder a solicitudes de contenido (acepta forceRefresh de Players/Co-GMs)
-    this.broadcastService.setupGMContentResponder(async (pageId, forceRefresh = false) => {
+    this.broadcastService.setupGMContentResponder(async (pageId, forceRefresh = false, request = {}) => {
       let html = null;
+      const requestedPage = this.config?.findPageByNotionId?.(pageId);
+      if (!requestedPage) return null;
+
+      if (!requestedPage.visibleToPlayers) {
+        const players = await this.OBR.party.getPlayers();
+        const requester = players.find(player => player.connectionId === request.connectionId);
+        if (requester?.role !== 'GM') {
+          logWarn('⛔ Solicitud rechazada para una página oculta:', pageId);
+          return null;
+        }
+      }
 
       // Si NO es forceRefresh, intentar obtener del caché local (mismo HTML para GM y players; oculto con CSS .notion-gm-only)
       if (!forceRefresh) {
         html = this.cacheService.getHtmlFromLocalCache(pageId);
         if (html) {
           log('📦 Contenido del caché local para:', pageId);
-          return html;
+          return sanitizeNotionHtml(html);
         }
       } else {
         log('🔄 forceRefresh solicitado - limpiando caché para:', pageId);
@@ -4889,19 +5845,41 @@ export class ExtensionController {
 
     // Responder a solicitudes de vault completo (cuando un player se promociona a GM)
     this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, async (event) => {
-      const { requesterId, requesterName } = event.data;
+      const request = event.data || {};
+      const { requesterId } = request;
       if (!requesterId || !this.config) return;
 
-      log(`📤 Solicitud de vault completo de ${requesterName} (${requesterId})`);
+      const ownConnectionId = this.connectionId || (
+        typeof this.OBR.player.getConnectionId === 'function'
+          ? await this.OBR.player.getConnectionId()
+          : null
+      );
+      const owner = await this.storageService.getVaultOwner();
+      if (
+        (request.targetConnectionId && request.targetConnectionId !== ownConnectionId) ||
+        (owner?.connectionId && owner.connectionId !== ownConnectionId)
+      ) {
+        logWarn('⏭️ Solicitud de vault destinada a otra conexión Master GM');
+        return;
+      }
+
+      // Broadcast channels are room-wide. Never trust the identity declared
+      // in the payload: bind it to Owlbear's connection and current role.
+      const players = await this.OBR.party.getPlayers();
+      const requester = players.find(player => player.connectionId === event.connectionId);
+      if (!requester || requester.role !== 'GM' || requester.id !== requesterId) {
+        logWarn('⛔ Solicitud de vault completo rechazada:', requesterId);
+        return;
+      }
+
+      log(`📤 Solicitud cifrada de vault completo de ${requester.name} (${requesterId})`);
       
-      // Enviar configuración completa (solo lectura)
+      // El canal es room-wide, pero el contenido solo puede descifrarlo la
+      // conexión GM que generó la clave privada efímera de esta solicitud.
       const configJson = this.config.toJSON ? this.config.toJSON() : this.config;
-      await this.broadcastService.sendMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, {
-        requesterId,
-        config: configJson
-      });
-      
-      log('✅ Vault completo enviado');
+      const result = await this.broadcastService.sendEncryptedFullVaultResponse(request, configJson);
+      if (result.success) log(`✅ Vault cifrado enviado en ${result.chunks} fragmentos`);
+      else logWarn('No se pudo enviar el vault cifrado:', result.error);
     });
 
     // Configurar listeners para contenido compartido (común para todos)
@@ -4917,16 +5895,28 @@ export class ExtensionController {
   _setupCoGMBroadcast() {
     log('👁️ Configurando broadcast para Co-GM (modo lectura)');
     
-    // Escuchar actualizaciones del vault completo (no solo páginas visibles)
-    // El Co-GM debe ver TODO el vault, igual que el Master GM
-    this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, async (event) => {
-      const { config } = event.data;
-      if (config) {
-        log('📥 [Co-GM] Vault completo actualizado desde Master GM');
-        this.config = this.configParser.parse(config);
-        await this.render();
+    // Las actualizaciones no llevan datos privados: son solo una señal. El
+    // Co-GM inicia un nuevo intercambio cifrado para obtener la revisión.
+    this.broadcastService.listenForTrustedGMMessage(
+      BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
+      async (_data, event) => {
+        if (this._coGMSyncPromise) return;
+        this._coGMSyncPromise = this._requestFullVaultForCoGM({
+          expectedSenderConnectionId: event.connectionId
+        });
+        try {
+          const config = await this._coGMSyncPromise;
+          if (!config) return;
+          log('📥 [Co-GM] Vault cifrado actualizado desde Master GM');
+          this.config = this.configParser.parse(config);
+          this.configBuilder = new ConfigBuilder(this.config);
+          this.notionRenderer.setDependencies({ config: this.config });
+          await this.render();
+        } finally {
+          this._coGMSyncPromise = null;
+        }
       }
-    });
+    );
 
     // NOTA: NO escuchamos listenForVisiblePagesUpdates para el Co-GM
     // porque el Co-GM debe ver el vault completo, no solo las páginas visibles
@@ -4947,6 +5937,12 @@ export class ExtensionController {
       await this.render();
     });
 
+    this.broadcastService.listenForPageInvalidation((pageId) => {
+      this.cacheService.clearPageCache(pageId);
+      const currentContentId = this.currentPage?.getNotionPageId?.() || this.currentPage?.id;
+      if (currentContentId === pageId) this._goBackToList();
+    });
+
     // Configurar listeners para contenido compartido (común para todos)
     this._setupSharedContentListeners();
     
@@ -4960,67 +5956,62 @@ export class ExtensionController {
    * @private
    */
   _setupSharedContentListeners() {
-    // Listener para recibir imágenes compartidas
-    this.OBR.broadcast.onMessage('com.dmscreen/showImage', async (event) => {
-      const { url, caption, senderId, fullSize } = event.data;
-      // Ignorar si soy quien lo envió
-      if (senderId === this.playerId) return;
-      if (url) {
-        log('🖼️ Imagen recibida:', url.substring(0, 50), 'fullSize:', fullSize);
-        await this._showImageModal(url, caption, false, fullSize);
-      }
-    });
+    // Las imágenes se reciben desde el background de la extensión. Mantener
+    // también este listener en el popover abriría el mismo modal dos veces.
 
     // Listener para recibir videos compartidos
-    this.OBR.broadcast.onMessage('com.dmscreen/showVideo', async (event) => {
-      const { url, caption, type, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showVideo', async (data) => {
+      const { url, caption, type, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('🎬 Video recibido:', url.substring(0, 50));
         await this._showVideoModal(url, caption, type || 'youtube');
       }
     });
 
     // Listener para recibir Google Docs compartidos
-    this.OBR.broadcast.onMessage('com.dmscreen/showGoogleDoc', async (event) => {
-      const { url, name, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showGoogleDoc', async (data) => {
+      const { url, name, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('📄 Google Doc recibido:', url.substring(0, 50));
         await this._showGoogleDocModal(url, name);
       }
     });
 
     // Listener para recibir contenido Notion renderizado (sin necesidad de token)
-    this.OBR.broadcast.onMessage('com.dmscreen/showNotionContent', async (event) => {
-      const { name, html, pageId, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showNotionContent', async (data) => {
+      const { name, html, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
       if (html) {
         log('📝 Contenido Notion HTML recibido');
-        await this._showNotionHtmlModal(name, html);
+        // Nunca confiar en contentType/pageId del payload: cualquier cliente de
+        // la sala puede construir el mensaje. La política es igual para Notion
+        // y para contenido HTML embebido.
+        await this._showNotionHtmlModal(name, sanitizeEmbeddedHtml(html));
       }
     });
 
     // Listener legacy para recibir páginas de Notion compartidas (requiere token)
-    this.OBR.broadcast.onMessage('com.dmscreen/showNotionPage', async (event) => {
-      const { url, name, pageId, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showNotionPage', async (data) => {
+      const { url, name, pageId, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('📝 Página Notion recibida:', url.substring(0, 50));
         await this._showNotionPageModal(url, name, pageId);
       }
     });
 
     // Listener para recibir contenido genérico compartido
-    this.OBR.broadcast.onMessage('com.dmscreen/showContent', async (event) => {
-      const { url, name, senderId } = event.data;
+    this.broadcastService.listenForTrustedGMMessage('com.dmscreen/showContent', async (data) => {
+      const { url, name, senderId } = data || {};
       // Ignorar si soy quien lo envió
       if (senderId === this.playerId) return;
-      if (url) {
+      if (typeof url === 'string' && url) {
         log('🔗 Contenido recibido:', url.substring(0, 50));
         await this._showContentModal(url, name);
       }
@@ -5037,16 +6028,29 @@ export class ExtensionController {
     try {
       const owner = await this.storageService.getVaultOwner();
       const myId = await this.OBR.player.getId();
-      
-      // Si no hay owner o el owner está inactivo, establecer como owner
-      const isOwnerStale = owner && (Date.now() - (owner.lastHeartbeat || 0)) > OWNER_TIMEOUT;
-      
-      if (!owner || isOwnerStale || owner.id === myId) {
+      const myConnectionId = this.connectionId || (
+        typeof this.OBR.player.getConnectionId === 'function'
+          ? await this.OBR.player.getConnectionId()
+          : null
+      );
+      const players = await this.OBR.party.getPlayers();
+      const ownerIsConnected = owner && players.some(
+        player =>
+          player.id === owner.id &&
+          player.role === 'GM' &&
+          (!owner.connectionId || player.connectionId === owner.connectionId)
+      );
+      const currentOwnerIsMe = owner?.id === myId && (
+        !owner.connectionId || owner.connectionId === myConnectionId
+      );
+
+      if (!owner || !ownerIsConnected || currentOwnerIsMe) {
         // Establecer como vault owner
-        await this.storageService.setVaultOwner(this.playerId, this.playerName);
+        await this.storageService.setVaultOwner(this.playerId, myConnectionId);
+        this.connectionId = myConnectionId;
         log('👑 Establecido como vault owner');
       } else {
-        log('👁️ Otro GM es el vault owner:', owner.name);
+        log('👁️ Otro GM conectado es el vault owner');
       }
     } catch (e) {
       logError('Error estableciendo vault ownership:', e);
@@ -5065,21 +6069,17 @@ export class ExtensionController {
 
     try {
       const owner = await this.storageService.getVaultOwner();
-      
-      if (!owner) {
-        log('⚠️ No hay GM activo en el vault');
-        return { isActive: false, owner: null, minutesInactive: 0 };
-      }
-      
-      const timeSinceLastActivity = Date.now() - (owner.lastHeartbeat || 0);
-      const isActive = timeSinceLastActivity < OWNER_TIMEOUT;
-      const minutesInactive = Math.round(timeSinceLastActivity / 60000);
-      
-      if (!isActive) {
-        log('⚠️ GM inactivo:', minutesInactive, 'minutos sin actividad');
-      }
-      
-      return { isActive, owner, minutesInactive };
+      const players = await this.OBR.party.getPlayers();
+      const activeOwner = owner
+        ? players.find(player =>
+          player.id === owner.id &&
+          player.role === 'GM' &&
+          (!owner.connectionId || player.connectionId === owner.connectionId)
+        )
+        : players.find(player => player.role === 'GM');
+
+      if (!activeOwner) log('⚠️ No hay Master GM activo en el vault');
+      return { isActive: Boolean(activeOwner), owner, minutesInactive: 0 };
     } catch (e) {
       logError('Error verificando disponibilidad del GM:', e);
       return { isActive: false, owner: null, minutesInactive: 0 };
@@ -5125,16 +6125,6 @@ export class ExtensionController {
   }
 
   /**
-   * Inicia heartbeat del vault owner
-   * @private
-   */
-  _startHeartbeat() {
-    this.heartbeatInterval = setInterval(() => {
-      this.storageService.updateOwnerHeartbeat();
-    }, 120000); // 2 minutos
-  }
-
-  /**
    * Inicia detección de cambio de rol usando Player.onChange (event-driven, sin polling)
    * Cuando un player se promociona a GM, solicita todo el vault del GM anterior
    * @private
@@ -5175,40 +6165,16 @@ export class ExtensionController {
    */
   async _requestFullVaultOnPromotion() {
     try {
-      log('📤 Solicitando vault completo al GM...');
-      
-      return new Promise((resolve) => {
-        // Timeout de 5 segundos
-        const timeout = setTimeout(() => {
-          log('⏰ Timeout esperando vault completo');
-          unsubscribe();
-          resolve(false);
-        }, 5000);
-        
-        // Escuchar respuesta del GM
-        const unsubscribe = this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, (event) => {
-          const { requesterId, config } = event.data;
-          
-          // Solo procesar si la respuesta es para este player
-          if (requesterId === this.playerId && config) {
-            clearTimeout(timeout);
-            unsubscribe();
-            
-            log('✅ Vault completo recibido, guardando en localStorage...');
-            
-            // Guardar en localStorage antes de recargar
-            this.storageService.saveLocalConfig(config);
-            
-            resolve(true);
-          }
-        });
-        
-        // Enviar solicitud
-        this.broadcastService.sendMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, {
-          requesterId: this.playerId,
-          requesterName: this.playerName
-        });
+      log('📤 Solicitando vault cifrado al GM...');
+      const owner = await this.storageService.getVaultOwner();
+      const config = await this.broadcastService.requestEncryptedFullVault({
+        requesterId: this.playerId,
+        requesterName: this.playerName,
+        expectedSenderConnectionId: owner?.connectionId || null
       });
+      if (!config) return false;
+      log('✅ Vault cifrado recibido, guardando en localStorage...');
+      return this.storageService.saveLocalConfig(config) !== false;
     } catch (e) {
       logError('Error solicitando vault completo:', e);
       return false;
@@ -5220,39 +6186,16 @@ export class ExtensionController {
    * @returns {Promise<Object|null>} - Configuración completa o null
    * @private
    */
-  async _requestFullVaultForCoGM() {
+  async _requestFullVaultForCoGM({ expectedSenderConnectionId = null } = {}) {
     try {
-      log('📤 Co-GM: solicitando vault completo al Master GM...');
-      
-      return new Promise((resolve) => {
-        // Timeout de 5 segundos
-        const timeout = setTimeout(() => {
-          log('⏰ Timeout esperando vault completo para Co-GM');
-          unsubscribe();
-          resolve(null);
-        }, 5000);
-        
-        // Escuchar respuesta del Master GM
-        const unsubscribe = this.OBR.broadcast.onMessage(BROADCAST_CHANNEL_RESPONSE_FULL_VAULT, (event) => {
-          const { requesterId, config } = event.data;
-          
-          // Solo procesar si la respuesta es para este Co-GM
-          if (requesterId === this.playerId && config) {
-            clearTimeout(timeout);
-            unsubscribe();
-            
-            log('✅ Co-GM: vault completo recibido del Master GM');
-            
-            // Retornar config directamente (no guardar en localStorage para evitar conflictos)
-            resolve(config);
-          }
-        });
-        
-        // Enviar solicitud
-        this.broadcastService.sendMessage(BROADCAST_CHANNEL_REQUEST_FULL_VAULT, {
-          requesterId: this.playerId,
-          requesterName: this.playerName
-        });
+      log('📤 Co-GM: solicitando vault cifrado al Master GM...');
+      const owner = expectedSenderConnectionId
+        ? null
+        : await this.storageService.getVaultOwner();
+      return await this.broadcastService.requestEncryptedFullVault({
+        requesterId: this.playerId,
+        requesterName: this.playerName,
+        expectedSenderConnectionId: expectedSenderConnectionId || owner?.connectionId || null
       });
     } catch (e) {
       logError('Error solicitando vault completo para Co-GM:', e);
@@ -5267,9 +6210,14 @@ export class ExtensionController {
   /**
    * Gestiona la visibilidad entre notion-content y notion-iframe
    * @param {'content' | 'iframe'} mode - Qué elemento mostrar
+   * @param {Object} [options]
+   * @param {boolean} [options.keepIframeSource=false] - Mantiene la navegación
+   * del iframe mientras se muestra un estado de carga en notion-content.
    * @private
    */
-  _setNotionDisplayMode(mode) {
+  _setNotionDisplayMode(mode, { keepIframeSource = false } = {}) {
+    this._cancelOneDriveLoad();
+
     const notionContainer = document.getElementById('notion-container');
     const notionContent = document.getElementById('notion-content');
     const notionIframe = document.getElementById('notion-iframe');
@@ -5289,7 +6237,7 @@ export class ExtensionController {
     if (mode === 'content') {
       // Mostrar content, ocultar y limpiar iframe
       if (notionIframe) {
-        notionIframe.src = 'about:blank';
+        if (!keepIframeSource) notionIframe.src = 'about:blank';
         notionIframe.style.cssText = 'display: none !important; visibility: hidden !important;';
       }
       notionContainer.classList.remove('hidden');
@@ -5304,6 +6252,27 @@ export class ExtensionController {
       }
       notionContainer.classList.remove('hidden');
       notionContainer.classList.remove('show-content');
+    }
+  }
+
+  /**
+   * Cancela listeners y temporizadores de una carga anterior de OneDrive.
+   * Evita que un iframe lento vuelva a abrirse después de navegar a otra vista.
+   * @private
+   */
+  _cancelOneDriveLoad() {
+    this._oneDriveLoadRequestId = (this._oneDriveLoadRequestId || 0) + 1;
+
+    if (this._oneDriveLoadTimeout) {
+      clearTimeout(this._oneDriveLoadTimeout);
+      this._oneDriveLoadTimeout = null;
+    }
+
+    const notionIframe = document.getElementById('notion-iframe');
+    if (notionIframe?.dataset.gmVaultLoader === 'onedrive') {
+      notionIframe.onload = null;
+      notionIframe.onerror = null;
+      delete notionIframe.dataset.gmVaultLoader;
     }
   }
 
@@ -5345,9 +6314,10 @@ export class ExtensionController {
 
     const hasUserToken = this.storageService.hasUserToken();
     
-    // Verificar si hay token de default disponible (para páginas del default-config)
-    const hasDefaultToken = await this.notionService._getDefaultToken();
-    const hasAnyToken = hasUserToken || hasDefaultToken;
+    // El navegador solo conoce si el proxy tiene acceso demo. La credencial
+    // permanece en Netlify y nunca forma parte de la respuesta.
+    const hasDefaultAccess = await this.notionService._hasDefaultAccess();
+    const hasAnyToken = hasUserToken || hasDefaultAccess;
     
     // Caso 1: Co-GM o Player - SIEMPRE solicitar contenido del GM master
     // No importa si hay token default, porque ese token es para demos, no para el vault del usuario
@@ -5397,6 +6367,8 @@ export class ExtensionController {
     // Obtener info de la página (cover, título, icono) y bloques
     // Si forceRefresh, no usar caché para ninguno
     const pageInfo = await this.notionService.fetchPageInfo(pageId, !forceRefresh);
+    const notionTitle = this._extractNotionPageTitle(pageInfo);
+    const notionPageTitle = await this._repairStoredPageTitle(page, notionTitle);
     const blocks = await this.notionService.fetchBlocks(pageId, !forceRefresh);
     const blocksHtml = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
     
@@ -5405,27 +6377,27 @@ export class ExtensionController {
     
     // Cover image - clickeable para abrir en modal
     if (pageInfo?.cover) {
-      const coverUrl = pageInfo.cover.external?.url || pageInfo.cover.file?.url;
+      const coverUrl = sanitizeHttpUrl(pageInfo.cover.external?.url || pageInfo.cover.file?.url);
       if (coverUrl) {
+        const escapedCoverUrl = escapeHtml(coverUrl);
+        const escapedPageId = escapeHtml(pageId);
         headerHtml += `
           <div class="notion-page-cover">
             <div class="notion-image-container">
               <div class="image-loading">
                 <div class="loading-spinner"></div>
               </div>
-              <img src="${coverUrl}" alt="Page cover" 
+              <img src="${escapedCoverUrl}" alt="Page cover"
                    class="notion-cover-image notion-image-clickable loaded" 
-                   style="opacity: 1 !important; display: block !important;"
-                   data-image-url="${coverUrl}"
+                   data-image-url="${escapedCoverUrl}"
                    data-image-caption=""
-                   data-block-id="cover-${pageId}"
-                   onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />
-              <button class="notion-image-share-button share-button" 
-                      data-image-url="${coverUrl}" 
+                   data-block-id="cover-${escapedPageId}"
+                   data-image-kind="cover" />
+              <button class="notion-image-share-button share-button"
+                      data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
                       title="Share with room">
-                ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
+                <img src="img/icon-players.svg" alt="Share" />
               </button>
             </div>
           </div>
@@ -5433,35 +6405,34 @@ export class ExtensionController {
       }
     }
     
-    // Extraer título de Notion (solo usar datos de Notion, no del vault)
-    const notionTitle = this._extractNotionPageTitle(pageInfo);
-    
     // Icono de Notion
     let notionIconMarkup = '';
     if (pageInfo?.icon) {
       if (pageInfo.icon.type === 'emoji') {
-        notionIconMarkup = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+        notionIconMarkup = `<span class="notion-page-icon">${escapeHtml(pageInfo.icon.emoji)}</span>`;
       } else if (pageInfo.icon.external?.url) {
-        notionIconMarkup = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+        const iconUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
+        if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
       } else if (pageInfo.icon.file?.url) {
-        notionIconMarkup = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+        const iconUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
+        if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
       }
     }
     
     // Indicador de visibilidad para players - fácil de personalizar
     const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
     
-    // Usar título de Notion para el contenido interno, o "Untitled" si no existe
-    const notionPageTitle = notionTitle || 'Untitled';
-    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${notionPageTitle}${visibilityIndicator}</h1>`;
+    // Usar el mismo título reparado en el contenido y en la configuración.
+    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${escapeHtml(notionPageTitle)}${visibilityIndicator}</h1>`;
     
     // Renderizar propiedades de base de datos (si las hay)
     const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
     
-    notionContent.innerHTML = headerHtml + propertiesHtml + blocksHtml;
+    const safeHtml = sanitizeNotionHtml(headerHtml + propertiesHtml + blocksHtml);
+    notionContent.innerHTML = safeHtml;
 
     // Guardar HTML en caché
-    this.cacheService.saveHtmlToLocalCache(pageId, headerHtml + blocksHtml);
+    this.cacheService.saveHtmlToLocalCache(pageId, safeHtml);
 
     // Actualizar mentions y adjuntar handlers
     this._updateMentionsInContent(notionContent);
@@ -5485,11 +6456,59 @@ export class ExtensionController {
       const prop = pageInfo.properties[key];
       if (prop && prop.type === 'title' && prop.title && prop.title.length > 0) {
         // Renderizar rich text del título
-        return prop.title.map(t => t.plain_text || '').join('');
+        return getUsablePageTitle(prop.title.map(t => t.plain_text || '').join(''));
       }
     }
     
     return null;
+  }
+
+  /**
+   * Repara y persiste un nombre placeholder cuando Notion ofrece un título real.
+   * No llama a saveConfig para evitar un segundo renderizado durante la carga.
+   * @private
+   * @param {Page} page - Página que se está mostrando
+   * @param  {...string} candidates - Títulos en orden de prioridad
+   * @returns {Promise<string>} - Título resuelto
+   */
+  async _repairStoredPageTitle(page, ...candidates) {
+    const storedPage = this.config?.findPageByNotionId?.(page?.getNotionPageId?.())
+      || this.config?.findPageById?.(page?.id)
+      || this.config?.pages?.find?.(candidate => candidate.id === page?.id)
+      || null;
+    const resolvedTitle = resolvePageTitle(...candidates, storedPage?.name, page?.name);
+    let changed = false;
+
+    for (const target of new Set([page, storedPage].filter(Boolean))) {
+      const repair = repairPageTitle(target, resolvedTitle);
+      changed = repair.changed || changed;
+    }
+
+    if (!changed || !this.config) return resolvedTitle;
+
+    const configToSave = this.config.toJSON ? this.config.toJSON() : this.config;
+    this.configBuilder = new ConfigBuilder(this.config);
+    this.storageService.saveLocalConfig(configToSave);
+
+    // Compartir la reparación efímeramente solo desde el Master GM.
+    if (this.isGM && !this.isCoGM) {
+      try {
+        this.broadcastService.broadcastVisiblePages(filterVisiblePages(configToSave));
+        await this.broadcastService.notifyFullVaultUpdated();
+      } catch (error) {
+        // La página debe seguir abriéndose aunque falle la persistencia remota.
+        logWarn('No se pudo compartir la reparación del título con la sala:', error);
+      }
+    }
+
+    const pageTitle = document.getElementById('page-title');
+    if (pageTitle && this.currentPage?.id === page?.id) {
+      const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
+      pageTitle.innerHTML = escapeHtml(resolvedTitle) + visibilityIndicator;
+    }
+
+    log(`📝 Título reparado y guardado: "${resolvedTitle}"`);
+    return resolvedTitle;
   }
 
   /**
@@ -5507,7 +6526,7 @@ export class ExtensionController {
   async _generateNotionHtmlWithHeader(pageId, options = {}) {
     const {
       includeShareButtons = false,
-      fallbackTitle = 'Untitled',
+      fallbackTitle = PAGE_TITLE_FALLBACK,
       blockTypes = null,
       useCache = true
     } = options;
@@ -5524,14 +6543,16 @@ export class ExtensionController {
       
       // Cover image
       if (pageInfo?.cover) {
-        const coverUrl = pageInfo.cover.external?.url || pageInfo.cover.file?.url;
+        const coverUrl = sanitizeHttpUrl(pageInfo.cover.external?.url || pageInfo.cover.file?.url);
         if (coverUrl) {
+          const escapedCoverUrl = escapeHtml(coverUrl);
+          const escapedPageId = escapeHtml(pageId);
           const shareButtonHtml = includeShareButtons ? `
-              <button class="notion-image-share-button share-button" 
-                      data-image-url="${coverUrl}" 
+              <button class="notion-image-share-button share-button"
+                      data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
                       title="Share with room">
-                ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
+                <img src="img/icon-players.svg" alt="Share" />
               </button>` : '';
           
           headerHtml += `
@@ -5540,14 +6561,12 @@ export class ExtensionController {
               <div class="image-loading">
                 <div class="loading-spinner"></div>
               </div>
-              <img src="${coverUrl}" alt="Page cover" 
+              <img src="${escapedCoverUrl}" alt="Page cover"
                    class="notion-cover-image notion-image-clickable loaded" 
-                   style="opacity: 1 !important; display: block !important;"
-                   data-image-url="${coverUrl}"
+                   data-image-url="${escapedCoverUrl}"
                    data-image-caption=""
-                   data-block-id="cover-${pageId}"
-                   onload="const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-                   onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Cover image expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }" />${shareButtonHtml}
+                   data-block-id="cover-${escapedPageId}"
+                   data-image-kind="cover" />${shareButtonHtml}
             </div>
           </div>
         `;
@@ -5561,29 +6580,31 @@ export class ExtensionController {
       let notionIconMarkup = '';
       if (pageInfo?.icon) {
         if (pageInfo.icon.type === 'emoji') {
-          notionIconMarkup = `<span class="notion-page-icon">${pageInfo.icon.emoji}</span>`;
+          notionIconMarkup = `<span class="notion-page-icon">${escapeHtml(pageInfo.icon.emoji)}</span>`;
         } else if (pageInfo.icon.external?.url) {
-          notionIconMarkup = `<img src="${pageInfo.icon.external.url}" alt="" class="notion-page-icon-img" />`;
+          const iconUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
+          if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
         } else if (pageInfo.icon.file?.url) {
-          notionIconMarkup = `<img src="${pageInfo.icon.file.url}" alt="" class="notion-page-icon-img" />`;
+          const iconUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
+          if (iconUrl) notionIconMarkup = `<img src="${escapeHtml(iconUrl)}" alt="" class="notion-page-icon-img" />`;
         }
       }
       
       // Título (usar de Notion o fallback)
-      const pageTitle = notionTitle || fallbackTitle;
-      headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${pageTitle}</h1>`;
+      const pageTitle = resolvePageTitle(notionTitle, fallbackTitle);
+      headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${escapeHtml(pageTitle)}</h1>`;
       
       // Renderizar propiedades de base de datos (si las hay)
       const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
       
       // HTML completo
-      const html = headerHtml + propertiesHtml + blocksHtml;
+      const html = sanitizeNotionHtml(headerHtml + propertiesHtml + blocksHtml);
       
       return {
         html,
-        headerHtml,
-        blocksHtml,
-        propertiesHtml,
+        headerHtml: sanitizeNotionHtml(headerHtml),
+        blocksHtml: sanitizeNotionHtml(blocksHtml),
+        propertiesHtml: sanitizeNotionHtml(propertiesHtml),
         pageInfo
       };
     } catch (e) {
@@ -5629,7 +6650,8 @@ export class ExtensionController {
       const cachedHtml = this.cacheService.getHtmlFromLocalCache(pageId);
       if (cachedHtml) {
         log('📦 Usando HTML del caché local');
-        notionContent.innerHTML = cachedHtml;
+        const safeCachedHtml = sanitizeNotionHtml(cachedHtml);
+        notionContent.innerHTML = safeCachedHtml;
         // Re-procesar mentions para asegurar que estén actualizados con el config actual
         this._updateMentionsInContent(notionContent);
         this._attachImageHandlers(notionContent);
@@ -5649,9 +6671,10 @@ export class ExtensionController {
       log('✅ Contenido recibido del GM');
       // Asegurar clase para ocultar .notion-gm-only (por si no se aplicó en init)
       if (!this.isGM) document.body.classList.add('role-player');
-      notionContent.innerHTML = html;
+      const safeHtml = sanitizeNotionHtml(html);
+      notionContent.innerHTML = safeHtml;
       // Guardar en caché local para próximas visitas
-      this.cacheService.saveHtmlToLocalCache(pageId, html);
+      this.cacheService.saveHtmlToLocalCache(pageId, safeHtml);
       // Actualizar mentions y adjuntar handlers
       this._updateMentionsInContent(notionContent);
       this._attachImageHandlers(notionContent);
@@ -5691,18 +6714,21 @@ export class ExtensionController {
       }
     }
 
-    // Asegurar URL absoluta
-    let absoluteImageUrl = imageUrl;
-    if (imageUrl && !imageUrl.match(/^https?:\/\//i)) {
-      try {
-        absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
-      } catch (e) {
-        absoluteImageUrl = imageUrl;
-      }
+    let absoluteImageUrl = '';
+    try {
+      absoluteImageUrl = sanitizeImageUrl(new URL(imageUrl, window.location.origin).href);
+    } catch {
+      absoluteImageUrl = '';
+    }
+
+    if (!absoluteImageUrl) {
+      notionContent.innerHTML = '<div class="empty-state"><p class="empty-state-text">Invalid image URL</p></div>';
+      return;
     }
 
     const caption = page.name || '';
-    const escapedCaption = caption.replace(/"/g, '&quot;');
+    const escapedCaption = escapeHtml(caption);
+    const escapedImageUrl = escapeHtml(absoluteImageUrl);
 
     // Agregar clase centered-content
     notionContent.classList.add('centered-content');
@@ -5722,10 +6748,10 @@ export class ExtensionController {
       ">
         <div style="position: relative; display: inline-block;">
           <img 
-            src="${absoluteImageUrl}" 
-            alt="${caption || 'Imagen'}"
+            src="${escapedImageUrl}"
+            alt="${escapedCaption || 'Image'}"
             class="notion-image-clickable"
-            data-image-url="${absoluteImageUrl}"
+            data-image-url="${escapedImageUrl}"
             data-image-caption="${escapedCaption}"
             style="
               max-width: 100%;
@@ -5737,7 +6763,7 @@ export class ExtensionController {
             "
           />
           <button class="notion-image-share-button share-button" 
-                  data-image-url="${absoluteImageUrl}" 
+                  data-image-url="${escapedImageUrl}"
                   data-image-caption="${escapedCaption}"
                   title="Share with room">
             ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
@@ -5747,22 +6773,6 @@ export class ExtensionController {
       </div>
     `;
     
-    // Handler para abrir en modal al hacer click
-    const img = notionContent.querySelector('img.notion-image-clickable');
-    if (img) {
-      img.addEventListener('click', () => {
-        this._showImageModal(absoluteImageUrl, caption);
-      });
-    }
-
-    // Handler para botón de share
-    const shareBtn = notionContent.querySelector('.notion-image-share-button');
-    if (shareBtn) {
-      shareBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._shareImageToPlayers(absoluteImageUrl, caption);
-      });
-    }
   }
 
   /**
@@ -5811,9 +6821,22 @@ export class ExtensionController {
     const embedUrl = videoType === 'youtube'
       ? `https://www.youtube.com/embed/${videoId}?autoplay=1`
       : `https://player.vimeo.com/video/${videoId}?autoplay=1`;
+    const safeEmbedUrl = sanitizeVideoEmbedUrl(embedUrl);
+
+    if (!safeEmbedUrl) {
+      notionContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">❌</div>
+          <p class="empty-state-text">Invalid video URL</p>
+        </div>
+      `;
+      return;
+    }
 
     const caption = page.name || '';
-    const escapedCaption = caption.replace(/"/g, '&quot;');
+    const escapedCaption = escapeHtml(caption);
+    const escapedThumbnailUrl = escapeHtml(thumbnailUrl);
+    const escapedEmbedUrl = escapeHtml(safeEmbedUrl);
 
     notionContent.classList.add('centered-content');
     notionContent.innerHTML = `
@@ -5829,10 +6852,10 @@ export class ExtensionController {
       ">
         <div style="position: relative; display: inline-block; cursor: pointer;">
           <img 
-            src="${thumbnailUrl}" 
-            alt="${caption || 'Video'}"
+            src="${escapedThumbnailUrl}"
+            alt="${escapedCaption || 'Video'}"
             class="video-thumbnail-clickable"
-            data-video-url="${embedUrl}"
+            data-video-url="${escapedEmbedUrl}"
             data-video-type="${videoType}"
             style="
               max-width: 100%;
@@ -5869,7 +6892,7 @@ export class ExtensionController {
     const thumbnail = notionContent.querySelector('.video-thumbnail-clickable');
     if (thumbnail) {
       thumbnail.addEventListener('click', () => {
-        this._openVideoModal(embedUrl, caption, videoType);
+        this._openVideoModal(safeEmbedUrl, caption, videoType);
       });
     }
   }
@@ -5879,8 +6902,14 @@ export class ExtensionController {
    * @private
    */
   async _openVideoModal(embedUrl, caption, videoType) {
+    const safeVideoUrl = sanitizeVideoEmbedUrl(embedUrl);
+    if (!safeVideoUrl) {
+      logWarn('Blocked unsafe video embed URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
-      window.open(embedUrl, '_blank');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -5890,7 +6919,7 @@ export class ExtensionController {
       const baseUrl = window.location.origin + baseDir;
 
       const viewerUrl = new URL('html/video-viewer.html', baseUrl);
-      viewerUrl.searchParams.set('url', encodeURIComponent(embedUrl));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeVideoUrl));
       viewerUrl.searchParams.set('type', videoType);
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
@@ -5904,7 +6933,7 @@ export class ExtensionController {
       });
     } catch (e) {
       logError('Error abriendo video modal:', e);
-      window.open(embedUrl, '_blank');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -5913,13 +6942,23 @@ export class ExtensionController {
    * @private
    */
   async _shareVideoToPlayers(url, caption, videoType) {
-    if (!this.OBR || !this.OBR.broadcast) return;
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share a video');
+      return false;
+    }
+    if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
+      const safeVideoUrl = sanitizeVideoEmbedUrl(url);
+      if (!safeVideoUrl) {
+        this._showFeedback('❌ Invalid video URL');
+        return false;
+      }
+
       const result = await this.broadcastService.sendMessage('com.dmscreen/showVideo', {
-        url: url,
+        url: safeVideoUrl,
         caption: caption || '',
-        type: videoType,
+        type: videoType === 'vimeo' ? 'vimeo' : 'youtube',
         senderId: this.playerId
       });
       
@@ -5929,9 +6968,11 @@ export class ExtensionController {
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing video');
       }
+      return result?.success === true;
     } catch (e) {
       logError('Error compartiendo video:', e);
       this._showFeedback('❌ Error sharing video');
+      return false;
     }
   }
 
@@ -5982,11 +7023,104 @@ export class ExtensionController {
       log('Error parsing Google URL, using original:', e);
     }
 
-    log('📄 Loading Google Doc:', embedUrl);
-    notionIframe.src = embedUrl;
+    const safeEmbedUrl = sanitizeGoogleEmbedUrl(embedUrl);
+    if (!safeEmbedUrl) {
+      logWarn('Blocked unsafe Google document URL');
+      this._setNotionDisplayMode('content');
+      const notionContent = document.getElementById('notion-content');
+      if (notionContent) {
+        notionContent.innerHTML = '<div class="empty-state"><p class="empty-state-text">Invalid document URL</p></div>';
+      }
+      return;
+    }
+
+    log('📄 Loading Google Doc:', safeEmbedUrl);
+    notionIframe.src = safeEmbedUrl;
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
     
     // El botón de share está ahora en el header
+  }
+
+  /**
+   * Renderiza un documento público de OneDrive Personal usando el enlace
+   * generado por OneDrive en … → Embed → Generate.
+   * @private
+   */
+  _renderOneDrivePage(page) {
+    const embedUrl = sanitizeOneDriveEmbedUrl(page?.url);
+    if (!embedUrl) {
+      this._setNotionDisplayMode('content');
+      const notionContent = document.getElementById('notion-content');
+      if (notionContent) {
+        notionContent.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">☁️</div>
+            <p class="empty-state-text">OneDrive needs an Embed link</p>
+            <p class="empty-state-hint">In OneDrive choose … → Embed → Generate, then paste the iframe or its src URL in this page.</p>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // El visor de Microsoft realiza una redirección antes de inicializar
+    // Office. Mantener el loading estándar visible hasta que termine.
+    this._setNotionDisplayMode('content', { keepIframeSource: true });
+    const previousIframe = document.getElementById('notion-iframe');
+    const notionContent = document.getElementById('notion-content');
+    if (!previousIframe || !notionContent) return;
+
+    // Abrir OneDrive en un iframe nuevo evita confundir el evento load que
+    // about:blank puede dejar encolado al cambiar desde la lista de páginas.
+    const notionIframe = previousIframe.cloneNode(false);
+    notionIframe.removeAttribute('src');
+    previousIframe.replaceWith(notionIframe);
+
+    notionContent.innerHTML = `
+      <div class="empty-state notion-loading">
+        <div class="empty-state-icon">⏳</div>
+        <p class="empty-state-text">Loading OneDrive document</p>
+        <p class="empty-state-hint">Microsoft Office may take a few seconds to open.</p>
+      </div>
+    `;
+
+    const requestId = this._oneDriveLoadRequestId;
+    const showRetryState = (title, hint) => {
+      if (requestId !== this._oneDriveLoadRequestId) return;
+      notionContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">☁️</div>
+          <p class="empty-state-text">${title}</p>
+          <p class="empty-state-hint">${hint}</p>
+          <button type="button" class="btn btn--sm btn--secondary" data-onedrive-retry>🔄 Retry</button>
+        </div>
+      `;
+      notionContent.querySelector('[data-onedrive-retry]')?.addEventListener('click', () => {
+        this._renderOneDrivePage(page);
+      }, { once: true });
+    };
+
+    notionIframe.dataset.gmVaultLoader = 'onedrive';
+    notionIframe.onload = () => {
+      if (requestId !== this._oneDriveLoadRequestId) return;
+      this._setNotionDisplayMode('iframe');
+    };
+    notionIframe.onerror = () => {
+      if (this._oneDriveLoadTimeout) {
+        clearTimeout(this._oneDriveLoadTimeout);
+        this._oneDriveLoadTimeout = null;
+      }
+      showRetryState('Could not load the OneDrive document', 'Check the Embed link and try again.');
+    };
+    notionIframe.title = page?.name || 'OneDrive document';
+    notionIframe.allowFullscreen = true;
+    notionIframe.referrerPolicy = 'no-referrer';
+    notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
+    notionIframe.src = embedUrl;
+
+    this._oneDriveLoadTimeout = setTimeout(() => {
+      showRetryState('OneDrive is taking longer than expected', 'You can keep waiting or retry the document.');
+    }, 20000);
   }
 
   /**
@@ -5994,11 +7128,21 @@ export class ExtensionController {
    * @private
    */
   async _shareGoogleDocToPlayers(url, name) {
-    if (!this.OBR || !this.OBR.broadcast) return;
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share a document');
+      return false;
+    }
+    if (!this.OBR || !this.OBR.broadcast) return false;
 
     try {
+      const safeDocUrl = sanitizeGoogleEmbedUrl(url);
+      if (!safeDocUrl) {
+        this._showFeedback('❌ Invalid document URL');
+        return false;
+      }
+
       const result = await this.broadcastService.sendMessage('com.dmscreen/showGoogleDoc', {
-        url: url,
+        url: safeDocUrl,
         name: name || '',
         senderId: this.playerId
       });
@@ -6009,9 +7153,11 @@ export class ExtensionController {
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing document');
       }
+      return result?.success === true;
     } catch (e) {
       logError('Error compartiendo documento:', e);
       this._showFeedback('❌ Error sharing document');
+      return false;
     }
   }
 
@@ -6030,14 +7176,17 @@ export class ExtensionController {
     if (!notionContent) return;
 
     try {
-      // El htmlContent ya viene pre-renderizado con estilos de Notion
-      notionContent.innerHTML = page.htmlContent;
+      // El HTML embebido comparte origen con el token de Notion, así que se
+      // trata como contenido externo aunque proceda de un export local.
+      const safeHtmlContent = sanitizeEmbeddedHtml(page.htmlContent);
+      notionContent.innerHTML = safeHtmlContent;
+      this._attachImageHandlers(notionContent);
       
       // Guardar en caché para players
       if (this.isGM && !this.isCoGM) {
         // Generar un ID único para la página (basado en nombre)
         const pageId = `embedded-${page.name.toLowerCase().replace(/\s+/g, '-')}`;
-        this.cacheService.saveHtmlToLocalCache(pageId, page.htmlContent);
+        this.cacheService.saveHtmlToLocalCache(pageId, safeHtmlContent);
       }
       
       log('✅ Renderizado HTML embebido para:', page.name);
@@ -6047,7 +7196,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading embedded content</p>
-          <p class="empty-state-hint">${e.message}</p>
+          <p class="empty-state-hint">${escapeHtml(e.message)}</p>
         </div>
       `;
     }
@@ -6125,8 +7274,8 @@ export class ExtensionController {
       
       // Agregar título con indicador de visibilidad si aplica
       const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      const pageName = page.name || 'Untitled';
-      const titleHtml = `<h1 class="notion-page-title">${pageName}${visibilityIndicator}</h1>`;
+      const pageName = resolvePageTitle(page.name);
+      const titleHtml = `<h1 class="notion-page-title">${escapeHtml(pageName)}${visibilityIndicator}</h1>`;
       notionContent.insertAdjacentHTML('afterbegin', titleHtml);
       
       log('✅ Demo HTML cargado correctamente');
@@ -6137,7 +7286,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading content</p>
-          <p class="empty-state-hint">${e.message}</p>
+          <p class="empty-state-hint">${escapeHtml(e.message)}</p>
         </div>
       `;
     }
@@ -6171,9 +7320,102 @@ export class ExtensionController {
       return;
     }
 
-    notionIframe.src = page.url;
+    let safeExternalUrl = '';
+    try {
+      safeExternalUrl = sanitizeHttpUrl(new URL(page.url, window.location.origin).href);
+      if (safeExternalUrl && new URL(safeExternalUrl).origin === window.location.origin) {
+        safeExternalUrl = '';
+      }
+    } catch {
+      safeExternalUrl = '';
+    }
+
+    if (!safeExternalUrl) {
+      logWarn('Blocked unsafe external page URL');
+      this._setNotionDisplayMode('content');
+      const notionContent = document.getElementById('notion-content');
+      if (notionContent) {
+        notionContent.innerHTML = '<div class="empty-state"><p class="empty-state-text">Invalid external URL</p></div>';
+      }
+      return;
+    }
+
+    notionIframe.src = safeExternalUrl;
     notionIframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:var(--radius-lg)';
     notionIframe.allowFullscreen = true;
+  }
+
+  /**
+   * Adjunta estados de carga/error sin depender de atributos onload/onerror.
+   * @param {HTMLElement} targetContainer
+   * @private
+   */
+  _attachImageLifecycleHandlers(targetContainer) {
+    const images = targetContainer.querySelectorAll('.notion-image-clickable');
+
+    images.forEach(img => {
+      if (img.__gmVaultLifecycleHandlersAdded) return;
+      img.__gmVaultLifecycleHandlersAdded = true;
+
+      const removeLoading = () => {
+        img.parentElement?.querySelector('.image-loading')?.remove();
+      };
+
+      const handleLoad = () => {
+        img.classList.add('loaded');
+        removeLoading();
+      };
+
+      const handleError = () => {
+        img.style.display = 'none';
+        removeLoading();
+
+        const parent = img.parentElement;
+        if (!parent || parent.querySelector('.notion-image-error')) return;
+
+        const errorState = document.createElement('div');
+        errorState.className = 'empty-state notion-image-error';
+
+        const icon = document.createElement('div');
+        icon.className = 'empty-state-icon';
+        icon.textContent = '⚠️';
+
+        const message = document.createElement('p');
+        message.className = 'empty-state-text';
+        message.textContent = img.dataset.imageKind === 'cover'
+          ? 'Cover image expired'
+          : 'Could not load image';
+
+        errorState.append(icon, message);
+
+        if (img.dataset.imageKind !== 'cover') {
+          const hint = document.createElement('p');
+          hint.className = 'empty-state-hint';
+          hint.textContent = 'The URL may have expired';
+          errorState.appendChild(hint);
+        }
+
+        const reloadButton = document.createElement('button');
+        reloadButton.type = 'button';
+        reloadButton.className = 'btn btn--sm btn--ghost';
+        reloadButton.textContent = '🔄 Reload page';
+        reloadButton.addEventListener('click', () => {
+          if (typeof window.refreshImage === 'function') window.refreshImage(reloadButton);
+        });
+        errorState.appendChild(reloadButton);
+        parent.appendChild(errorState);
+      };
+
+      img.addEventListener('load', handleLoad);
+      img.addEventListener('error', handleError);
+
+      if (img.complete) {
+        queueMicrotask(() => {
+          if (img.naturalWidth > 0) handleLoad();
+          else handleError();
+        });
+      }
+    });
   }
 
   /**
@@ -6184,15 +7426,17 @@ export class ExtensionController {
     const targetContainer = container || document.getElementById('notion-content');
     if (!targetContainer) return;
 
+    this._attachImageLifecycleHandlers(targetContainer);
+
     const images = targetContainer.querySelectorAll('.notion-image-clickable');
     
     images.forEach(img => {
-      if (img.dataset.listenerAdded) return;
-      img.dataset.listenerAdded = 'true';
+      if (img.__gmVaultClickHandlerAdded) return;
+      img.__gmVaultClickHandlerAdded = true;
       
       img.addEventListener('click', () => {
         const url = img.dataset.imageUrl || img.src;
-        const caption = img.dataset.imageCaption || img.alt || '';
+        const caption = img.dataset.imageCaption ?? '';
         if (url) this._showImageModal(url, caption);
       });
     });
@@ -6200,16 +7444,32 @@ export class ExtensionController {
     const shareButtons = targetContainer.querySelectorAll('.notion-image-share-button');
     
     shareButtons.forEach(btn => {
-      if (btn.dataset.listenerAdded) return;
-      btn.dataset.listenerAdded = 'true';
+      if (btn.__gmVaultShareHandlerAdded) return;
+      btn.__gmVaultShareHandlerAdded = true;
       
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (btn.disabled) return;
         const container = btn.closest('.notion-image-container');
         const img = container ? container.querySelector('img') : null;
         const url = (img && (img.dataset.imageUrl || img.src)) || btn.dataset.imageUrl;
-        const caption = (img && (img.dataset.imageCaption || img.alt)) || btn.dataset.imageCaption || '';
-        if (url) this._shareImageToPlayers(url, caption);
+        const caption = img
+          ? (img.dataset.imageCaption ?? '')
+          : (btn.dataset.imageCaption ?? '');
+        if (url) {
+          try {
+            await runShareButtonAction(
+              btn,
+              () => this._shareImageToPlayers(url, caption),
+              {
+                busyLabel: 'Sharing image…',
+                successLabel: 'Image shared with players'
+              }
+            );
+          } catch (error) {
+            logError('Could not share inline image:', error);
+          }
+        }
       });
     });
     
@@ -6252,10 +7512,13 @@ export class ExtensionController {
       }
       if (!pageInVault) return;
 
-      // Convertir a mention clickeable
-      // Priorizar nombre del vault sobre el textContent ya que la API a veces devuelve "Untitled"
-      const apiDisplayName = mention.textContent || mention.dataset.mentionPageName || 'Page';
-      const displayName = pageInVault.name || apiDisplayName;
+      // Convertir a mention clickeable con la misma regla que el renderer.
+      const apiDisplayName = resolvePageTitle(mention.textContent, mention.dataset.mentionPageName);
+      const displayName = resolvePageTitle(
+        mention.textContent,
+        mention.dataset.mentionPageName,
+        pageInVault.name
+      );
       const pageUrl = pageInVault.url || '';
       
       // Verificar visibilidad solo para players (GM Master y Co-GM pueden ver todo)
@@ -6381,8 +7644,9 @@ export class ExtensionController {
         }
       }
       
-      // Abrir el modal con la página
-      await this._showMentionPageModal(page, pageName);
+      // Abrir el modal con la misma regla usada al renderizar la mention.
+      const bestName = resolvePageTitle(pageName, page.name);
+      await this._showMentionPageModal(page, bestName);
       
     } catch (error) {
       logError('Error al abrir página mencionada:', error);
@@ -6426,14 +7690,22 @@ export class ExtensionController {
       this.notionRenderer.setRenderingOptions({ isInModal: true });
       
       let htmlContent = null;
+      let htmlSanitizer = sanitizeNotionHtml;
       
       // Master GM: usar API de Notion directamente
-      if (this.isGM && !this.isCoGM) {
+      if (page.hasEmbeddedHtml()) {
+        htmlSanitizer = sanitizeEmbeddedHtml;
+        htmlContent = page.htmlContent;
+      } else if (this.isGM && !this.isCoGM) {
         const result = await this._generateNotionHtmlWithHeader(notionPageId, {
           includeShareButtons: true,
           fallbackTitle: displayName,
           useCache: false // Forzar recarga sin caché
         });
+        const refreshedTitle = this._extractNotionPageTitle(result?.pageInfo);
+        const repairedTitle = await this._repairStoredPageTitle(page, refreshedTitle, displayName);
+        overlay.dataset.displayName = repairedTitle;
+        overlay.querySelector('.mention-modal__title')?.replaceChildren(repairedTitle);
         htmlContent = result?.html;
       } else {
         // CoGM y Players: solicitar contenido al GM
@@ -6454,6 +7726,7 @@ export class ExtensionController {
         htmlContent = await this.broadcastService.requestContentFromGM(notionPageId);
         
         if (htmlContent) {
+          htmlContent = sanitizeNotionHtml(htmlContent);
           // Guardar en caché local
           this.cacheService.saveHtmlToLocalCache(notionPageId, htmlContent);
         }
@@ -6471,7 +7744,8 @@ export class ExtensionController {
       }
       
       // Mostrar contenido
-      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlContent}</div>`;
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlSanitizer(htmlContent)}</div>`;
+      this._attachImageLifecycleHandlers(content);
       
       // Adjuntar handlers de imágenes
       const images = content.querySelectorAll('.notion-image-clickable');
@@ -6491,7 +7765,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error reloading page</p>
-          <p class="empty-state-hint">${error.message || 'Unknown error'}</p>
+          <p class="empty-state-hint">${escapeHtml(error.message || 'Unknown error')}</p>
         </div>
       `;
     } finally {
@@ -6608,22 +7882,47 @@ export class ExtensionController {
       this.notionRenderer.setRenderingOptions({ isInModal: true });
       
       let htmlContent = null;
+      let htmlSanitizer = sanitizeNotionHtml;
       
       // Caso 1: Página con HTML embebido (local-first, Obsidian)
       if (page.hasEmbeddedHtml()) {
         log('📄 Mention: página con HTML embebido (local-first)');
         // Usar el HTML embebido directamente
         htmlContent = page.htmlContent;
+        htmlSanitizer = sanitizeEmbeddedHtml;
       }
       // Caso 2: Página con URL externa (Obsidian Tunnel) - cargar en iframe
       else if (page.url && !page.getNotionPageId()) {
         log('🔗 Mention: página con URL externa, cargando en iframe:', page.url);
+        let safeExternalUrl = '';
+        try {
+          safeExternalUrl = sanitizeExternalIframeUrl(
+            new URL(page.url, window.location.origin).href
+          );
+        } catch {
+          safeExternalUrl = '';
+        }
+
+        if (!safeExternalUrl) {
+          content.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">⚠️</div>
+              <p class="empty-state-text">Cannot load page</p>
+              <p class="empty-state-hint">Invalid external URL</p>
+            </div>
+          `;
+          return;
+        }
+
         const iframe = document.createElement('iframe');
         // Añadir parámetro inModal=true para que el iframe sepa que está en modal desde el inicio
-        const modalUrl = new URL(page.url, window.location.origin);
+        const modalUrl = new URL(safeExternalUrl);
         modalUrl.searchParams.set('inModal', 'true');
         iframe.src = modalUrl.toString();
         iframe.className = 'mention-modal__iframe';
+        iframe.__gmVaultTrustedExternalMention = true;
+        iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-presentation');
+        iframe.referrerPolicy = 'no-referrer';
         iframe.style.cssText = 'width: 100%; height: 100%; border: none; min-height: 500px;';
         iframe.title = displayName;
         
@@ -6678,6 +7977,10 @@ export class ExtensionController {
             fallbackTitle: displayName,
             useCache: true
           });
+          const refreshedTitle = this._extractNotionPageTitle(result?.pageInfo);
+          displayName = await this._repairStoredPageTitle(page, refreshedTitle, displayName);
+          title.textContent = displayName;
+          overlay.dataset.displayName = displayName;
           htmlContent = result?.html;
         } else {
           // CoGM y Players: solicitar contenido al GM
@@ -6712,7 +8015,7 @@ export class ExtensionController {
           const cachedHtml = this.cacheService.getHtmlFromLocalCache(notionPageId);
           if (cachedHtml) {
             log('📦 Mention: usando HTML del caché local');
-            htmlContent = cachedHtml;
+            htmlContent = sanitizeNotionHtml(cachedHtml);
           } else {
             // Solicitar contenido al GM vía broadcast
             log('📡 Mention: solicitando contenido al GM...');
@@ -6720,6 +8023,7 @@ export class ExtensionController {
             
             if (htmlContent) {
               log('✅ Mention: contenido recibido del GM');
+              htmlContent = sanitizeNotionHtml(htmlContent);
               // Guardar en caché local para próximas visitas
               this.cacheService.saveHtmlToLocalCache(notionPageId, htmlContent);
             }
@@ -6763,7 +8067,8 @@ export class ExtensionController {
       }
       
       // Mostrar contenido con header completo (cover, título, icono, propiedades, bloques)
-      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlContent}</div>`;
+      content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlSanitizer(htmlContent)}</div>`;
+      this._attachImageLifecycleHandlers(content);
       
       // Adjuntar handlers de imágenes PERO NO de mentions (evita navegación infinita)
       const images = content.querySelectorAll('.notion-image-clickable');
@@ -6825,7 +8130,7 @@ export class ExtensionController {
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading page</p>
-          <p class="empty-state-hint">${error.message || 'Unknown error'}</p>
+          <p class="empty-state-hint">${escapeHtml(error.message || 'Unknown error')}</p>
         </div>
       `;
     } finally {
@@ -6839,28 +8144,30 @@ export class ExtensionController {
    * @param {string} imageUrl - URL de la imagen
    * @param {string} caption - Texto del caption (opcional)
    * @param {boolean} showShareButton - Mostrar botón de compartir (default: true para GM)
+   * @param {boolean} promptShare - Explicar que el GM debe confirmar el envío
    * @private
    */
-  async _showImageModal(imageUrl, caption, showShareButton = true, fullSize = false) {
+  async _showImageModal(imageUrl, caption, showShareButton = true, promptShare = false) {
+    let absoluteImageUrl = '';
+    try {
+      absoluteImageUrl = sanitizeImageUrl(new URL(imageUrl, window.location.origin).href);
+    } catch {
+      absoluteImageUrl = '';
+    }
+
+    if (!absoluteImageUrl) {
+      logWarn('Blocked unsafe image URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
       // Fallback: abrir en nueva ventana
-      window.open(imageUrl, '_blank', 'noopener,noreferrer');
+      window.open(absoluteImageUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
     try {
-      // Asegurarse de que imageUrl sea una URL absoluta
-      let absoluteImageUrl = imageUrl;
-      if (imageUrl && !imageUrl.match(/^https?:\/\//i)) {
-        try {
-          absoluteImageUrl = new URL(imageUrl, window.location.origin).toString();
-        } catch (e) {
-          log('No se pudo construir URL absoluta, usando original:', imageUrl);
-          absoluteImageUrl = imageUrl;
-        }
-      }
-      
       // Construir URL del viewer
       const currentPath = window.location.pathname;
       const baseDir = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
@@ -6871,27 +8178,22 @@ export class ExtensionController {
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
       }
-      // Mostrar botón de compartir solo si es GM y showShareButton es true
-      // El viewer usa el parámetro 'share' (default true si no se especifica)
-      if (!(showShareButton && this.isGM)) {
-        viewerUrl.searchParams.set('share', 'false');
-      }
-      // Pasar parámetro fullSize para mostrar imagen a tamaño completo cuando el GM comparte
-      if (fullSize) {
-        viewerUrl.searchParams.set('fullSize', 'true');
+      viewerUrl.searchParams.set('share', String(Boolean(showShareButton && this.isGM)));
+      if (promptShare) {
+        viewerUrl.searchParams.set('promptShare', 'true');
       }
       
       // Abrir modal usando Owlbear SDK
       await this.OBR.modal.open({
         id: 'notion-image-viewer',
         url: viewerUrl.toString(),
-        height: 800,
-        width: 1200
+        fullScreen: true,
+        hidePaper: true
       });
     } catch (error) {
       logError('Error al abrir modal de Owlbear:', error);
       // Fallback: abrir en nueva ventana
-      window.open(imageUrl, '_blank', 'noopener,noreferrer');
+      window.open(absoluteImageUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -6900,43 +8202,68 @@ export class ExtensionController {
    * @private
    */
   async _shareImageToPlayers(url, caption) {
-    if (!this.OBR || !this.OBR.broadcast) {
+    if (!this.isGM) {
+      logWarn('⛔ Blocked Player attempt to share an image');
+      return false;
+    }
+    if (!this.OBR || !this.OBR.broadcast || !this.OBR.party) {
       logError('OBR.broadcast no disponible');
-      return;
+      return false;
     }
 
     try {
-      // Asegurarse de que la URL sea absoluta
-      let absoluteImageUrl = url;
-      if (url && !url.match(/^https?:\/\//i)) {
-        try {
-          absoluteImageUrl = new URL(url, window.location.origin).toString();
-        } catch (e) {
-          absoluteImageUrl = url;
-        }
+      let absoluteImageUrl = '';
+      try {
+        absoluteImageUrl = sanitizeImageUrl(new URL(url, window.location.origin).href);
+      } catch {
+        absoluteImageUrl = '';
       }
 
-      // Detectar si el sender es GM para mostrar tamaño completo
-      const isGM = this.isGM;
+      if (!absoluteImageUrl) {
+        this._showFeedback('❌ Invalid image URL');
+        return false;
+      }
 
-      // Usar el canal correcto como en el original
-      const result = await this.broadcastService.sendMessage('com.dmscreen/showImage', {
+      const result = await shareImageWithPlayers({
+        OBR: this.OBR,
         url: absoluteImageUrl,
         caption: caption || '',
-        senderId: this.playerId,
-        fullSize: isGM // Si el sender es GM, mostrar a tamaño completo
+        onProgress: (progress) => {
+          const total = progress.total || 0;
+          const unresolved = (progress.missing || 0) + (progress.loading || 0);
+
+          if (progress.phase === 'sending') {
+            this._showFeedback(`📤 Sending image to ${total} player${total === 1 ? '' : 's'}...`);
+          } else if (progress.phase === 'retrying') {
+            this._showFeedback(`🔄 Checking delivery for ${progress.pending} player${progress.pending === 1 ? '' : 's'}...`);
+          } else if (progress.phase === 'progress' && progress.loaded > 0) {
+            this._showFeedback(`📸 Visible to ${progress.loaded}/${total} players...`);
+          } else if (progress.phase === 'no_recipients') {
+            this._showFeedback('⚠️ No players connected');
+          } else if (progress.phase === 'complete') {
+            const details = [];
+            if (progress.failed) details.push(`${progress.failed} could not display`);
+            if (unresolved) details.push(`${unresolved} did not confirm`);
+            this._showFeedback(
+              `${details.length ? '⚠️' : '📸'} Visible to ${progress.loaded}/${total} players${details.length ? ` · ${details.join(' · ')}` : ''}`
+            );
+          } else if (progress.phase === 'error') {
+            this._showFeedback('❌ Error sharing image');
+          }
+        }
       });
-      
-      if (result?.success) {
+
+      this.analyticsService?.trackImageShareResult?.(result);
+
+      if (result.loaded > 0) {
         log('📤 Imagen compartida:', absoluteImageUrl.substring(0, 80));
-        this._showFeedback('📸 Image shared!');
         this.analyticsService.trackImageShare(absoluteImageUrl);
-      } else if (result?.error !== 'size_limit') {
-        this._showFeedback('❌ Error sharing image');
       }
+      return result.loaded > 0;
     } catch (e) {
       logError('Error compartiendo imagen:', e);
       this._showFeedback('❌ Error sharing image');
+      return false;
     }
   }
 
@@ -6948,9 +8275,15 @@ export class ExtensionController {
    * @private
    */
   async _showVideoModal(videoUrl, caption, videoType = 'youtube') {
+    const safeVideoUrl = sanitizeVideoEmbedUrl(videoUrl);
+    if (!safeVideoUrl) {
+      logWarn('Blocked unsafe shared video URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(videoUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -6960,8 +8293,8 @@ export class ExtensionController {
       const baseUrl = window.location.origin + baseDir;
       
       const viewerUrl = new URL('html/video-viewer.html', baseUrl);
-      viewerUrl.searchParams.set('url', encodeURIComponent(videoUrl));
-      viewerUrl.searchParams.set('type', videoType);
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeVideoUrl));
+      viewerUrl.searchParams.set('type', videoType === 'vimeo' ? 'vimeo' : 'youtube');
       if (caption) {
         viewerUrl.searchParams.set('caption', encodeURIComponent(caption));
       }
@@ -6974,7 +8307,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de video:', error);
-      window.open(videoUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeVideoUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -6985,9 +8318,15 @@ export class ExtensionController {
    * @private
    */
   async _showGoogleDocModal(docUrl, name) {
+    const safeDocUrl = sanitizeGoogleEmbedUrl(docUrl);
+    if (!safeDocUrl) {
+      logWarn('Blocked unsafe shared Google document URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(docUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeDocUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -6997,7 +8336,7 @@ export class ExtensionController {
       const baseUrl = window.location.origin + baseDir;
       
       const viewerUrl = new URL('html/google-doc-viewer.html', baseUrl);
-      viewerUrl.searchParams.set('url', encodeURIComponent(docUrl));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeDocUrl));
       if (name) {
         viewerUrl.searchParams.set('name', encodeURIComponent(name));
       }
@@ -7010,7 +8349,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de Google Doc:', error);
-      window.open(docUrl, '_blank', 'noopener,noreferrer');
+      window.open(safeDocUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7022,9 +8361,15 @@ export class ExtensionController {
    * @private
    */
   async _showNotionPageModal(url, name, pageId) {
+    const safeNotionUrl = sanitizeHttpUrl(url);
+    if (!safeNotionUrl || !isNotionUrl(safeNotionUrl)) {
+      logWarn('Blocked unsafe legacy Notion URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeNotionUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -7035,7 +8380,7 @@ export class ExtensionController {
       
       const viewerUrl = new URL('index.html', baseUrl);
       viewerUrl.searchParams.set('modal', 'true');
-      viewerUrl.searchParams.set('url', encodeURIComponent(url));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeNotionUrl));
       if (name) {
         viewerUrl.searchParams.set('name', encodeURIComponent(name));
       }
@@ -7048,7 +8393,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de Notion:', error);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeNotionUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7080,7 +8425,7 @@ export class ExtensionController {
       // Guardar el HTML en sessionStorage para recuperarlo en la modal
       // Esto evita problemas con URLs muy largas
       const contentKey = 'gm-vault-shared-content-' + Date.now();
-      sessionStorage.setItem(contentKey, html);
+      sessionStorage.setItem(contentKey, sanitizeEmbeddedHtml(html));
       viewerUrl.searchParams.set('contentKey', contentKey);
       
       await this.OBR.modal.open({
@@ -7101,9 +8446,28 @@ export class ExtensionController {
    * @private
    */
   async _showContentModal(url, name) {
+    let safeContentUrl = '';
+    try {
+      safeContentUrl = sanitizeHttpUrl(new URL(url, window.location.origin).href);
+      const parsed = safeContentUrl ? new URL(safeContentUrl) : null;
+      if (
+        parsed?.origin === window.location.origin &&
+        !/^\/content-demo\/[A-Za-z0-9._/-]+\.html$/.test(parsed.pathname)
+      ) {
+        safeContentUrl = '';
+      }
+    } catch {
+      safeContentUrl = '';
+    }
+
+    if (!safeContentUrl) {
+      logWarn('Blocked unsafe shared content URL');
+      return;
+    }
+
     if (!this.OBR || !this.OBR.modal) {
       logError('OBR.modal no disponible');
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeContentUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
@@ -7114,7 +8478,7 @@ export class ExtensionController {
       
       const viewerUrl = new URL('index.html', baseUrl);
       viewerUrl.searchParams.set('modal', 'true');
-      viewerUrl.searchParams.set('url', encodeURIComponent(url));
+      viewerUrl.searchParams.set('url', encodeURIComponent(safeContentUrl));
       if (name) {
         viewerUrl.searchParams.set('name', encodeURIComponent(name));
       }
@@ -7127,7 +8491,7 @@ export class ExtensionController {
       });
     } catch (error) {
       logError('Error al abrir modal de contenido:', error);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(safeContentUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -7304,6 +8668,24 @@ export class ExtensionController {
     
     // Recopilar todas las páginas respetando el orden del vault
     const allPages = [];
+    const rootCategories = this.config.categories || [];
+    const rootPages = this.config.pages || [];
+    const hideCommonRoot = rootCategories.length === 1 && rootPages.length === 0;
+
+    const addPageToList = (pageData, path, pageIndex) => {
+      const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
+      const visiblePath = hideCommonRoot ? path.slice(1) : path;
+      allPages.push({
+        id: page.id,
+        name: page.name,
+        url: page.url,
+        icon: page.icon,
+        displayPath: visiblePath.join(' / '),
+        searchPath: path.join(' / '),
+        categoryPath: path,
+        pageIndex
+      });
+    };
     
     const collectPagesOrdered = (category, path = [], level = 0) => {
       if (!category) return;
@@ -7317,17 +8699,7 @@ export class ExtensionController {
           collectPagesOrdered(subcategory, currentPath, level + 1);
         } else if (item.type === 'page' && category.pages && category.pages[item.index]) {
           const pageData = category.pages[item.index];
-          // Asegurar que es una instancia de Page para tener acceso al id
-          const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
-          allPages.push({
-            id: page.id,
-            name: page.name,
-            url: page.url,
-            icon: page.icon,
-            displayPath: currentPath.join(' / '),
-            categoryPath: currentPath,
-            pageIndex: item.index
-          });
+          addPageToList(pageData, currentPath, item.index);
         }
       });
     };
@@ -7337,6 +8709,8 @@ export class ExtensionController {
     rootOrder.forEach(item => {
       if (item.type === 'category' && this.config.categories && this.config.categories[item.index]) {
         collectPagesOrdered(this.config.categories[item.index], [], 0);
+      } else if (item.type === 'page' && this.config.pages && this.config.pages[item.index]) {
+        addPageToList(this.config.pages[item.index], [], item.index);
       }
     });
     
@@ -7347,7 +8721,8 @@ export class ExtensionController {
     
     // Crear opciones para el select con indentación
     const pageOptions = allPages.map((page, index) => ({
-      label: `${page.displayPath} → ${page.name}`,
+      label: page.displayPath ? `${page.displayPath} → ${page.name}` : page.name,
+      searchText: `${page.searchPath} ${page.name}`.trim(),
       value: index.toString()
     }));
     
@@ -7363,6 +8738,19 @@ export class ExtensionController {
         label: 'Select a page',
         type: 'select',
         options: pageOptions,
+        searchable: true,
+        searchLabel: 'Search pages',
+        searchPlaceholder: 'Search by page or folder...',
+        resultLabel: 'page',
+        noResultsText: 'No pages found',
+        visibleOptions: 7,
+        onSearch: ({ queryLength, resultCount, totalCount }) => {
+          this.analyticsService?.trackTokenPageSearchUsed?.({
+            queryLength,
+            resultCount,
+            totalCount
+          });
+        },
         required: true
       }
     ], async (data) => {
@@ -7587,4 +8975,3 @@ export class ExtensionController {
 }
 
 export default ExtensionController;
-

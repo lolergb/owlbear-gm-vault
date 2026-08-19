@@ -4,7 +4,10 @@
  * Convierte los bloques de la API de Notion a HTML.
  */
 
-import { log, logWarn } from '../utils/logger.js';
+import { log, logWarn } from '../utils/logger.js?v=20260722-4';
+import { extractNotionPageId } from '../utils/helpers.js';
+import { resolvePageTitle } from '../utils/pageTitle.js';
+import { escapeHtml, sanitizeHttpUrl, sanitizeLinkUrl } from '../utils/htmlSecurity.js?v=20260722-4';
 
 /** Tag en bloques code que marca contenido solo para GM/coGM (oculto para players) */
 const GM_ONLY_CODE_TAG = '🔒 GM';
@@ -217,16 +220,29 @@ export class NotionRenderer {
       if (text.type === 'mention' && text.mention?.type === 'page') {
         return this._renderPageMention(text);
       }
+
+      // Los enlaces internos creados como rich_text.href deben comportarse
+      // igual que una mention: abren la página dentro de GM Vault y respetan
+      // los permisos de visibilidad configurados.
+      const linkedPageId = extractNotionPageId(text.href || text.text?.link?.url);
+      if (linkedPageId) {
+        return this._renderPageMention({
+          ...text,
+          type: 'mention',
+          mention: { type: 'page', page: { id: linkedPageId } }
+        });
+      }
       
-      let content = text.plain_text || '';
+      const plainText = String(text.plain_text ?? '');
+      let content = escapeHtml(plainText);
       
       // Detectar si el contenido es solo un tag de GM o HIDDEN
-      const isOnlyGmTag = content.trim() === '🔒 GM';
-      const isOnlyHiddenTag = content.trim() === '🔒 HIDDEN';
+      const isOnlyGmTag = plainText.trim() === '🔒 GM';
+      const isOnlyHiddenTag = plainText.trim() === '🔒 HIDDEN';
       const isOnlyTag = isOnlyGmTag || isOnlyHiddenTag;
       
       // Convertir saltos de línea a <br>
-      content = content.replace(/\n/g, '<br>');
+      content = content.replace(/\r?\n/g, '<br>');
       
       // Ocultar tags de GM y HIDDEN visualmente (pero mantenerlos en el DOM para detectarlos)
       content = content.replace(/🔒 GM/g, '<span class="notion-tag-hidden">🔒 GM</span>');
@@ -242,8 +258,9 @@ export class NotionRenderer {
         if (text.annotations.strikethrough) content = `<s class="notion-text-strikethrough${hiddenClass}">${content}</s>`;
         if (text.annotations.code) content = `<code class="notion-text-code${hiddenClass}">${content}</code>`;
         
-        if (text.href) {
-          content = `<a href="${text.href}" class="notion-text-link${hiddenClass}" target="_blank" rel="noopener noreferrer">${content}</a>`;
+        const safeHref = sanitizeLinkUrl(text.href || text.text?.link?.url);
+        if (safeHref) {
+          content = `<a href="${escapeHtml(safeHref)}" class="notion-text-link${hiddenClass}" target="_blank" rel="noopener noreferrer">${content}</a>`;
         }
       } else if (isOnlyTag) {
         // Si no hay anotaciones pero es solo el tag, envolver en span oculto
@@ -262,29 +279,27 @@ export class NotionRenderer {
    */
   _renderPageMention(text) {
     const mentionedPageId = text.mention?.page?.id;
-    const apiDisplayName = text.plain_text || 'Page';
+    const pageInVault = this.config?.findPageByNotionId(mentionedPageId) || null;
+    // El texto de la mention es el dato más reciente disponible en este punto.
+    // Si Notion devuelve un placeholder, usar el nombre persistido del vault.
+    const displayName = resolvePageTitle(text.plain_text, pageInVault?.name);
+    const escapedDisplayName = this._escapeHtml(displayName);
+    const escapedPageId = this._escapeHtml(mentionedPageId || '');
     
     // Si estamos dentro de un modal, los mentions NO son clickeables (evita navegación infinita)
     if (this.isRenderingInModal) {
-      return `<span class="notion-mention notion-mention--disabled" aria-disabled="true">${apiDisplayName}</span>`;
+      return `<span class="notion-mention notion-mention--disabled" aria-disabled="true">${escapedDisplayName}</span>`;
     }
     
     // Si no hay config, renderizar como texto plano (pero con data-mention-page-id para actualización posterior)
     if (!this.config) {
-      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${mentionedPageId}" data-mention-page-name="${apiDisplayName.replace(/"/g, '&quot;')}">${apiDisplayName}</span>`;
+      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${escapedPageId}" data-mention-page-name="${escapedDisplayName}">${escapedDisplayName}</span>`;
     }
-    
-    // Buscar si la página está en el vault
-    const pageInVault = this.config.findPageByNotionId(mentionedPageId);
     
     // Si la página no está en el vault, renderizar como texto plano (pero con data para actualización posterior)
     if (!pageInVault) {
-      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${mentionedPageId}" data-mention-page-name="${apiDisplayName.replace(/"/g, '&quot;')}">${apiDisplayName}</span>`;
+      return `<span class="notion-mention notion-mention--plain" data-mention-page-id="${escapedPageId}" data-mention-page-name="${escapedDisplayName}">${escapedDisplayName}</span>`;
     }
-    
-    // Usar el nombre del vault si está disponible, ya que la API a veces devuelve "Untitled"
-    // especialmente en tablas y otros bloques anidados
-    const displayName = pageInVault.name || apiDisplayName;
     
     // Para players: verificar si la página es visible
     // GM Master y Co-GM pueden ver todo, solo players tienen restricciones
@@ -300,13 +315,13 @@ export class NotionRenderer {
     // Página en vault: renderizar como enlace clickeable (incluso si no visible, para mostrar mensaje)
     return `<span 
       class="notion-mention notion-mention--link${lockedClass}" 
-      data-mention-page-id="${mentionedPageId}"
-      data-mention-page-name="${displayName.replace(/"/g, '&quot;')}"
-      data-mention-page-url="${pageInVault.url || ''}"
+      data-mention-page-id="${escapedPageId}"
+      data-mention-page-name="${escapedDisplayName}"
+      data-mention-page-url="${this._escapeHtml(sanitizeHttpUrl(pageInVault.url || ''))}"
       role="button"
       tabindex="0"
-      aria-label="Open ${displayName}"
-    >${displayName}</span>`;
+      aria-label="Open ${escapedDisplayName}"
+    >${escapedDisplayName}</span>`;
   }
 
   /**
@@ -409,7 +424,7 @@ export class NotionRenderer {
         return this.renderRichText(property.rich_text);
       
       case 'number':
-        return property.number !== null ? property.number.toString() : '';
+        return property.number !== null ? this._escapeHtml(property.number) : '';
       
       case 'select':
         if (!property.select) return '';
@@ -441,18 +456,24 @@ export class NotionRenderer {
       
       case 'url':
         if (!property.url) return '';
+        const safePropertyUrl = sanitizeLinkUrl(property.url);
         const displayUrl = property.url.length > 40 
           ? property.url.substring(0, 40) + '...' 
           : property.url;
-        return `<a href="${this._escapeHtml(property.url)}" class="notion-property-link" target="_blank" rel="noopener">${this._escapeHtml(displayUrl)}</a>`;
+        if (!safePropertyUrl) return this._escapeHtml(displayUrl);
+        return `<a href="${this._escapeHtml(safePropertyUrl)}" class="notion-property-link" target="_blank" rel="noopener noreferrer">${this._escapeHtml(displayUrl)}</a>`;
       
       case 'email':
         if (!property.email) return '';
-        return `<a href="mailto:${this._escapeHtml(property.email)}" class="notion-property-link">${this._escapeHtml(property.email)}</a>`;
+        const safeEmailUrl = sanitizeLinkUrl(`mailto:${property.email}`);
+        if (!safeEmailUrl) return this._escapeHtml(property.email);
+        return `<a href="${this._escapeHtml(safeEmailUrl)}" class="notion-property-link">${this._escapeHtml(property.email)}</a>`;
       
       case 'phone_number':
         if (!property.phone_number) return '';
-        return `<a href="tel:${this._escapeHtml(property.phone_number)}" class="notion-property-link">${this._escapeHtml(property.phone_number)}</a>`;
+        const safePhoneUrl = sanitizeLinkUrl(`tel:${property.phone_number}`);
+        if (!safePhoneUrl) return this._escapeHtml(property.phone_number);
+        return `<a href="${this._escapeHtml(safePhoneUrl)}" class="notion-property-link">${this._escapeHtml(property.phone_number)}</a>`;
       
       case 'formula':
         return this._formatFormulaValue(property.formula);
@@ -484,7 +505,8 @@ export class NotionRenderer {
    * @private
    */
   _renderSelectTag(name, color) {
-    const colorClass = color ? `notion-tag--${color}` : '';
+    const allowedColors = new Set(['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
+    const colorClass = allowedColors.has(color) ? `notion-tag--${color}` : '';
     return `<span class="notion-tag ${colorClass}">${this._escapeHtml(name)}</span>`;
   }
 
@@ -496,6 +518,7 @@ export class NotionRenderer {
     if (!dateStr) return '';
     try {
       const date = new Date(dateStr);
+      if (Number.isNaN(date.getTime())) return this._escapeHtml(dateStr);
       // Si tiene hora (no es medianoche UTC), mostrar también la hora
       if (dateStr.includes('T') && !dateStr.endsWith('T00:00:00.000Z')) {
         return date.toLocaleString('es-ES', { 
@@ -512,7 +535,7 @@ export class NotionRenderer {
         year: 'numeric' 
       });
     } catch {
-      return dateStr;
+      return this._escapeHtml(dateStr);
     }
   }
 
@@ -539,7 +562,7 @@ export class NotionRenderer {
     if (!formula) return '';
     switch (formula.type) {
       case 'string': return this._escapeHtml(formula.string || '');
-      case 'number': return formula.number?.toString() || '';
+      case 'number': return formula.number === null || formula.number === undefined ? '' : this._escapeHtml(formula.number);
       case 'boolean': return formula.boolean ? '✓' : '✗';
       case 'date': return this._formatDate(formula.date?.start);
       default: return '';
@@ -567,7 +590,7 @@ export class NotionRenderer {
   _formatRollupValue(rollup) {
     if (!rollup) return '';
     switch (rollup.type) {
-      case 'number': return rollup.number?.toString() || '';
+      case 'number': return rollup.number === null || rollup.number === undefined ? '' : this._escapeHtml(rollup.number);
       case 'date': return this._formatDate(rollup.date?.start);
       case 'array': 
         if (!rollup.array?.length) return '';
@@ -581,13 +604,7 @@ export class NotionRenderer {
    * @private
    */
   _escapeHtml(str) {
-    if (!str) return '';
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+    return escapeHtml(str);
   }
 
   /**
@@ -644,10 +661,13 @@ export class NotionRenderer {
         return this._renderCallout(block);
       
       case 'table':
-        return `<div class="notion-table-container" data-table-id="${block.id}">Loading table...</div>`;
+        return `<div class="notion-table-container" data-table-id="${this._escapeHtml(block.id)}">Loading table...</div>`;
       
       case 'child_database':
         return '<div class="notion-database-placeholder">[Base de datos - Requiere implementación adicional]</div>';
+
+      case 'link_to_page':
+        return this._renderLinkToPage(block);
       
       case 'column_list':
         return '<div class="notion-column-list">[Columnas - Procesando...]</div>';
@@ -664,7 +684,7 @@ export class NotionRenderer {
       case 'toggle':
         const toggle = block.toggle;
         const toggleText = this.renderRichText(toggle?.rich_text);
-        return `<details class="notion-toggle"><summary>${toggleText}</summary><div class="notion-toggle-content" data-toggle-id="${block.id}">Loading content...</div></details>`;
+        return `<details class="notion-toggle"><summary>${toggleText}</summary><div class="notion-toggle-content" data-toggle-id="${this._escapeHtml(block.id)}">Loading content...</div></details>`;
       
       case 'bookmark':
         return this._renderBookmark(block);
@@ -681,7 +701,7 @@ export class NotionRenderer {
       case 'synced_block':
         // Synced blocks se procesan de forma asíncrona en renderBlocks
         // Placeholder para el procesamiento síncrono
-        return `<div class="notion-synced-block" data-synced-block-id="${block.id}"></div>`;
+        return `<div class="notion-synced-block" data-synced-block-id="${this._escapeHtml(block.id)}"></div>`;
       
       default:
         logWarn('Tipo de bloque no soportado:', type);
@@ -690,59 +710,92 @@ export class NotionRenderer {
   }
 
   /**
+   * Renderiza un bloque link_to_page como navegación interna sin convertirlo
+   * en parte de la jerarquía del vault.
+   * @param {Object} block - Bloque link_to_page de Notion
+   * @returns {string}
+   * @private
+   */
+  _renderLinkToPage(block) {
+    const linkInfo = block?.link_to_page;
+    if (!linkInfo) return '';
+
+    if (linkInfo.type === 'page_id' && linkInfo.page_id) {
+      const pageInVault = this.config?.findPageByNotionId(linkInfo.page_id) || null;
+      return this._renderPageMention({
+        type: 'mention',
+        plain_text: resolvePageTitle(pageInVault?.name, 'Linked page'),
+        mention: { type: 'page', page: { id: linkInfo.page_id } }
+      });
+    }
+
+    // Las bases de datos no tienen una Page equivalente en Config; mantener el
+    // bloque como texto en vez de crear una carpeta artificial.
+    if (linkInfo.type === 'database_id') {
+      return '<span class="notion-mention notion-mention--plain">Linked database</span>';
+    }
+
+    return '';
+  }
+
+  /**
    * Renderiza una imagen
    * @private
    */
   _renderImage(block) {
     const image = block.image;
-    let imageUrl = null;
+    let rawImageUrl = null;
     let imageType = null;
     
     if (image?.external?.url) {
-      imageUrl = image.external.url;
+      rawImageUrl = image.external.url;
       imageType = 'external';
     } else if (image?.file?.url) {
-      imageUrl = image.file.url;
+      rawImageUrl = image.file.url;
       imageType = 'file';
     }
     
-    const caption = image?.caption ? this.renderRichText(image.caption) : '';
+    const imageUrl = sanitizeHttpUrl(rawImageUrl);
+    const captionHtml = image?.caption ? this.renderRichText(image.caption) : '';
+    const captionText = image?.caption ? this._getPlainTextFromRichText(image.caption) : '';
     
     if (imageUrl) {
       const imageId = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const escapedImageUrl = this._escapeHtml(imageUrl);
+      const escapedCaptionText = this._escapeHtml(captionText);
+      const escapedBlockId = this._escapeHtml(block.id);
       
       log('🖼️ Renderizando imagen:', {
         type: imageType,
         url: imageUrl.substring(0, 80) + (imageUrl.length > 80 ? '...' : ''),
-        hasCaption: !!caption
+        hasCaption: !!captionHtml
       });
       
       return `
-        <div class="notion-image" data-block-id="${block.id}">
+        <div class="notion-image" data-block-id="${escapedBlockId}">
           <div class="notion-image-container">
             <div class="image-loading">
               <div class="loading-spinner"></div>
             </div>
             <img 
-              src="${imageUrl}" 
-              alt="${caption || 'Imagen de Notion'}" 
+              src="${escapedImageUrl}"
+              alt="${escapedCaptionText || 'Imagen de Notion'}"
               class="notion-image-clickable" 
               data-image-id="${imageId}" 
-              data-image-url="${imageUrl}" 
-              data-image-caption="${caption.replace(/"/g, '&quot;')}"
-              data-block-id="${block.id}"
+              data-image-url="${escapedImageUrl}"
+              data-image-caption="${escapedCaptionText}"
+              data-block-id="${escapedBlockId}"
+              data-image-kind="content"
               loading="eager"
-              onload="this.classList.add('loaded'); const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove();"
-              onerror="this.style.display='none'; const loading = this.parentElement.querySelector('.image-loading'); if(loading) loading.remove(); if(!this.parentElement.querySelector('.notion-image-error')) { const errorDiv = document.createElement('div'); errorDiv.className='empty-state notion-image-error'; errorDiv.innerHTML='<div class=\\'empty-state-icon\\'>⚠️</div><p class=\\'empty-state-text\\'>Could not load image</p><p class=\\'empty-state-hint\\'>The URL may have expired</p><button class=\\'btn btn--sm btn--ghost\\' onclick=\\'window.refreshImage && window.refreshImage(this)\\'>🔄 Reload page</button>'; this.parentElement.appendChild(errorDiv); }"
             />
-            <button class="notion-image-share-button share-button" 
-                    data-image-url="${imageUrl}" 
-                    data-image-caption="${caption.replace(/"/g, '&quot;')}"
+            <button class="notion-image-share-button share-button"
+                    data-image-url="${escapedImageUrl}"
+                    data-image-caption="${escapedCaptionText}"
                     title="Share with room">
               <img src="img/icon-players.svg" alt="Share" />
             </button>
           </div>
-          ${caption ? `<div class="notion-image-caption">${caption}</div>` : ''}
+          ${captionHtml ? `<div class="notion-image-caption">${captionHtml}</div>` : ''}
         </div>
       `;
     } else {
@@ -762,7 +815,7 @@ export class NotionRenderer {
     
     if (isToggleable) {
       // Heading con toggle - se renderizará con hijos en renderBlocks
-      return `<h${level} class="notion-heading notion-heading-toggle" data-toggle-heading="${block.id}">${text}</h${level}>`;
+      return `<h${level} class="notion-heading notion-heading-toggle" data-toggle-heading="${this._escapeHtml(block.id)}">${text}</h${level}>`;
     }
     
     return `<h${level} class="notion-heading">${text}</h${level}>`;
@@ -774,7 +827,7 @@ export class NotionRenderer {
    */
   _renderCallout(block) {
     const callout = block.callout;
-    const icon = callout?.icon?.emoji || '💡';
+    const icon = this._escapeHtml(callout?.icon?.emoji || '💡');
     const calloutText = this.renderRichText(callout?.rich_text);
     const gmOnlyClass = this._blockRichTextContainsGmTag(block) ? ' notion-gm-only' : '';
     const hiddenClass = this._blockRichTextContainsHiddenTag(block) ? ' notion-hidden' : '';
@@ -782,7 +835,7 @@ export class NotionRenderer {
     // Si tiene hijos, se renderizarán después
     const hasChildren = block.has_children;
     const childrenPlaceholder = hasChildren 
-      ? `<div class="notion-callout-children" data-callout-id="${block.id}"></div>`
+      ? `<div class="notion-callout-children" data-callout-id="${this._escapeHtml(block.id)}"></div>`
       : '';
 
     return `
@@ -801,11 +854,14 @@ export class NotionRenderer {
    * @private
    */
   _renderBookmark(block) {
-    const url = block.bookmark?.url || '';
+    const rawUrl = block.bookmark?.url || '';
+    const url = sanitizeLinkUrl(rawUrl);
     const caption = block.bookmark?.caption ? this.renderRichText(block.bookmark.caption) : '';
+    const label = caption || this._escapeHtml(rawUrl);
+    if (!url) return `<div class="notion-bookmark"><span>${label}</span></div>`;
     return `
       <div class="notion-bookmark">
-        <a href="${url}" target="_blank" rel="noopener noreferrer">${caption || url}</a>
+        <a href="${this._escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>
       </div>
     `;
   }
@@ -816,23 +872,21 @@ export class NotionRenderer {
    */
   _renderVideo(block) {
     const video = block.video;
-    let videoUrl = video?.external?.url || video?.file?.url || '';
+    const videoUrl = sanitizeHttpUrl(video?.external?.url || video?.file?.url || '');
+    if (!videoUrl) return '<div class="notion-video-unavailable">[Video not available]</div>';
     
-    if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-      // Convertir URL de YouTube a embed
-      const videoId = this._extractYouTubeId(videoUrl);
-      if (videoId) {
-        return `
-          <div class="notion-video">
-            <iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
-          </div>
-        `;
-      }
+    const videoId = this._extractYouTubeId(videoUrl);
+    if (videoId) {
+      return `
+        <div class="notion-video">
+          <iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation"></iframe>
+        </div>
+      `;
     }
     
     return `
       <div class="notion-video">
-        <video controls src="${videoUrl}"></video>
+        <video controls src="${this._escapeHtml(videoUrl)}"></video>
       </div>
     `;
   }
@@ -842,10 +896,13 @@ export class NotionRenderer {
    * @private
    */
   _renderEmbed(block) {
-    const url = block.embed?.url || '';
+    const url = sanitizeHttpUrl(block.embed?.url || '');
+    if (!url || new URL(url).protocol !== 'https:') {
+      return '<div class="notion-embed-unavailable">[Embed not available]</div>';
+    }
     return `
       <div class="notion-embed">
-        <iframe src="${url}" frameborder="0"></iframe>
+        <iframe src="${this._escapeHtml(url)}" frameborder="0" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-presentation"></iframe>
       </div>
     `;
   }
@@ -855,10 +912,12 @@ export class NotionRenderer {
    * @private
    */
   _renderLinkPreview(block) {
-    const url = block.link_preview?.url || '';
+    const rawUrl = block.link_preview?.url || '';
+    const url = sanitizeLinkUrl(rawUrl);
+    if (!url) return `<div class="notion-link-preview"><span>${this._escapeHtml(rawUrl)}</span></div>`;
     return `
       <div class="notion-link-preview">
-        <a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>
+        <a href="${this._escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${this._escapeHtml(rawUrl)}</a>
       </div>
     `;
   }
@@ -868,9 +927,24 @@ export class NotionRenderer {
    * @private
    */
   _extractYouTubeId(url) {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
+    try {
+      const parsed = new URL(sanitizeHttpUrl(url));
+      const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+      let videoId = null;
+
+      if (hostname === 'youtu.be') {
+        videoId = parsed.pathname.split('/').filter(Boolean)[0] || null;
+      } else if (hostname === 'youtube.com' || hostname === 'm.youtube.com' || hostname === 'youtube-nocookie.com') {
+        videoId = parsed.searchParams.get('v');
+        if (!videoId && parsed.pathname.startsWith('/embed/')) {
+          videoId = parsed.pathname.split('/')[2] || null;
+        }
+      }
+
+      return /^[A-Za-z0-9_-]{11}$/.test(videoId || '') ? videoId : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -983,7 +1057,7 @@ export class NotionRenderer {
         <div class="empty-state notion-table-placeholder">
           <div class="empty-state-icon">⚠️</div>
           <p class="empty-state-text">Error loading table</p>
-          <p class="empty-state-hint">${error.message}</p>
+          <p class="empty-state-hint">${this._escapeHtml(error.message)}</p>
         </div>
       `;
     }
@@ -1111,7 +1185,7 @@ export class NotionRenderer {
             <div class="empty-state notion-database-placeholder">
               <div class="empty-state-icon">⚠️</div>
               <p class="empty-state-text">Error loading database</p>
-              <p class="empty-state-hint">${error.message || 'The database may not be accessible'}</p>
+              <p class="empty-state-hint">${this._escapeHtml(error.message || 'The database may not be accessible')}</p>
             </div>
           `;
         }
@@ -1226,7 +1300,7 @@ export class NotionRenderer {
    */
   async _renderCalloutWithChildren(block, typesArray, headingLevelOffset) {
     const callout = block.callout;
-    const icon = callout?.icon?.emoji || '💡';
+    const icon = this._escapeHtml(callout?.icon?.emoji || '💡');
     const calloutText = this.renderRichText(callout?.rich_text);
     let childrenContent = '';
     let gmOnlyClass = '';
@@ -1362,4 +1436,3 @@ export class NotionRenderer {
 }
 
 export default NotionRenderer;
-

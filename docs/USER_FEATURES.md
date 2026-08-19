@@ -94,7 +94,7 @@ This document lists all the features available to users from the interface, what
 - **What it does:** 
   - **Input field:** Paste your Notion integration token here
   - **Save Token button:** Saves your token (stored locally in your browser)
-  - **Delete Token button:** Removes your token and switches back to server token (if available)
+  - **Delete Token button:** Removes your personal token; built-in demos can still use the dedicated demo integration (if available)
 - **Documentation:** Explained in [README.md - Initial setup](../README.md#initial-setup) and [README.md - Tips](../README.md#-tips)
 
 ### 📄 JSON Configuration
@@ -244,4 +244,3 @@ This document lists all the features available to users from the interface, what
 - **Content Sharing:** Players don't need a Notion token to view pages shared by the GM. The GM must have the extension open for sharing to work.
 
 For more detailed information, please refer to the [main README.md](../README.md) file.
-

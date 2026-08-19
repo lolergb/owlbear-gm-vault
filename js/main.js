@@ -7,13 +7,14 @@
  */
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
-import { ExtensionController } from './controllers/ExtensionController.js';
+import { ExtensionController } from './controllers/ExtensionController.js?v=20260816-1';
 import { initTheme } from './utils/themeManager.js';
+import { escapeHtml } from './utils/htmlSecurity.js?v=20260722-4';
 
 // Instancia global del controlador
 let extensionController = null;
 
-const BUILD_VERSION = '2.0.1-' + Date.now();
+const BUILD_VERSION = '2.1.0-beta.2';
 console.log('🚀 GM Vault: Cargando módulos... v' + BUILD_VERSION);
 
 // Esperar a que OBR SDK esté listo
@@ -45,7 +46,7 @@ try {
           <div class="empty-state">
             <div class="empty-state-icon">🚨</div>
             <p class="empty-state-text">Error loading extension</p>
-            <p class="empty-state-hint">${e.message}</p>
+            <p class="empty-state-hint">${escapeHtml(e.message)}</p>
             <button onclick="window.location.reload()">Retry</button>
           </div>
         `;
@@ -113,6 +114,5 @@ window.gmVault = {
     });
     console.log(`✅ Limpiado todo el caché de Notion: ${total} entradas`);
   },
-  version: '2.0.0-modular'
+  version: BUILD_VERSION
 };
-

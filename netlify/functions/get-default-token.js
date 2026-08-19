@@ -1,6 +1,6 @@
 /**
- * Netlify Function para obtener el token de Notion para default-config
- * Controlado por variable de entorno GM_VAULT_DEFAULT_CONFIG
+ * Indica si el proxy dispone de acceso al contenido demo.
+ * La credencial nunca se devuelve al navegador.
  */
 
 const CORS_HEADERS = {
@@ -9,7 +9,14 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS'
 };
 
-exports.handler = async (event, context) => {
+const RESPONSE_HEADERS = {
+  ...CORS_HEADERS,
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store',
+  'Referrer-Policy': 'no-referrer'
+};
+
+export const handler = async (event) => {
   // Manejar CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -29,38 +36,23 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // Obtener el token de Notion desde la variable de entorno
-    const defaultToken = process.env.GM_VAULT_DEFAULT_CONFIG;
-    
-    // Si no hay token configurado, retornar null
-    if (!defaultToken) {
-      return {
-        statusCode: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          ...CORS_HEADERS
-        },
-        body: JSON.stringify({ token: null })
-      };
-    }
-    
-    // Retornar el token (solo se usará para páginas de Notion en default-config)
+    const available = Boolean(
+      String(process.env.GM_VAULT_DEFAULT_CONFIG_V2 || '').trim()
+    );
+
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        ...CORS_HEADERS
-      },
-      body: JSON.stringify({ token: defaultToken })
+      headers: RESPONSE_HEADERS,
+      body: JSON.stringify({ available })
     };
   } catch (error) {
     console.error('Error getting default token:', error);
     return {
       statusCode: 500,
-      headers: CORS_HEADERS,
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify({ 
         error: error.message || 'Internal server error',
-        token: null
+        available: false
       })
     };
   }

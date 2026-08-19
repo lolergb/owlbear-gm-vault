@@ -2,8 +2,15 @@
  * @fileoverview Tests unitarios para StorageService
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { StorageService } from '../../../js/services/StorageService.js';
+import {
+  FULL_CONFIG_KEY,
+  ROOM_CONTENT_CACHE_KEY,
+  ROOM_HTML_CACHE_KEY,
+  ROOM_METADATA_KEY,
+  VAULT_OWNER_KEY
+} from '../../../js/utils/constants.js';
 
 describe('StorageService', () => {
   let storageService;
@@ -72,6 +79,25 @@ describe('StorageService', () => {
       
       expect(storageService.getLocalConfig().categories[0].name).toBe('New');
     });
+
+    it('falla de forma segura ante JSON local corrupto', () => {
+      localStorage.setItem(storageService.getStorageKey(), '{not-json');
+
+      expect(storageService.getLocalConfig()).toBeNull();
+    });
+
+    it('avisa y conserva el resultado fallido cuando localStorage está lleno', () => {
+      const onLimit = jest.fn();
+      storageService.setStorageLimitCallback(onLimit);
+      localStorage.setItem.mockImplementationOnce(() => {
+        const error = new Error('Storage full');
+        error.name = 'QuotaExceededError';
+        throw error;
+      });
+
+      expect(storageService.saveLocalConfig({ categories: [] })).toBe(false);
+      expect(onLimit).toHaveBeenCalledWith('saving configuration');
+    });
   });
 
   describe('clearLocalConfig', () => {
@@ -84,6 +110,38 @@ describe('StorageService', () => {
       storageService.clearLocalConfig();
       
       expect(storageService.getLocalConfig()).toBeNull();
+    });
+  });
+
+  describe('Room metadata budget', () => {
+    it('migra datos legacy y conserva solo la identidad y conexión del Master GM', async () => {
+      const setMetadata = jest.fn().mockResolvedValue(undefined);
+      storageService.setOBR({ room: { setMetadata } });
+
+      await expect(storageService.setVaultOwner('master-gm-id', 'master-connection')).resolves.toBe(true);
+
+      expect(setMetadata).toHaveBeenCalledWith({
+        [VAULT_OWNER_KEY]: {
+          id: 'master-gm-id',
+          connectionId: 'master-connection'
+        },
+        [ROOM_METADATA_KEY]: null,
+        [FULL_CONFIG_KEY]: null,
+        [ROOM_CONTENT_CACHE_KEY]: null,
+        [ROOM_HTML_CACHE_KEY]: null
+      });
+      const persistedMetadata = {
+        [VAULT_OWNER_KEY]: {
+          id: 'master-gm-id',
+          connectionId: 'master-connection'
+        }
+      };
+      expect(Buffer.byteLength(JSON.stringify(persistedMetadata), 'utf8')).toBeLessThan(256);
+    });
+
+    it('no expone operaciones para persistir config o contenido en la sala', () => {
+      expect(storageService.saveRoomConfig).toBeUndefined();
+      expect(storageService.getRoomConfig).toBeUndefined();
     });
   });
 
@@ -102,5 +160,26 @@ describe('StorageService', () => {
       expect(keys).toContain('notion-pages-json-room-2');
     });
   });
-});
 
+  describe('clearAllLocalData', () => {
+    it('elimina solo datos de GM Vault y conserva token y claves ajenas', () => {
+      localStorage.setItem('notion-global-token', 'secret_keep');
+      localStorage.setItem('notion-pages-json-room-1', '{"categories":[]}');
+      localStorage.setItem('notion-blocks-cache-page-1', '{}');
+      localStorage.setItem('category-collapsed-Test-level-0', 'true');
+      localStorage.setItem('other-extension/data', 'keep');
+      sessionStorage.setItem('notion_modal_cache', 'remove');
+      sessionStorage.setItem('other-session-data', 'keep');
+
+      expect(storageService.clearAllLocalData()).toBe(true);
+
+      expect(localStorage.getItem('notion-global-token')).toBe('secret_keep');
+      expect(localStorage.getItem('other-extension/data')).toBe('keep');
+      expect(localStorage.getItem('notion-pages-json-room-1')).toBeNull();
+      expect(localStorage.getItem('notion-blocks-cache-page-1')).toBeNull();
+      expect(localStorage.getItem('category-collapsed-Test-level-0')).toBeNull();
+      expect(sessionStorage.getItem('notion_modal_cache')).toBeNull();
+      expect(sessionStorage.getItem('other-session-data')).toBe('keep');
+    });
+  });
+});

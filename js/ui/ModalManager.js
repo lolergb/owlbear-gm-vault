@@ -4,7 +4,7 @@
  * Gestiona la creación, apertura y cierre de modales en la aplicación.
  */
 
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger.js?v=20260722-4';
 
 /**
  * Gestor de modales de la UI
@@ -183,7 +183,7 @@ export class ModalManager {
 
       const messageEl = document.createElement('p');
       messageEl.className = 'modal-message';
-      messageEl.innerHTML = message;
+      messageEl.textContent = message;
       content.appendChild(messageEl);
 
       const buttons = document.createElement('div');
@@ -437,4 +437,3 @@ export class ModalManager {
 }
 
 export default ModalManager;
-

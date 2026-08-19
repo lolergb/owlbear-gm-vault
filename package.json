@@ -1,15 +1,14 @@
 {
   "name": "owlbear-gm-vault",
-  "version": "1.0.0",
+  "version": "2.1.0-beta.2",
   "description": "Extensión para embebber páginas de Notion en Owlbear Rodeo",
   "type": "module",
   "scripts": {
-    "dev": "python -m http.server 8000",
-    "serve": "npx http-server -p 8000 -c-1",
+    "dev": "node scripts/dev-server.js",
+    "serve": "node scripts/dev-server.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
-    "test:regression": "node tests/regression/compare-outputs.js"
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
   },
   "keywords": [
     "owlbear",

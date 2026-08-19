@@ -6,10 +6,14 @@
  * para no estropear las métricas históricas.
  */
 
-import { log, logWarn } from '../utils/logger.js';
+import { log, logWarn } from '../utils/logger.js?v=20260722-4';
+import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
+import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
+const VAULT_ANALYTICS_KEY_PREFIX = 'gm_vault_analytics_';
+const PRODUCTION_HOSTNAME = 'owlbear-gm-vault.netlify.app';
 
 /**
  * Servicio de Analytics
@@ -21,6 +25,66 @@ export class AnalyticsService {
     this.mixpanelEnabled = false;
     this.mixpanelDistinctId = null;
     this.isBeta = false;
+    this.environment = 'unknown';
+    this.deployContext = 'unknown';
+    this.vaultInstanceId = null;
+    this.vaultState = 'unknown';
+    this.vaultAnalyticsStorageKey = null;
+    this.vaultAnalyticsState = null;
+    this.firstUserContentCreatedTracked = false;
+  }
+
+  /**
+   * Attach anonymous, room-local context to analytics. The Owlbear room ID is
+   * only used to select a localStorage record and is never sent to Mixpanel.
+   */
+  setVaultContext({ roomId, vaultState } = {}) {
+    this.vaultState = ['empty', 'demo', 'configured'].includes(vaultState)
+      ? vaultState
+      : 'unknown';
+
+    try {
+      const localRoomKey = String(roomId || 'default');
+      this.vaultAnalyticsStorageKey = `${VAULT_ANALYTICS_KEY_PREFIX}${localRoomKey}`;
+      const stored = localStorage.getItem(this.vaultAnalyticsStorageKey);
+      const parsed = stored ? JSON.parse(stored) : {};
+      const now = Date.now();
+
+      this.vaultAnalyticsState = {
+        vaultInstanceId: parsed.vaultInstanceId || this._createAnonymousVaultId(),
+        firstOpenedAt: Number.isFinite(parsed.firstOpenedAt) ? parsed.firstOpenedAt : now,
+        firstUserContentCreatedAt: Number.isFinite(parsed.firstUserContentCreatedAt)
+          ? parsed.firstUserContentCreatedAt
+          : null
+      };
+      this.vaultInstanceId = this.vaultAnalyticsState.vaultInstanceId;
+      this.firstUserContentCreatedTracked = Boolean(
+        this.vaultAnalyticsState.firstUserContentCreatedAt
+      );
+      this._persistVaultAnalyticsState();
+    } catch (_error) {
+      this.vaultAnalyticsState = null;
+      this.vaultInstanceId = this._createAnonymousVaultId();
+    }
+  }
+
+  _createAnonymousVaultId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `vault_${crypto.randomUUID()}`;
+    }
+    return `vault_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  _persistVaultAnalyticsState() {
+    if (!this.vaultAnalyticsStorageKey || !this.vaultAnalyticsState) return;
+    try {
+      localStorage.setItem(
+        this.vaultAnalyticsStorageKey,
+        JSON.stringify(this.vaultAnalyticsState)
+      );
+    } catch (_error) {
+      // Analytics persistence must never affect the product.
+    }
   }
 
   /**
@@ -42,16 +106,30 @@ export class AnalyticsService {
     // Es beta si:
     // - Es un deploy-preview de Netlify
     // - Es localhost
-    // - No es el dominio de producción
+    // - Es un branch deploy de Netlify (cualquier hostname distinto al oficial)
     const isBeta = 
       origin.includes('deploy-preview') ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
-      hostname.includes('.local');
+      hostname.includes('.local') ||
+      (hostname.endsWith('.netlify.app') && hostname !== PRODUCTION_HOSTNAME);
     
     this.isBeta = isBeta;
-    log(`📊 Entorno detectado: ${isBeta ? 'BETA (sin analytics)' : 'PRODUCCIÓN'}`);
+    this.environment = isBeta ? 'beta' : 'production';
+    this.deployContext = this._detectDeployContext(hostname, origin);
+    log(`📊 Entorno detectado: ${isBeta ? 'BETA' : 'PRODUCCIÓN'}`);
     return isBeta;
+  }
+
+  _detectDeployContext(hostname, origin) {
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('.local')) {
+      return 'dev';
+    }
+    if (origin.includes('deploy-preview')) return 'deploy-preview';
+    if (hostname.endsWith('.netlify.app') && hostname !== PRODUCTION_HOSTNAME) {
+      return 'branch-deploy';
+    }
+    return 'production';
   }
 
   /**
@@ -131,15 +209,18 @@ export class AnalyticsService {
   /**
    * Inicializa el servicio de analytics
    */
-  async init() {
+  async init({ trackExtensionOpened = true, showConsentBanner = true } = {}) {
     // Detectar si es beta
     const isBeta = this._detectBeta();
     
     // Verificar consent (mostrar banner si no hay consent, incluso en beta)
     const consent = this.getConsent();
     if (consent === null) {
-      // Mostrar banner de cookies (también en beta para que el consent esté listo)
-      this.showConsentBanner();
+      // The main extension owns consent UI. Auxiliary viewers can initialize
+      // analytics without rendering a second banner over their content.
+      if (showConsentBanner) {
+        this.showConsentBanner();
+      }
       return;
     }
 
@@ -165,6 +246,21 @@ export class AnalyticsService {
       const response = await fetch('/.netlify/functions/get-mixpanel-token');
       if (response.ok) {
         const data = await response.json();
+        const serverEnvironment = this._normalizeEnum(
+          data.environment,
+          ['beta', 'production']
+        );
+        const serverDeployContext = this._normalizeEnum(
+          data.deployContext,
+          ['production', 'deploy-preview', 'branch-deploy', 'dev']
+        );
+        if (serverEnvironment !== 'unknown') {
+          this.environment = serverEnvironment;
+          this.isBeta = serverEnvironment === 'beta';
+        }
+        if (serverDeployContext !== 'unknown') {
+          this.deployContext = serverDeployContext;
+        }
         if (data.enabled && data.token) {
           this.mixpanelToken = data.token;
           this.mixpanelEnabled = true;
@@ -185,8 +281,11 @@ export class AnalyticsService {
 
           log('📊 Mixpanel analytics habilitado');
           
-          // Track extensión abierta
-          this.trackExtensionOpened();
+          // Auxiliary extension pages (such as the image viewer) share the
+          // same analytics client but must not inflate extension_opened.
+          if (trackExtensionOpened) {
+            this.trackExtensionOpened();
+          }
         }
       }
     } catch (e) {
@@ -224,7 +323,12 @@ export class AnalyticsService {
           time: Math.floor(Date.now() / 1000),
           $insert_id: Math.random().toString(36).substring(2, 15),
           role: userRole,
-          ...properties
+          ...(this.vaultInstanceId ? { vault_instance_id: this.vaultInstanceId } : {}),
+          vault_state: this.vaultState,
+          ...properties,
+          is_beta: this.isBeta,
+          environment: this.environment,
+          deploy_context: this.deployContext
         }
       };
 
@@ -279,15 +383,48 @@ export class AnalyticsService {
     this.trackEvent('extension_opened');
   }
 
+  trackAnnouncementViewed({ campaignId, campaignVersion, role } = {}) {
+    this.trackEvent('announcement_viewed', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
+  trackAnnouncementAction({ campaignId, campaignVersion, actionId, role } = {}) {
+    this.trackEvent('announcement_action_clicked', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      action_id: String(actionId || 'unknown').slice(0, 80),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
+  trackAnnouncementDismissed({ campaignId, campaignVersion, role } = {}) {
+    this.trackEvent('announcement_dismissed', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
   /**
    * Track page view
    * @param {string} pageName - Nombre de la página
    * @param {string} pageType - Tipo: notion, image, video, iframe
    */
-  trackPageView(pageName, pageType = 'unknown') {
+  trackPageView(pageName, pageType = 'unknown', metadata = {}) {
     this.trackEvent('page_view', {
       page_name: pageName,
-      page_type: pageType
+      page_type: pageType,
+      content_origin: normalizeContentOrigin(metadata.contentOrigin, metadata.url)
+    });
+  }
+
+  /** Track exploration of bundled content without forwarding its title or URL. */
+  trackDemoContentOpened(pageType = 'unknown') {
+    this.trackEvent('demo_content_opened', {
+      page_type: String(pageType || 'unknown').slice(0, 30)
     });
   }
 
@@ -324,7 +461,7 @@ export class AnalyticsService {
   }
 
   /**
-   * Track content too large to share (>64KB broadcast limit)
+   * Track content too large to share (>16 kB broadcast limit)
    * @param {number} size - Tamaño estimado en bytes
    * @param {string} channel - Canal de broadcast
    */
@@ -376,12 +513,52 @@ export class AnalyticsService {
    * Track page added
    * @param {string} pageName - Nombre de la página
    * @param {string} pageType - Tipo de página
+   * @param {Object} metadata - Metadatos seguros del origen de la página
    */
-  trackPageAdded(pageName, pageType = 'unknown') {
+  trackPageAdded(pageName, pageType = 'unknown', metadata = {}) {
     this.trackEvent('page_added', {
       page_name: pageName,
-      page_type: pageType
+      page_type: pageType,
+      content_origin: normalizeContentOrigin(metadata.contentOrigin, metadata.url),
+      ...buildPageAddedMetadata({
+        url: metadata.url,
+        pageType,
+        creationMethod: metadata.creationMethod,
+        isEmbedCode: metadata.isEmbedCode
+      })
     });
+  }
+
+  /**
+   * One-time activation milestone per local vault. Demo pages do not call this.
+   * Returns true only when a new milestone was emitted.
+   */
+  trackFirstUserContentCreated({ creationMethod, pageType, contentOrigin = 'user' } = {}) {
+    if (!this.mixpanelEnabled || !this.mixpanelToken) return false;
+    if (this.firstUserContentCreatedTracked) return false;
+
+    const now = Date.now();
+    const startedAt = this.vaultAnalyticsState?.firstOpenedAt || now;
+    if (this.vaultAnalyticsState) {
+      this.vaultAnalyticsState.firstUserContentCreatedAt = now;
+      this._persistVaultAnalyticsState();
+    }
+    this.firstUserContentCreatedTracked = true;
+    this.vaultState = 'configured';
+
+    this.trackEvent('first_user_content_created', {
+      creation_method: this._normalizeEnum(
+        creationMethod,
+        ['manual', 'notion', 'url', 'file']
+      ),
+      page_type: this._normalizeEnum(
+        pageType,
+        ['notion', 'image', 'video', 'google_doc', 'onedrive', 'iframe', 'multiple']
+      ),
+      content_origin: normalizeContentOrigin(contentOrigin),
+      time_to_first_content_seconds: Math.max(0, Math.round((now - startedAt) / 1000))
+    });
+    return true;
   }
 
   /**
@@ -459,6 +636,31 @@ export class AnalyticsService {
   trackJSONImported(itemCount) {
     this.trackEvent('json_imported', {
       item_count: itemCount
+    });
+  }
+
+  /**
+   * Track a completed import without sending file names, URLs or folder names.
+   */
+  trackVaultImportCompleted({ source, mode, destinationType, itemCount } = {}) {
+    this.trackEvent('vault_import_completed', {
+      source: this._normalizeEnum(source, ['notion', 'url', 'file']),
+      mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
+      destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
+      item_count: this._normalizeCount(itemCount)
+    });
+  }
+
+  /**
+   * Track an import failure using only controlled, non-content properties.
+   */
+  trackVaultImportFailed({ source, stage, mode, destinationType, errorType } = {}) {
+    this.trackEvent('vault_import_failed', {
+      source: this._normalizeEnum(source, ['notion', 'url', 'file']),
+      stage: this._normalizeEnum(stage, ['read', 'fetch', 'generate', 'save', 'empty']),
+      mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
+      destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
+      error_type: String(errorType || 'unknown').slice(0, 60)
     });
   }
 
@@ -683,8 +885,57 @@ export class AnalyticsService {
    * @param {string} url - URL cargada
    */
   trackLoadFromUrlClicked(url) {
+    let urlDomain = 'invalid';
+    try {
+      urlDomain = url ? new URL(url).hostname : 'unknown';
+    } catch (_error) {}
+
     this.trackEvent('load_from_url_clicked', {
-      url_domain: url ? new URL(url).hostname : 'unknown'
+      url_domain: urlDomain
+    });
+  }
+
+  /**
+   * Track use of the token page search without collecting the query itself.
+   */
+  trackTokenPageSearchUsed({ queryLength, resultCount, totalCount } = {}) {
+    this.trackEvent('token_page_search_used', {
+      query_length: this._normalizeCount(queryLength),
+      result_count: this._normalizeCount(resultCount),
+      total_count: this._normalizeCount(totalCount)
+    });
+  }
+
+  /**
+   * Track the actual delivery outcome of a live image share.
+   */
+  trackImageShareResult(result = {}) {
+    const unresolved = this._normalizeCount(result.missing) + this._normalizeCount(result.loading);
+    this.trackEvent('image_share_completed', {
+      phase: this._normalizeEnum(result.phase, ['complete', 'no_recipients', 'error']),
+      recipient_count: this._normalizeCount(result.total),
+      delivered_count: this._normalizeCount(result.loaded),
+      failed_count: this._normalizeCount(result.failed),
+      unresolved_count: unresolved
+    });
+  }
+
+  /**
+   * Track image viewer sizing without collecting image URLs or captions.
+   */
+  trackImageViewerZoom(mode, context = 'detail') {
+    this.trackEvent('image_viewer_zoom_changed', {
+      mode: this._normalizeEnum(mode, ['fit', 'actual_size']),
+      context: this._normalizeEnum(context, ['detail', 'shared'])
+    });
+  }
+
+  /**
+   * Track that the responsive image viewer was opened.
+   */
+  trackImageViewerOpened(context = 'detail') {
+    this.trackEvent('image_viewer_opened', {
+      context: this._normalizeEnum(context, ['detail', 'shared'])
     });
   }
 
@@ -765,6 +1016,15 @@ export class AnalyticsService {
     this.trackEvent('page_shared_to_players', {
       page_name: pageName
     });
+  }
+
+  _normalizeEnum(value, allowedValues) {
+    return allowedValues.includes(value) ? value : 'unknown';
+  }
+
+  _normalizeCount(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
   }
 }
 

@@ -5,9 +5,11 @@
  * Compatible con el CSS existente (app.css)
  */
 
-import { generateColorFromString, getInitial, extractNotionPageId } from '../utils/helpers.js';
-import { log } from '../utils/logger.js';
+import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
+import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
+import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
+import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260816-1';
 
 /**
  * Renderizador de interfaz de usuario
@@ -74,13 +76,29 @@ export class UIRenderer {
    * Verifica si una categoría tiene contenido visible para players
    */
   hasVisibleContentForPlayers(category) {
-    if (category.pages && category.pages.some(p => p.visibleToPlayers === true)) {
+    if (category.pages && category.pages.some(p => this._isPageRenderable(p, false))) {
       return true;
     }
     if (category.categories) {
       return category.categories.some(subcat => this.hasVisibleContentForPlayers(subcat));
     }
     return false;
+  }
+
+  /**
+   * Keeps visibility and URL filtering separate from array indexing. Stored
+   * order entries always point at the original pages array, so filtering the
+   * array before applying order would shift those indexes.
+   * @private
+   */
+  _isPageRenderable(page, isGM = true) {
+    if (!page) return false;
+    const url = typeof page.url === 'string' ? page.url : '';
+    const hasValidUrl = url && !url.includes('...') &&
+      (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'));
+    const hasHtmlContent = !!page.htmlContent;
+    if (!hasValidUrl && !hasHtmlContent) return false;
+    return isGM || page.visibleToPlayers === true;
   }
 
   /**
@@ -108,31 +126,39 @@ export class UIRenderer {
     const hasContent = hasRootPages || hasRootCategories;
 
     if (!hasContent) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">📚</div>
-          <p class="empty-state-text">No pages configured</p>
-          <p class="empty-state-hint">Click + to add your first page or folder</p>
-        </div>
-      `;
+      container.innerHTML = this.isGM
+        ? `
+          <div class="empty-state">
+            <div class="empty-state-icon">📚</div>
+            <p class="empty-state-text">No pages configured</p>
+            <p class="empty-state-hint">Click + to add your first page or folder</p>
+          </div>
+        `
+        : `
+          <div class="empty-state">
+            <div class="empty-state-icon">👁️</div>
+            <p class="empty-state-text">No content visible to players</p>
+            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
+          </div>
+        `;
       return;
     }
 
     // Si es Player view (no es GM), verificar si hay contenido visible
     if (!this.isGM) {
       // Verificar si hay páginas visibles en root
-      const hasVisibleRootPages = config?.pages && config.pages.some(p => p.visibleToPlayers === true);
+      const hasVisibleRootPages = config?.pages && config.pages.some(p => this._isPageRenderable(p, false));
       // Verificar si hay categorías con contenido visible
       const hasVisibleCategories = config?.categories && config.categories.some(cat => 
         this.hasVisibleContentForPlayers(cat)
       );
-      
+
       if (!hasVisibleRootPages && !hasVisibleCategories) {
         container.innerHTML = `
           <div class="empty-state">
             <div class="empty-state-icon">👁️</div>
             <p class="empty-state-text">No content visible to players</p>
-            <p class="empty-state-hint">Toggle visibility on pages using the eye icon to share them with players</p>
+            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
           </div>
         `;
         return;
@@ -140,21 +166,7 @@ export class UIRenderer {
     }
 
     // Obtener orden combinado del root (páginas + categorías mezcladas)
-    const rootPages = (config.pages || []).filter(page => {
-      // Filtrar páginas válidas - aceptar URL válida O htmlContent (local-first)
-      const hasValidUrl = page.url && !page.url.includes('...') && 
-        (page.url.startsWith('http') || page.url.startsWith('/'));
-      const hasHtmlContent = !!page.htmlContent;
-      
-      if (!hasValidUrl && !hasHtmlContent) {
-        return false;
-      }
-      // Si es jugador, filtrar solo páginas visibles
-      if (!this.isGM && page.visibleToPlayers !== true) {
-        return false;
-      }
-      return true;
-    });
+    const rootPages = config.pages || [];
     
     const rootCombinedOrder = this._getCombinedOrder(config, rootPages);
     
@@ -162,10 +174,8 @@ export class UIRenderer {
     rootCombinedOrder.forEach((item, index) => {
       if (item.type === 'page') {
         const page = rootPages[item.index];
-        if (page) {
-          // Usar el índice original en config.pages
-          const originalIndex = (config.pages || []).findIndex(p => p.name === page.name && p.url === page.url);
-          const pageButton = this._createPageButton(page, roomId, [], originalIndex !== -1 ? originalIndex : item.index, this.isGM);
+        if (this._isPageRenderable(page, this.isGM)) {
+          const pageButton = this._createPageButton(page, roomId, [], item.index, this.isGM);
           container.appendChild(pageButton);
           // Aplicar animación con delay stagger
           requestAnimationFrame(() => {
@@ -203,19 +213,8 @@ export class UIRenderer {
     if (!category.name) return;
 
     // Filtrar páginas válidas - aceptar URL válida O htmlContent (local-first)
-    let categoryPages = (category.pages || []).filter(page => {
-      const hasValidUrl = page.url && !page.url.includes('...') && 
-        (page.url.startsWith('http') || page.url.startsWith('/'));
-      const hasHtmlContent = !!page.htmlContent;
-      return hasValidUrl || hasHtmlContent;
-    });
-
-    // Si es jugador, filtrar solo páginas visibles
-    if (!isGM) {
-      categoryPages = categoryPages.filter(page => page.visibleToPlayers === true);
-    }
-
-    const hasPages = categoryPages.length > 0;
+    const categoryPages = category.pages || [];
+    const hasPages = categoryPages.some(page => this._isPageRenderable(page, isGM));
     const hasSubcategories = category.categories && category.categories.length > 0;
     const hasContent = hasPages || hasSubcategories;
 
@@ -299,10 +298,8 @@ export class UIRenderer {
     combinedOrder.forEach((item, index) => {
       if (item.type === 'page') {
         const page = categoryPages[item.index];
-        if (page) {
-          // Usar el índice original en category.pages, no en categoryPages filtradas
-          const originalIndex = (category.pages || []).findIndex(p => p.name === page.name && p.url === page.url);
-          const pageButton = this._createPageButton(page, roomId, [...categoryPath, currentPathItem], originalIndex !== -1 ? originalIndex : item.index, isGM);
+        if (this._isPageRenderable(page, isGM)) {
+          const pageButton = this._createPageButton(page, roomId, [...categoryPath, currentPathItem], item.index, isGM);
           contentContainer.appendChild(pageButton);
           // Aplicar animación con delay stagger
           requestAnimationFrame(() => {
@@ -351,12 +348,57 @@ export class UIRenderer {
   }
 
   /**
+   * Actualiza el estado visual y accesible del control de visibilidad.
+   * @private
+   */
+  _setVisibilityButtonState(button, visible) {
+    const title = visible ? 'Visible to players' : 'Hidden from players';
+    const iconPath = `img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
+    let icon = button.querySelector('.icon');
+    if (!icon) {
+      button.innerHTML = iconHtml(iconPath, { alt: 'Visibility' });
+      icon = button.querySelector('.icon');
+    }
+    if (icon) {
+      // Actualizar la máscara existente fuerza el repintado en Chromium/Arc y
+      // evita depender de sustituir todo el contenido del botón.
+      icon.style.webkitMaskImage = `url('${iconPath}')`;
+      icon.style.maskImage = `url('${iconPath}')`;
+    }
+    button.classList.toggle('page-visibility-button--visible', visible);
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.setAttribute('aria-pressed', String(visible));
+  }
+
+  /**
+   * Sincroniza la fila existente cuando la visibilidad cambia desde otra vista.
+   * @param {Object} page - Página modificada
+   * @param {boolean} visible - Nuevo estado
+   */
+  updatePageVisibility(page, visible) {
+    document.querySelectorAll('.page-button').forEach(pageButton => {
+      const matchesId = page.id && pageButton.dataset.pageId === page.id;
+      const matchesLegacyPage = !page.id &&
+        pageButton.dataset.pageName === page.name &&
+        pageButton.dataset.pageUrl === (page.url || '');
+      if (!matchesId && !matchesLegacyPage) return;
+
+      const visibilityButton = pageButton.querySelector('.page-visibility-button');
+      if (visibilityButton) {
+        this._setVisibilityButtonState(visibilityButton, visible);
+      }
+    });
+  }
+
+  /**
    * Crea un botón de página (compatible con CSS original)
    * @private
    */
   _createPageButton(page, roomId, categoryPath, pageIndex, isGM) {
     const button = document.createElement('button');
     button.className = 'page-button';
+    button.dataset.pageId = page.id || '';
     button.dataset.pageIndex = pageIndex;
     button.dataset.pageName = page.name;
     button.dataset.pageUrl = page.url || '';
@@ -377,7 +419,7 @@ export class UIRenderer {
     // Primero verificar si es contenido embebido (local-first de Obsidian)
     if (page.htmlContent) {
       linkIconHtml = ico('img/icon-notion.svg', 'Local');
-    } else if (url.includes('notion.so') || url.includes('notion.site')) {
+    } else if (isNotionUrl(url)) {
       linkIconHtml = ico('img/icon-notion.svg', 'Notion');
     } else if (url.includes('dndbeyond.com')) {
       linkIconHtml = ico('img/icon-dnd.svg', 'D&D Beyond');
@@ -399,7 +441,7 @@ export class UIRenderer {
       linkIconHtml = ico('img/icon-figma.svg', 'Figma');
     } else if (url.includes('github.com') || url.includes('github.io')) {
       linkIconHtml = ico('img/icon-github.svg', 'GitHub');
-    } else if (url.includes('onedrive.live.com') || url.includes('1drv.ms')) {
+    } else if (isOneDriveUrl(url)) {
       linkIconHtml = ico('img/icon-onedrive.svg', 'OneDrive');
     } else if (url.includes('codepen.io')) {
       linkIconHtml = ico('img/icon-codepen.svg', 'CodePen');
@@ -417,32 +459,45 @@ export class UIRenderer {
     // HTML del botón
     button.innerHTML = `
       <div class="page-button-inner">
-        <div class="page-icon-placeholder" style="background: ${placeholderColor};">${placeholderInitial}</div>
-        <div class="page-name-text">${page.name}</div>
+        <div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>
+        <div class="page-name-text">${escapeHtml(page.name)}</div>
         ${visibleIndicator}
         ${linkIconHtml}
       </div>
     `;
 
-    // Contenedor de botones de acción (siempre visible para todos los roles)
+    // Contenedor de acciones. Players pueden abrir contenido, pero solo los
+    // roles GM (Master o Co-GM) pueden emitir handouts a toda la sala.
     const actionsContainer = document.createElement('div');
     actionsContainer.className = 'page-button-actions';
 
-    // Botón de compartir con players (todos: GM, coGM y Player)
-    const shareButton = document.createElement('button');
-    shareButton.className = 'page-share-button';
-    shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
-    shareButton.title = 'Share with players';
-    
-    shareButton.addEventListener('click', (e) => {
-      e.stopPropagation();
-      console.log('🔗 Share button clicked for:', page.name, 'onPageShare:', !!this.onPageShare);
-      if (this.onPageShare) {
-        this.onPageShare(page, categoryPath, pageIndex);
-      } else {
-        console.warn('⚠️ onPageShare callback not defined');
-      }
-    });
+    let shareButton = null;
+    if (isGM) {
+      shareButton = document.createElement('button');
+      shareButton.className = 'page-share-button';
+      shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
+      shareButton.title = 'Share with players';
+      shareButton.setAttribute('aria-label', shareButton.title);
+
+      shareButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        console.log('🔗 Share button clicked for:', page.name, 'onPageShare:', !!this.onPageShare);
+        if (!this.onPageShare) {
+          console.warn('⚠️ onPageShare callback not defined');
+          return;
+        }
+
+        try {
+          await runShareButtonAction(
+            shareButton,
+            () => this.onPageShare(page, categoryPath, pageIndex),
+            { keepVisibleElement: button }
+          );
+        } catch (error) {
+          console.error('Could not share page:', error);
+        }
+      });
+    }
 
     // Botón de abrir en modal OBR (para todos) - PRIMERO
     const openModalButton = document.createElement('button');
@@ -461,20 +516,46 @@ export class UIRenderer {
     });
 
     actionsContainer.appendChild(openModalButton);
-    actionsContainer.appendChild(shareButton);
+    if (shareButton) actionsContainer.appendChild(shareButton);
 
     // Botones adicionales solo para GM completo (no coGM ni Player)
     if (isGM && !this.isCoGM) {
         // Botón de visibilidad
         const visibilityButton = document.createElement('button');
         visibilityButton.className = 'page-visibility-button';
-        visibilityButton.innerHTML = iconHtml(`img/${page.visibleToPlayers ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { alt: 'Visibility' });
-        visibilityButton.title = page.visibleToPlayers ? 'Visible to players' : 'Hidden from players';
+        this._setVisibilityButtonState(visibilityButton, page.visibleToPlayers === true);
         
-        visibilityButton.addEventListener('click', (e) => {
+        visibilityButton.addEventListener('click', async (e) => {
           e.stopPropagation();
-          if (this.onVisibilityChange) {
-            this.onVisibilityChange(page, categoryPath, pageIndex, !page.visibleToPlayers);
+          if (!this.onVisibilityChange || visibilityButton.disabled) return;
+
+          const previousVisibility = visibilityButton.getAttribute('aria-pressed') === 'true';
+          const newVisibility = !previousVisibility;
+          visibilityButton.disabled = true;
+          visibilityButton.setAttribute('aria-busy', 'true');
+          this._setVisibilityButtonState(visibilityButton, newVisibility);
+
+          try {
+            const updated = await this.onVisibilityChange(
+              page,
+              categoryPath,
+              pageIndex,
+              newVisibility
+            );
+
+            if (updated === false) {
+              page.visibleToPlayers = previousVisibility;
+              this._setVisibilityButtonState(visibilityButton, previousVisibility);
+            } else {
+              page.visibleToPlayers = newVisibility;
+            }
+          } catch (error) {
+            page.visibleToPlayers = previousVisibility;
+            this._setVisibilityButtonState(visibilityButton, previousVisibility);
+            console.error('Error updating page visibility:', error);
+          } finally {
+            visibilityButton.disabled = false;
+            visibilityButton.removeAttribute('aria-busy');
           }
         });
 
@@ -609,11 +690,17 @@ export class UIRenderer {
       if (pageInfo && pageInfo.icon) {
         let iconHtml = '';
         if (pageInfo.icon.type === 'emoji') {
-          iconHtml = `<span class="page-icon-emoji">${pageInfo.icon.emoji || '📄'}</span>`;
+          iconHtml = `<span class="page-icon-emoji">${escapeHtml(pageInfo.icon.emoji || '📄')}</span>`;
         } else if (pageInfo.icon.type === 'external' && pageInfo.icon.external?.url) {
-          iconHtml = `<img src="${pageInfo.icon.external.url}" alt="${pageName}" class="page-icon-image" />`;
+          const safeUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
+          if (safeUrl) {
+            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
+          }
         } else if (pageInfo.icon.type === 'file' && pageInfo.icon.file?.url) {
-          iconHtml = `<img src="${pageInfo.icon.file.url}" alt="${pageName}" class="page-icon-image" />`;
+          const safeUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
+          if (safeUrl) {
+            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
+          }
         }
 
         if (iconHtml) {
@@ -622,7 +709,7 @@ export class UIRenderer {
             inner.innerHTML = `
               <div style="display: flex; align-items: center; gap: var(--spacing-md); width: 100%;">
                 ${iconHtml}
-                <div class="page-name" style="flex: 1; text-align: left;">${pageName}</div>
+                <div class="page-name" style="flex: 1; text-align: left;">${escapeHtml(pageName)}</div>
                 ${linkIconHtml}
               </div>
             `;
@@ -1044,12 +1131,15 @@ export class UIRenderer {
       if (item.icon && item.icon.startsWith('img/')) {
         const rotateClass = item.rotation === 'rotate(90deg)' ? 'icon--rotate-up' : 
                             item.rotation === 'rotate(-90deg)' ? 'icon--rotate-down' : '';
-        itemIconHtml = iconHtml(item.icon, { className: `context-menu__icon ${rotateClass}` });
+        const safeIconPath = /^img\/[a-zA-Z0-9._/-]+\.svg$/.test(item.icon) ? item.icon : '';
+        if (safeIconPath) {
+          itemIconHtml = iconHtml(safeIconPath, { className: `context-menu__icon ${rotateClass}` });
+        }
       } else {
-        itemIconHtml = `<span class="context-menu__icon">${item.icon || ''}</span>`;
+        itemIconHtml = `<span class="context-menu__icon">${escapeHtml(item.icon || '')}</span>`;
       }
 
-      menuItem.innerHTML = `${itemIconHtml}<span>${item.text}</span>`;
+      menuItem.innerHTML = `${itemIconHtml}<span>${escapeHtml(item.text)}</span>`;
 
       menuItem.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1229,14 +1319,15 @@ export class UIRenderer {
 
     const toast = document.createElement('div');
     toast.id = 'gm-toast';
-    toast.className = `gm-toast gm-toast--${type}`;
+    const safeType = Object.hasOwn(icons, type) ? type : 'info';
+    toast.className = `gm-toast gm-toast--${safeType}`;
     
     toast.innerHTML = `
       <div class="gm-toast__content">
-        <span class="gm-toast__icon">${icons[type] || icons.info}</span>
+        <span class="gm-toast__icon">${icons[safeType]}</span>
         <div class="gm-toast__body">
-          <div class="gm-toast__title">${title}</div>
-          ${message ? `<div class="gm-toast__message">${message}</div>` : ''}
+          <div class="gm-toast__title">${escapeHtml(title)}</div>
+          ${message ? `<div class="gm-toast__message">${escapeHtml(message)}</div>` : ''}
         </div>
         <button class="gm-toast__close" aria-label="Close">✕</button>
       </div>

@@ -5,11 +5,149 @@
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Notion-Token',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+  'Access-Control-Allow-Headers': 'Content-Type, X-Notion-Token, X-GM-Vault-Default',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Cache-Control': 'no-store',
+  'Referrer-Policy': 'no-referrer'
 };
 
-exports.handler = async (event, context) => {
+const PERSONAL_TOKEN_ONLY_ACTIONS = new Set(['search', 'children']);
+const DEFAULT_ROOT_PAGE_IDS = new Set([
+  '2d8d4856c90e80f1b4e4ecff59e61dd5', // Quick Start
+  '3b8d4856c90e8092aa7fd83915f6e55e', // Quick Start Beta
+  '2d8d4856c90e806eb8fffd6f055eaf3b', // Session Notes Template
+  '2d8d4856c90e804185b4cf910d4817c1', // The Watched Crossroads
+  '2d8d4856c90e8030b014dbbb7bf5306d'  // Maera
+]);
+const DEFAULT_ACCESS_CACHE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_ACCESS_CACHE_MAX_ENTRIES = 1000;
+const defaultAccessCache = new Map();
+
+function normalizeNotionId(value) {
+  const normalized = String(value || '').replace(/-/g, '').toLowerCase();
+  return /^[0-9a-f]{32}$/.test(normalized) ? normalized : '';
+}
+
+function notionHeaders(token) {
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Notion-Version': '2022-06-28',
+    'Content-Type': 'application/json'
+  };
+}
+
+async function fetchNotionParent(id, kind, token) {
+  const endpoints = kind === 'database'
+    ? [`databases/${id}`]
+    : kind === 'page'
+      ? [`pages/${id}`]
+      : [`blocks/${id}`, `pages/${id}`];
+
+  for (const endpoint of endpoints) {
+    const response = await fetch(`https://api.notion.com/v1/${endpoint}`, {
+      method: 'GET',
+      headers: notionHeaders(token)
+    });
+    if (response.ok) {
+      const resource = await response.json();
+      return resource?.parent || null;
+    }
+    if (response.status === 429 || response.status >= 500) {
+      const error = new Error('Notion authorization check is temporarily unavailable.');
+      error.statusCode = response.status;
+      throw error;
+    }
+    if (response.status !== 404) return null;
+  }
+
+  return null;
+}
+
+/**
+ * Follow Notion parent relationships until one of the four public demo roots
+ * is reached. The client-provided default header is only a mode selector; this
+ * server-side ancestry check is the authorization boundary.
+ */
+async function isDefaultResourceAllowed(rawId, initialKind, token) {
+  let id = normalizeNotionId(rawId);
+  if (!id) return false;
+  if (DEFAULT_ROOT_PAGE_IDS.has(id)) return true;
+
+  const cacheKey = `${initialKind}:${id}`;
+  const cached = defaultAccessCache.get(cacheKey);
+  if (cached && Date.now() - cached.checkedAt < DEFAULT_ACCESS_CACHE_TTL_MS) {
+    return cached.allowed;
+  }
+
+  let kind = initialKind;
+  const visited = new Set();
+  let allowed = false;
+
+  for (let depth = 0; depth < 32 && id && !visited.has(id); depth += 1) {
+    if (DEFAULT_ROOT_PAGE_IDS.has(id)) {
+      allowed = true;
+      break;
+    }
+    visited.add(id);
+
+    const parent = await fetchNotionParent(id, kind, token);
+    if (!parent || parent.type === 'workspace') break;
+
+    if (parent.type === 'page_id') {
+      id = normalizeNotionId(parent.page_id);
+      kind = 'page';
+    } else if (parent.type === 'block_id') {
+      id = normalizeNotionId(parent.block_id);
+      kind = 'unknown';
+    } else if (parent.type === 'database_id') {
+      id = normalizeNotionId(parent.database_id);
+      kind = 'database';
+    } else {
+      break;
+    }
+  }
+
+  // Only cache positive ancestry. Random denied IDs must not let an attacker
+  // grow process memory or turn a transient Notion error into a long denial.
+  if (allowed) {
+    if (defaultAccessCache.size >= DEFAULT_ACCESS_CACHE_MAX_ENTRIES) {
+      defaultAccessCache.delete(defaultAccessCache.keys().next().value);
+    }
+    defaultAccessCache.set(cacheKey, { allowed: true, checkedAt: Date.now() });
+  }
+  return allowed;
+}
+
+async function isDefaultRequestAllowed(query, token) {
+  const { action, databaseId, pageId, type } = query;
+  if (action === 'search' || action === 'children' || query.validate === 'true') {
+    return false;
+  }
+
+  if (action === 'database' || action === 'database-info') {
+    return isDefaultResourceAllowed(databaseId, 'database', token);
+  }
+
+  return isDefaultResourceAllowed(pageId, type === 'page' ? 'page' : 'unknown', token);
+}
+
+function getHeader(headers, name) {
+  const expected = name.toLowerCase();
+  const entry = Object.entries(headers || {}).find(
+    ([key]) => key.toLowerCase() === expected
+  );
+  return entry?.[1] || '';
+}
+
+function errorResponse(statusCode, error) {
+  return {
+    statusCode,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({ error })
+  };
+}
+
+export const handler = async (event) => {
   // Manejar CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -28,20 +166,70 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Obtener el token del usuario desde los query parameters o headers
-  // El token ahora es obligatorio y se configura desde la interfaz del plugin
-  const { pageId, type, token, action } = event.queryStringParameters || {};
-  const userToken = token || event.headers['x-notion-token'];
-  
-  if (!userToken) {
-    return {
-      statusCode: 400,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ error: 'No token provided. Configure your Notion token in the extension (🔑 button).' })
-    };
+  const query = event.queryStringParameters || {};
+  const { pageId, type, action, validate } = query;
+  const queryToken = query.token;
+  const personalToken = getHeader(event.headers, 'x-notion-token').trim();
+  const useDefaultAccess = getHeader(event.headers, 'x-gm-vault-default') === '1';
+
+  // Secrets in URLs can be retained by access logs and browser tooling. Reject
+  // mixed and legacy clients instead of silently accepting an unsafe fallback.
+  if (queryToken) {
+    return errorResponse(400, 'Notion tokens are not accepted in query parameters. Reload GM Vault and try again.');
+  }
+
+  if (personalToken && useDefaultAccess) {
+    return errorResponse(400, 'Choose either personal or default Notion access.');
+  }
+
+  if (useDefaultAccess && (validate === 'true' || PERSONAL_TOKEN_ONLY_ACTIONS.has(action))) {
+    return errorResponse(403, 'This Notion operation requires a personal connection.');
+  }
+
+  const defaultToken = useDefaultAccess
+    ? String(process.env.GM_VAULT_DEFAULT_CONFIG_V2 || '').trim()
+    : '';
+  const authToken = personalToken || defaultToken;
+
+  if (!authToken) {
+    return errorResponse(
+      useDefaultAccess ? 503 : 400,
+      useDefaultAccess
+        ? 'Default Notion access is unavailable.'
+        : 'No token provided. Configure your Notion token in the extension.'
+    );
   }
 
   try {
+    if (useDefaultAccess && !await isDefaultRequestAllowed(query, authToken)) {
+      return errorResponse(403, 'This resource is not part of the GM Vault demo.');
+    }
+
+    if (validate === 'true') {
+      const response = await fetch('https://api.notion.com/v1/users/me', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return errorResponse(
+          response.status,
+          errorData.message || 'Notion token validation failed'
+        );
+      }
+
+      return {
+        statusCode: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valid: true })
+      };
+    }
+
     // ============================================
     // ACCIÓN: Buscar páginas en el workspace
     // ============================================
@@ -63,7 +251,7 @@ exports.handler = async (event, context) => {
       const response = await fetch('https://api.notion.com/v1/search', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${userToken}`,
+          'Authorization': `Bearer ${authToken}`,
           'Notion-Version': '2022-06-28',
           'Content-Type': 'application/json'
         },
@@ -116,7 +304,7 @@ exports.handler = async (event, context) => {
         const response = await fetch(url, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${userToken}`,
+            'Authorization': `Bearer ${authToken}`,
             'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           }
@@ -140,9 +328,11 @@ exports.handler = async (event, context) => {
         startCursor = data.next_cursor;
       }
 
-      // Filtrar child_page, link_to_page y child_database blocks manteniendo el orden original
+      // La jerarquía solo se deriva de contención real. `link_to_page` es una
+      // referencia de navegación y se renderiza dentro del contenido, pero no
+      // debe convertirse en una página hija del vault.
       const pageBlocks = allBlocks.filter(block => 
-        block.type === 'child_page' || block.type === 'link_to_page' || block.type === 'child_database'
+        block.type === 'child_page' || block.type === 'child_database'
       );
       
       return {
@@ -173,7 +363,7 @@ exports.handler = async (event, context) => {
       const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${userToken}`,
+          'Authorization': `Bearer ${authToken}`,
           'Notion-Version': '2022-06-28',
           'Content-Type': 'application/json'
         }
@@ -220,7 +410,7 @@ exports.handler = async (event, context) => {
         const dbResponse = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${userToken}`,
+            'Authorization': `Bearer ${authToken}`,
             'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           }
@@ -261,7 +451,7 @@ exports.handler = async (event, context) => {
         const response = await fetch(url, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${userToken}`,
+            'Authorization': `Bearer ${authToken}`,
             'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
@@ -317,7 +507,7 @@ exports.handler = async (event, context) => {
     const response = await fetch(apiEndpoint, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${userToken}`,
+        'Authorization': `Bearer ${authToken}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       }
@@ -345,10 +535,9 @@ exports.handler = async (event, context) => {
   } catch (error) {
     console.error('Error calling Notion API:', error);
     return {
-      statusCode: 500,
+      statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : 500,
       headers: CORS_HEADERS,
       body: JSON.stringify({ error: error.message || 'Internal server error' })
     };
   }
 };
-
