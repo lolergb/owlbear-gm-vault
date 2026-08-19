@@ -110,10 +110,33 @@ describe('Mixpanel deployment metadata', () => {
       expect(response.statusCode).toBe(200);
       expect(body).toMatchObject({
         enabled: true,
+        isBeta: environment === 'unknown' ? null : environment === 'beta',
         environment,
         deployContext: environment === 'unknown' ? 'unknown' : deployContext
       });
       expect(response.headers['Cache-Control']).toBe('no-store');
+    } finally {
+      restoreEnv('MIXPANEL_TOKEN', originalToken);
+      restoreEnv('CONTEXT', originalContext);
+    }
+  });
+
+  it('falls back to the Netlify hostname when CONTEXT is unavailable', async () => {
+    const originalToken = process.env.MIXPANEL_TOKEN;
+    const originalContext = process.env.CONTEXT;
+    process.env.MIXPANEL_TOKEN = 'mixpanel-test-token';
+    delete process.env.CONTEXT;
+
+    try {
+      const response = await mixpanelTokenHandler(event('GET', {}, {
+        host: 'develop--owlbear-gm-vault.netlify.app'
+      }), {});
+
+      expect(JSON.parse(response.body)).toMatchObject({
+        isBeta: true,
+        environment: 'beta',
+        deployContext: 'branch-deploy'
+      });
     } finally {
       restoreEnv('MIXPANEL_TOKEN', originalToken);
       restoreEnv('CONTEXT', originalContext);

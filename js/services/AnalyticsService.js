@@ -13,6 +13,7 @@ import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=202608
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
 const VAULT_ANALYTICS_KEY_PREFIX = 'gm_vault_analytics_';
+const PRODUCTION_HOSTNAME = 'owlbear-gm-vault.netlify.app';
 
 /**
  * Servicio de Analytics
@@ -105,17 +106,30 @@ export class AnalyticsService {
     // Es beta si:
     // - Es un deploy-preview de Netlify
     // - Es localhost
-    // - No es el dominio de producción
+    // - Es un branch deploy de Netlify (cualquier hostname distinto al oficial)
     const isBeta = 
       origin.includes('deploy-preview') ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
-      hostname.includes('.local');
+      hostname.includes('.local') ||
+      (hostname.endsWith('.netlify.app') && hostname !== PRODUCTION_HOSTNAME);
     
     this.isBeta = isBeta;
     this.environment = isBeta ? 'beta' : 'production';
+    this.deployContext = this._detectDeployContext(hostname, origin);
     log(`📊 Entorno detectado: ${isBeta ? 'BETA' : 'PRODUCCIÓN'}`);
     return isBeta;
+  }
+
+  _detectDeployContext(hostname, origin) {
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('.local')) {
+      return 'dev';
+    }
+    if (origin.includes('deploy-preview')) return 'deploy-preview';
+    if (hostname.endsWith('.netlify.app') && hostname !== PRODUCTION_HOSTNAME) {
+      return 'branch-deploy';
+    }
+    return 'production';
   }
 
   /**
@@ -232,14 +246,21 @@ export class AnalyticsService {
       const response = await fetch('/.netlify/functions/get-mixpanel-token');
       if (response.ok) {
         const data = await response.json();
-        this.environment = this._normalizeEnum(
-          data.environment || this.environment,
+        const serverEnvironment = this._normalizeEnum(
+          data.environment,
           ['beta', 'production']
         );
-        this.deployContext = this._normalizeEnum(
+        const serverDeployContext = this._normalizeEnum(
           data.deployContext,
           ['production', 'deploy-preview', 'branch-deploy', 'dev']
         );
+        if (serverEnvironment !== 'unknown') {
+          this.environment = serverEnvironment;
+          this.isBeta = serverEnvironment === 'beta';
+        }
+        if (serverDeployContext !== 'unknown') {
+          this.deployContext = serverDeployContext;
+        }
         if (data.enabled && data.token) {
           this.mixpanelToken = data.token;
           this.mixpanelEnabled = true;
@@ -305,6 +326,7 @@ export class AnalyticsService {
           ...(this.vaultInstanceId ? { vault_instance_id: this.vaultInstanceId } : {}),
           vault_state: this.vaultState,
           ...properties,
+          is_beta: this.isBeta,
           environment: this.environment,
           deploy_context: this.deployContext
         }

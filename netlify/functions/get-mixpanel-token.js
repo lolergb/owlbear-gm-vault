@@ -10,16 +10,35 @@ const RESPONSE_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Cache-Control': 'no-store'
 };
+const PRODUCTION_HOSTNAME = 'owlbear-gm-vault.netlify.app';
 
-function getDeployMetadata() {
+function getDeployMetadata(event) {
   const knownContexts = new Set(['production', 'deploy-preview', 'branch-deploy', 'dev']);
   const rawContext = String(process.env.CONTEXT || '').toLowerCase();
-  const deployContext = knownContexts.has(rawContext) ? rawContext : 'unknown';
+  let deployContext = knownContexts.has(rawContext) ? rawContext : 'unknown';
+
+  // CONTEXT is canonical. The hostname fallback keeps deployment analytics
+  // usable if Netlify does not expose it in a particular function runtime.
+  if (deployContext === 'unknown') {
+    const hostname = String(
+      event?.headers?.['x-forwarded-host'] || event?.headers?.host || ''
+    ).split(':')[0].toLowerCase();
+
+    if (hostname === PRODUCTION_HOSTNAME) {
+      deployContext = 'production';
+    } else if (hostname.includes('deploy-preview')) {
+      deployContext = 'deploy-preview';
+    } else if (hostname.endsWith('.netlify.app')) {
+      deployContext = 'branch-deploy';
+    }
+  }
+
   const environment = deployContext === 'production'
     ? 'production'
     : deployContext === 'unknown' ? 'unknown' : 'beta';
+  const isBeta = environment === 'unknown' ? null : environment === 'beta';
 
-  return { environment, deployContext };
+  return { environment, deployContext, isBeta };
 }
 
 export const handler = async (event, context) => {
@@ -43,7 +62,7 @@ export const handler = async (event, context) => {
 
   try {
     const token = process.env.MIXPANEL_TOKEN;
-    const deployMetadata = getDeployMetadata();
+    const deployMetadata = getDeployMetadata(event);
     
     if (!token) {
       return {
