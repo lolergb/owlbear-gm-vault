@@ -4,9 +4,9 @@ import { handler } from '../../../netlify/functions/get-mixpanel-token.js';
 const originalMixpanelToken = process.env.MIXPANEL_TOKEN;
 const originalContext = process.env.CONTEXT;
 
-const event = (httpMethod = 'GET') => ({
+const event = (httpMethod = 'GET', host = '') => ({
   httpMethod,
-  headers: {}
+  headers: host ? { host } : {}
 });
 
 afterEach(() => {
@@ -49,6 +49,26 @@ describe('get-mixpanel-token Netlify function', () => {
       isBeta: false
     });
   });
+
+  it.each([
+    ['owlbear-gm-vault.netlify.app', 'production', 'production', false],
+    ['deploy-preview-12--owlbear-gm-vault.netlify.app', 'beta', 'deploy-preview', true],
+    ['develop--owlbear-gm-vault.netlify.app', 'beta', 'branch-deploy', true]
+  ])(
+    'infers deployment metadata from %s when CONTEXT is unavailable',
+    async (host, environment, deployContext, isBeta) => {
+      delete process.env.CONTEXT;
+      delete process.env.MIXPANEL_TOKEN;
+
+      const response = await handler(event('GET', host));
+
+      expect(JSON.parse(response.body)).toMatchObject({
+        environment,
+        deployContext,
+        isBeta
+      });
+    }
+  );
 
   it('handles CORS preflight without CommonJS globals', async () => {
     const response = await handler(event('OPTIONS'));
