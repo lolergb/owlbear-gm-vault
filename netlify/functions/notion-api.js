@@ -9,7 +9,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
 };
 
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   // Manejar CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -351,4 +351,3 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
