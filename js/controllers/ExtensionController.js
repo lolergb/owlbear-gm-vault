@@ -3496,6 +3496,310 @@ export class ExtensionController {
   }
 
   /**
+   * Crea un error de importación con una etapa estable para analytics y UI.
+   * @private
+   */
+  _createJsonImportError(stage, title, message, cause = null) {
+    const error = new Error(message);
+    error.name = cause?.name || (stage === 'parse' ? 'SyntaxError' : 'Error');
+    error.importStage = stage;
+    error.userTitle = title;
+    error.cause = cause || undefined;
+    return error;
+  }
+
+  /**
+   * Convierte los fallos de estructura en un mensaje breve y accionable.
+   * @private
+   */
+  _createJsonValidationError(preflight) {
+    const issueCount = preflight.errors.length;
+    const issueLabel = issueCount === 1 ? 'one issue' : `${issueCount} issues`;
+    const error = this._createJsonImportError(
+      'validate',
+      'This backup can’t be imported',
+      `GM Vault found ${issueLabel} in this backup. Fix ${issueCount === 1 ? 'it' : 'them'} in the JSON file, then try again.`
+    );
+    error.validationErrors = preflight.errors;
+    return error;
+  }
+
+  /**
+   * Parsea y valida texto JSON sin modificar el vault.
+   * @private
+   */
+  _prepareJsonImportText(text, source = 'file') {
+    const sourceLabel = source === 'url' ? 'The URL response' : 'The selected file';
+    if (typeof text !== 'string' || text.trim() === '') {
+      throw this._createJsonImportError(
+        'parse',
+        'This file is empty',
+        `${sourceLabel} does not contain any data. Choose a GM Vault backup with folders or pages.`
+      );
+    }
+
+    let importedConfig;
+    try {
+      // Algunos editores añaden BOM al principio de los archivos UTF-8.
+      importedConfig = JSON.parse(text.replace(/^\uFEFF/, ''));
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'parse',
+        'This file isn’t valid JSON',
+        `GM Vault could not read ${source === 'url' ? 'the downloaded file' : 'this file'}. Check for missing commas, brackets, or quotation marks, then try again.`,
+        cause
+      );
+    }
+
+    const preflight = this.configParser.preflight(importedConfig);
+    if (!preflight.valid) {
+      throw this._createJsonValidationError(preflight);
+    }
+
+    if (preflight.summary.categoryCount === 0 && preflight.summary.pageCount === 0) {
+      const error = this._createJsonImportError(
+        'validate',
+        'This backup is empty',
+        'There are no folders or pages to import. Choose a backup that contains vault content.'
+      );
+      error.name = 'EmptyVaultError';
+      throw error;
+    }
+
+    return { importedConfig, preflight };
+  }
+
+  /**
+   * Lee y prepara un archivo JSON local sin persistirlo.
+   * @private
+   */
+  async _readJsonImportFile(file) {
+    if (!file || typeof file.text !== 'function') {
+      throw this._createJsonImportError(
+        'read',
+        'Could not read file',
+        'Choose a readable JSON file and try again.'
+      );
+    }
+
+    let text;
+    try {
+      text = await file.text();
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'read',
+        'Could not read file',
+        'The selected file could not be read. Check its permissions and try again.',
+        cause
+      );
+    }
+
+    return this._prepareJsonImportText(text, 'file');
+  }
+
+  /**
+   * Descarga y prepara un JSON remoto sin persistirlo.
+   * @private
+   */
+  async _fetchJsonImport(url) {
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'fetch',
+        'Could not reach URL',
+        'Check the address, your connection, and whether the server allows browser requests, then try again.',
+        cause
+      );
+    }
+
+    if (!response.ok) {
+      throw this._createJsonImportError(
+        'http',
+        'Could not download backup',
+        `The server returned HTTP ${response.status}. Check the URL and try again.`
+      );
+    }
+
+    let text;
+    try {
+      text = await response.text();
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'read',
+        'Could not read response',
+        'The backup was downloaded but its response could not be read. Try again.',
+        cause
+      );
+    }
+
+    return this._prepareJsonImportText(text, 'url');
+  }
+
+  /**
+   * Abre los pasos necesarios para una importación ya preparada.
+   * @private
+   */
+  async _showPreparedJsonImport(importedConfig, preflight, fileName, source) {
+    const currentConfig = this.config || { categories: [] };
+    const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
+    const currentPagesCount = this._countPagesInConfig(configForCount);
+    const importedPagesCount = preflight.summary.pageCount;
+
+    log(`Prepared JSON import: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
+    if (preflight.warnings.length > 0) {
+      const shouldContinue = await this._showJsonImportWarningsStep(preflight, fileName);
+      if (!shouldContinue) return false;
+    }
+
+    return this._showLoadJsonOptionsModal(
+      importedConfig,
+      currentPagesCount,
+      importedPagesCount,
+      fileName,
+      source,
+      preflight
+    );
+  }
+
+  /**
+   * Muestra los datos que se descartarán y exige confirmación para continuar.
+   * @private
+   */
+  _showJsonImportWarningsStep(preflight, fileName) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'json-import-warning-modal';
+      overlay.className = 'modal';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'json-import-warning-title');
+
+      const modal = document.createElement('div');
+      modal.className = 'modal__content notion-pages-modal';
+
+      modal.innerHTML = `
+        <h2 class="modal__title" id="json-import-warning-title">Review this backup</h2>
+        <div class="form import-warning-step">
+          <p class="import-warning-step__intro">This backup can be imported, but some details will be left out.</p>
+          <div class="import-preview" aria-label="Backup summary">
+            <p class="import-source-label">Importing <strong>${escapeHtml(fileName || 'vault backup')}</strong></p>
+            <dl class="import-preview__stats">
+              <div>
+                <dt>Folders</dt>
+                <dd>${preflight.summary.categoryCount}</dd>
+              </div>
+              <div>
+                <dt>Pages</dt>
+                <dd>${preflight.summary.pageCount}</dd>
+              </div>
+            </dl>
+            <div class="import-preview__warnings" role="note" aria-label="Import notices">
+              <h3 class="import-preview__warnings-title">What will be left out</h3>
+              ${preflight.warnings.map(warning => `<p class="import-preview__warning-message">${escapeHtml(warning)}</p>`).join('')}
+            </div>
+          </div>
+          <div class="form__actions import-options__actions">
+            <button type="button" id="json-import-warning-cancel" class="btn btn--ghost btn--flex">Cancel</button>
+            <button type="button" id="json-import-warning-next" class="btn btn--primary btn--flex">Next</button>
+          </div>
+        </div>
+      `;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      let settled = false;
+      const finish = shouldContinue => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', handleKeydown);
+        overlay.remove();
+        resolve(shouldContinue);
+      };
+      const handleKeydown = event => {
+        if (event.key === 'Escape') finish(false);
+      };
+
+      modal.querySelector('#json-import-warning-cancel').addEventListener('click', () => finish(false));
+      modal.querySelector('#json-import-warning-next').addEventListener('click', () => finish(true));
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) finish(false);
+      });
+      document.addEventListener('keydown', handleKeydown);
+      modal.querySelector('#json-import-warning-next').focus();
+    });
+  }
+
+  /**
+   * Comunica un error bloqueante. No ofrece ninguna ruta hacia la importación.
+   * @private
+   */
+  _showJsonImportErrorAlert(error) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'json-import-error-modal';
+      overlay.className = 'modal';
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'json-import-error-title');
+      overlay.setAttribute('aria-describedby', 'json-import-error-message');
+
+      const modal = document.createElement('div');
+      modal.className = 'modal__content notion-pages-modal';
+      const validationDetails = Array.isArray(error?.validationErrors) && error.validationErrors.length > 0
+        ? `<ul class="import-error__details">${error.validationErrors.slice(0, 5).map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}</ul>`
+        : '';
+
+      modal.innerHTML = `
+        <h2 class="modal__title" id="json-import-error-title">${escapeHtml(error?.userTitle || 'Import problem')}</h2>
+        <div class="import-error">
+          <p class="import-error__message" id="json-import-error-message">${escapeHtml(error?.message || 'The backup could not be prepared.')}</p>
+          ${validationDetails}
+          <div class="form__actions form__actions--single import-options__actions">
+            <button type="button" id="json-import-error-ok" class="btn btn--primary btn--flex">Close</button>
+          </div>
+        </div>
+      `;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', handleKeydown);
+        overlay.remove();
+        resolve();
+      };
+      const handleKeydown = event => {
+        if (event.key === 'Escape') finish();
+      };
+
+      modal.querySelector('#json-import-error-ok').addEventListener('click', finish);
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) finish();
+      });
+      document.addEventListener('keydown', handleKeydown);
+      modal.querySelector('#json-import-error-ok').focus();
+    });
+  }
+
+  /**
+   * Registra y comunica un error bloqueante.
+   * @private
+   */
+  _handleJsonImportError(error, source, fallbackStage = 'read', context = {}) {
+    this.analyticsService?.trackVaultImportFailed?.({
+      source,
+      stage: error?.importStage || fallbackStage,
+      errorType: error?.name || 'Error',
+      ...context
+    });
+    return this._showJsonImportErrorAlert(error);
+  }
+
+  /**
    * Configura los event listeners de los botones de settings
    * @private
    */
@@ -3621,37 +3925,11 @@ export class ExtensionController {
           if (!file) return;
           
           try {
-            const text = await file.text();
-            const importedConfig = JSON.parse(text);
-            
-            if (!importedConfig.categories) {
-              throw new Error('Invalid config: missing categories');
-            }
-            
-            // Contar páginas actuales e importadas
-            const currentConfig = this.config || { categories: [] };
-            const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
-            const currentPagesCount = this._countPagesInConfig(configForCount);
-            const importedPagesCount = this._countPagesInConfig(importedConfig);
-            
-            log(`Load JSON: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
-            
-            // Mostrar modal con opciones de importación
-            await this._showLoadJsonOptionsModal(
-              importedConfig,
-              currentPagesCount,
-              importedPagesCount,
-              file.name,
-              'file'
-            );
+            const { importedConfig, preflight } = await this._readJsonImportFile(file);
+            await this._showPreparedJsonImport(importedConfig, preflight, file.name, 'file');
             
           } catch (err) {
-            this.analyticsService?.trackVaultImportFailed?.({
-              source: 'file',
-              stage: 'read',
-              errorType: err?.name
-            });
-            alert('❌ Error loading file: ' + err.message);
+            await this._handleJsonImportError(err, 'file', 'read');
           }
         });
         
@@ -3672,11 +3950,14 @@ export class ExtensionController {
         const url = vaultUrlInput ? vaultUrlInput.value.trim() : '';
         log('URL value:', url);
         if (!url) {
-          this.uiRenderer.showErrorToast('URL required', 'Enter the URL of a GM Vault JSON file.');
+          const error = this._createJsonImportError(
+            'input',
+            'URL required',
+            'Enter the complete URL of a GM Vault JSON file.'
+          );
+          await this._handleJsonImportError(error, 'url', 'input');
           return;
         }
-        
-        this.analyticsService.trackLoadFromUrlClicked(url);
 
         // Validar que sea una URL válida
         try {
@@ -3685,9 +3966,18 @@ export class ExtensionController {
             throw new Error('Unsupported URL protocol');
           }
         } catch (e) {
-          this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+          const error = this._createJsonImportError(
+            'input',
+            'Invalid URL',
+            'Use a complete HTTP or HTTPS URL.'
+          );
+          await this._handleJsonImportError(error, 'url', 'input');
           return;
         }
+
+        this.analyticsService.trackLoadFromUrlClicked(url);
+        const urlObj = new URL(url);
+        const vaultName = urlObj.pathname.split('/').pop() || 'vault';
 
         // Mostrar indicador de carga
         loadUrlBtn.disabled = true;
@@ -3696,46 +3986,12 @@ export class ExtensionController {
 
         try {
           log('Loading vault from URL:', url);
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          
-          const importedConfig = await response.json();
-          
-          if (!importedConfig.categories) {
-            throw new Error('Invalid config: missing categories');
-          }
-          
-          // Contar páginas actuales e importadas
-          const currentConfig = this.config || { categories: [] };
-          const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
-          const currentPagesCount = this._countPagesInConfig(configForCount);
-          const importedPagesCount = this._countPagesInConfig(importedConfig);
-          
-          log(`Load from URL: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
-          
-          // Extraer nombre del vault de la URL para mostrar en el modal
-          const urlObj = new URL(url);
-          const vaultName = urlObj.pathname.split('/').pop() || 'vault';
-          
-          // Mostrar modal con opciones de importación
-          await this._showLoadJsonOptionsModal(
-            importedConfig,
-            currentPagesCount,
-            importedPagesCount,
-            vaultName,
-            'url'
-          );
+          const { importedConfig, preflight } = await this._fetchJsonImport(url);
+          await this._showPreparedJsonImport(importedConfig, preflight, vaultName, 'url');
           
         } catch (err) {
           console.error('Error loading from URL:', err);
-          this.analyticsService?.trackVaultImportFailed?.({
-            source: 'url',
-            stage: 'fetch',
-            errorType: err?.name
-          });
-          this.uiRenderer.showErrorToast('Could not import from URL', err.message);
+          await this._handleJsonImportError(err, 'url', 'fetch');
         } finally {
           loadUrlBtn.disabled = false;
           loadUrlBtn.textContent = originalText;
@@ -4404,24 +4660,37 @@ export class ExtensionController {
    * @param {number} currentPagesCount - Número de páginas en el vault actual
    * @param {number} importedPagesCount - Número de páginas en el archivo importado
    * @param {string} fileName - Nombre del archivo importado
+   * @param {string} source - Origen de la importación
+   * @param {Object|null} preflight - Resultado de validación previa
    * @private
    */
-  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName, source = 'file') {
+  async _showLoadJsonOptionsModal(
+    importedConfig,
+    currentPagesCount,
+    importedPagesCount,
+    fileName,
+    source = 'file',
+    preflight = null
+  ) {
     log(`_showLoadJsonOptionsModal: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}, file=${fileName}`);
-    
-    // Si el vault actual está vacío, hacer replace directamente sin mostrar opciones
-    if (currentPagesCount === 0) {
-      log('Vault is empty, applying direct replace');
-      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount, 'root', source);
-      return;
+
+    const configParser = this.configParser || new ConfigParser();
+    const importPreflight = preflight || configParser.preflight(importedConfig);
+    if (!importPreflight.valid) {
+      throw this._createJsonValidationError(importPreflight);
     }
+
+    importedPagesCount = importPreflight.summary.pageCount;
 
     // Crear el contenido del modal
     const destinationConfig = this.config?.toJSON ? this.config.toJSON() : (this.config || {});
-    const destinationItemsConfig = this.configParser?.detectFormat
-      ? (this.configParser.detectFormat(destinationConfig) === 'items'
+    const currentFolderCount = configParser.preflight(destinationConfig).summary.categoryCount;
+    // La confirmación es obligatoria también cuando el vault está vacío.
+    const isEmptyVault = currentPagesCount === 0 && currentFolderCount === 0;
+    const destinationItemsConfig = configParser.detectFormat
+      ? (configParser.detectFormat(destinationConfig) === 'items'
         ? destinationConfig
-        : this.configParser.toItemsFormat(destinationConfig))
+        : configParser.toItemsFormat(destinationConfig))
       : { categories: [] };
     const destinationOptions = [
       { value: 'root', label: 'Root level' },
@@ -4430,47 +4699,65 @@ export class ExtensionController {
     const destinationMarkup = destinationOptions.map(option =>
       `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
     ).join('');
-    const modalContent = `
-      <div class="import-options">
-        <span class="import-source-label" hidden>Importing <strong>${escapeHtml(fileName)}</strong></span>
-        <p class="import-options__question">How would you like to add this?</p>
-        <input type="hidden" name="json-import-mode" value="append" />
+    const importChoicesMarkup = isEmptyVault
+      ? '<input type="hidden" name="json-import-mode" value="replace" />'
+      : `
+        <fieldset class="import-options__modes">
+          <legend class="import-options__question">How would you like to add it?</legend>
+          <label class="import-option">
+            <input type="radio" name="json-import-mode" value="append" checked />
+            <span class="import-option__content">
+              <span class="import-option__title">Add to vault</span>
+              <span class="import-option__hint">Keep current content and add this backup</span>
+            </span>
+          </label>
+
+          <label class="import-option">
+            <input type="radio" name="json-import-mode" value="merge" />
+            <span class="import-option__content">
+              <span class="import-option__title">Combine with existing</span>
+              <span class="import-option__hint">Add new pages and update duplicates</span>
+            </span>
+          </label>
+
+          <label class="import-option">
+            <input type="radio" name="json-import-mode" value="replace" />
+            <span class="import-option__content">
+              <span class="import-option__title">Replace everything</span>
+              <span class="import-option__hint import-option__hint--warning">Your current ${currentPagesCount} page${currentPagesCount === 1 ? '' : 's'} and ${currentFolderCount} folder${currentFolderCount === 1 ? '' : 's'} will be removed</span>
+            </span>
+          </label>
+        </fieldset>
+      `;
+    const destinationMarkupBlock = isEmptyVault
+      ? ''
+      : `
         <div class="form__field import-destination-field">
-          <label class="form__label" for="field-destination-search">Destination folder</label>
+          <label class="form__label" for="field-destination-search">Destination for added content</label>
           <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
           <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
           <select id="field-destination" class="select select--searchable-source" hidden aria-hidden="true" tabindex="-1">${destinationMarkup}</select>
           <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
-          <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
+          <span class="form__help import-destination-help">Used only when adding the backup without combining or replacing.</span>
         </div>
-        
-        <label class="import-option">
-          <input type="radio" name="json-import-mode" value="merge" />
-          <div class="import-option__content">
-            <span class="import-option__title">Combine with existing</span>
-            <span class="import-option__hint">New pages will be added, duplicates updated</span>
-          </div>
-        </label>
-        
-        <label class="import-option">
-          <input type="radio" name="json-import-mode" value="replace" />
-          <div class="import-option__content">
-            <span class="import-option__title">Replace everything</span>
-            <span class="import-option__hint import-option__hint--warning">⚠️ You'll lose your current ${currentPagesCount} page${currentPagesCount !== 1 ? 's' : ''}</span>
-          </div>
-        </label>
+      `;
+    const modalContent = `
+      <div class="import-options">
+        <p class="import-source-label">Importing <strong>${escapeHtml(fileName || 'vault backup')}</strong></p>
 
-        <div class="form__actions" style="margin-top: var(--spacing-lg);">
-          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Back</button>
-          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Confirm import</button>
+        ${importChoicesMarkup}
+        ${destinationMarkupBlock}
+
+        <div class="form__actions import-options__actions">
+          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Cancel</button>
+          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Import backup</button>
         </div>
       </div>
     `;
 
     // Keep lightweight controller tests compatible with their modal mock.
     if (this.modalManager?.showCustom?.mock) {
-      this.modalManager.showCustom({ title: 'Import from Notion', content: modalContent });
-      return;
+      return this.modalManager.showCustom({ title: 'Choose where to import', content: modalContent });
     }
 
     // Use the same modal structure as the Notion importer.
@@ -4478,36 +4765,70 @@ export class ExtensionController {
     const overlay = document.createElement('div');
     overlay.id = 'json-import-modal';
     overlay.className = 'modal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'json-import-title');
     const modal = document.createElement('div');
     modal.className = 'modal__content notion-pages-modal';
-    modal.innerHTML = `<h2 class="modal__title">Import from Notion</h2><div class="form">${modalContent}</div>`;
+    modal.innerHTML = `<h2 class="modal__title" id="json-import-title">Choose where to import</h2><div class="form">${modalContent}</div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     log('Modal created:', modal);
-    this._setupSearchableSelect(modal, {
-      name: 'destination',
-      options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
-      visibleOptions: 7,
-      resultLabel: 'folder',
-      searchPlaceholder: 'Search folders...'
-    });
+    if (!isEmptyVault) {
+      this._setupSearchableSelect(modal, {
+        name: 'destination',
+        options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
+        visibleOptions: 7,
+        resultLabel: 'folder',
+        searchPlaceholder: 'Search folders...'
+      });
+    }
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
     const confirmBtn = modal.querySelector('#json-import-confirm');
+    const destinationField = modal.querySelector('.import-destination-field');
     log('Cancel button:', cancelBtn, 'Confirm button:', confirmBtn);
 
-    cancelBtn.addEventListener('click', () => {
+    const closeModal = () => {
       overlay.remove();
+      document.removeEventListener('keydown', handleKeydown);
+    };
+    const handleKeydown = (event) => {
+      if (event.key === 'Escape') closeModal();
+    };
+    const updateDestinationVisibility = () => {
+      if (!destinationField) return;
+      const mode = modal.querySelector('input[name="json-import-mode"]:checked')?.value;
+      destinationField.classList.toggle('hidden', mode !== 'append');
+    };
+
+    modal.querySelectorAll('input[name="json-import-mode"][type="radio"]').forEach(input => {
+      input.addEventListener('change', updateDestinationVisibility);
     });
+    updateDestinationVisibility();
+
+    cancelBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) closeModal();
+    });
+    document.addEventListener('keydown', handleKeydown);
 
     confirmBtn.addEventListener('click', async () => {
       const importMode = modal.querySelector('input[name="json-import-mode"]:checked')?.value
-        || modal.querySelector('input[name="json-import-mode"][value="append"]').value;
-      overlay.remove();
-      const destinationId = modal.querySelector('#field-destination')?.value || 'root';
+        || modal.querySelector('input[name="json-import-mode"]')?.value
+        || 'append';
+      const destinationId = importMode === 'append'
+        ? (modal.querySelector('#field-destination')?.value || 'root')
+        : 'root';
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Importing...';
+      closeModal();
       await this._applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId, source);
     });
+
+    confirmBtn.focus();
+    return overlay;
   }
 
   /**
@@ -4519,8 +4840,30 @@ export class ExtensionController {
    */
   async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root', source = 'file') {
     try {
+      const importPreflight = this.configParser.preflight(importedConfig);
+      if (!importPreflight.valid) {
+        throw this._createJsonValidationError(importPreflight);
+      }
+      if (importPreflight.summary.categoryCount === 0 && importPreflight.summary.pageCount === 0) {
+        const error = this._createJsonImportError(
+          'validate',
+          'This backup is empty',
+          'There are no folders or pages to import. Choose a backup that contains vault content.'
+        );
+        error.name = 'EmptyVaultError';
+        throw error;
+      }
+      if (!['append', 'merge', 'replace'].includes(importMode)) {
+        throw this._createJsonImportError(
+          'validate',
+          'Invalid import option',
+          'Choose how to add the backup and try again.'
+        );
+      }
+      importedPagesCount = importPreflight.summary.pageCount;
+
       // Detectar formato del JSON importado
-      const format = this.configParser.detectFormat(importedConfig);
+      const format = importPreflight.format;
       log(`_applyJsonImport: detected format="${format}", mode="${importMode}"`);
       
       // Si ya está en formato items[], usarlo directamente; si es legacy, convertir
@@ -4629,19 +4972,14 @@ export class ExtensionController {
 
       // Volver a la lista
       this._goBackToList();
+      return true;
     } catch (err) {
       logError('Error applying JSON import:', err);
-      this.analyticsService?.trackVaultImportFailed?.({
-        source,
-        stage: 'save',
+      await this._handleJsonImportError(err, source, 'save', {
         mode: importMode,
-        destinationType: destinationId === 'root' ? 'root' : 'folder',
-        errorType: err?.name
+        destinationType: destinationId === 'root' ? 'root' : 'folder'
       });
-      this.uiRenderer.showErrorToast(
-        'Import failed',
-        err.message || 'An error occurred while importing.'
-      );
+      return false;
     }
   }
 

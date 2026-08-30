@@ -1,0 +1,14 @@
+{
+  "categories": [
+    {
+      "name": "Broken pages",
+      "pages": [
+        {
+          "name": "Missing content",
+          "visibleToPlayers": "yes",
+          "blockTypes": ["paragraph", 3]
+        }
+      ]
+    }
+  ]
+}
