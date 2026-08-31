@@ -7,6 +7,31 @@
 import { CACHE_PREFIX, PAGE_INFO_CACHE_PREFIX } from '../utils/constants.js?v=20260812-1';
 import { log, logError, logWarn } from '../utils/logger.js?v=20260722-4';
 
+const HTML_CACHE_TTL_MS = 5 * 60 * 1000;
+const NOTION_FILE_EXPIRY_SAFETY_MS = HTML_CACHE_TTL_MS + (5 * 60 * 1000);
+
+/**
+ * Notion-hosted file URLs are signed and temporary. Do not reuse cached API
+ * objects when any embedded file URL is expired or close to expiring.
+ * @param {*} value
+ * @param {number} now
+ * @param {Set<Object>} seen
+ * @returns {boolean}
+ */
+function hasStaleNotionFile(value, now = Date.now(), seen = new Set()) {
+  if (!value || typeof value !== 'object') return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+
+  if (value.type === 'file' && value.file?.url) {
+    const expiryTime = Date.parse(value.file.expiry_time || '');
+    return !Number.isFinite(expiryTime) || expiryTime <= now + NOTION_FILE_EXPIRY_SAFETY_MS;
+  }
+
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return children.some(child => hasStaleNotionFile(child, now, seen));
+}
+
 /**
  * Servicio para gestionar el caché de contenido
  */
@@ -53,6 +78,11 @@ export class CacheService {
       if (cached) {
         const data = JSON.parse(cached);
         if (data.blocks) {
+          if (hasStaleNotionFile(data.blocks)) {
+            localStorage.removeItem(cacheKey);
+            log('🔄 Caché de bloques invalidada por URLs de Notion caducadas:', pageId);
+            return null;
+          }
           log('✅ Bloques obtenidos del caché para:', pageId);
           return data.blocks;
         }
@@ -147,7 +177,16 @@ export class CacheService {
         
         // Compatibilidad con formato antiguo: { pageInfo: {...}, savedAt }
         if (data.pageInfo) {
+          if (hasStaleNotionFile(data.pageInfo)) {
+            localStorage.removeItem(cacheKey);
+            return null;
+          }
           return data.pageInfo;
+        }
+
+        if (hasStaleNotionFile(data)) {
+          localStorage.removeItem(cacheKey);
+          return null;
         }
         
         // Formato nuevo: { cover, icon, ..., cachedAt }
@@ -218,10 +257,16 @@ export class CacheService {
    * @returns {string|null}
    */
   getHtmlFromLocalCache(pageId) {
-    if (this.localHtmlCache[pageId]) {
-      return this.localHtmlCache[pageId].html;
+    const cached = this.localHtmlCache[pageId];
+    if (!cached) return null;
+
+    if (Date.now() - cached.savedAt >= HTML_CACHE_TTL_MS) {
+      delete this.localHtmlCache[pageId];
+      log('🔄 Caché HTML invalidada para renovar recursos de Notion:', pageId);
+      return null;
     }
-    return null;
+
+    return cached.html;
   }
 
   /**

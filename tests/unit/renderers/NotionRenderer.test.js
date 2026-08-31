@@ -164,3 +164,79 @@ describe('NotionRenderer page mentions', () => {
     expect(html).toContain('data-mention-page-name="Root destination"');
   });
 });
+
+function richText(plainText) {
+  return [{
+    type: 'text',
+    plain_text: plainText,
+    href: null,
+    text: { content: plainText, link: null },
+    annotations: {}
+  }];
+}
+
+describe('NotionRenderer nested block content', () => {
+  it('renders children nested inside a quote', async () => {
+    const renderer = new NotionRenderer();
+    renderer.setDependencies({
+      notionService: {
+        fetchChildBlocks: async blockId => blockId === 'quote-1'
+          ? [{
+              id: 'paragraph-1',
+              type: 'paragraph',
+              has_children: false,
+              paragraph: { rich_text: richText('Nested quote content') }
+            }]
+          : []
+      }
+    });
+
+    const html = await renderer.renderBlocks([{
+      id: 'quote-1',
+      type: 'quote',
+      has_children: true,
+      quote: { rich_text: richText('Quote heading') }
+    }]);
+    const template = document.createElement('template');
+    template.innerHTML = html;
+
+    const quote = template.content.querySelector('.notion-quote');
+    expect(quote.textContent).toContain('Quote heading');
+    expect(quote.querySelector('.notion-quote-children').textContent)
+      .toContain('Nested quote content');
+  });
+
+  it('keeps nested images inside their list item', async () => {
+    const renderer = new NotionRenderer();
+    renderer.setDependencies({
+      notionService: {
+        fetchChildBlocks: async blockId => blockId === 'list-1'
+          ? [{
+              id: 'image-1',
+              type: 'image',
+              has_children: false,
+              image: {
+                type: 'external',
+                external: { url: 'https://example.com/map.png' },
+                caption: richText('Encounter map')
+              }
+            }]
+          : []
+      }
+    });
+
+    const html = await renderer.renderBlocks([{
+      id: 'list-1',
+      type: 'bulleted_list_item',
+      has_children: true,
+      bulleted_list_item: { rich_text: richText('Maps') }
+    }]);
+    const template = document.createElement('template');
+    template.innerHTML = html;
+
+    const listItem = template.content.querySelector('li.notion-bulleted-list-item');
+    expect(listItem.textContent).toContain('Maps');
+    expect(listItem.querySelector('img.notion-image-clickable').getAttribute('src'))
+      .toBe('https://example.com/map.png');
+  });
+});

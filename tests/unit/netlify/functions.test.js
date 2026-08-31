@@ -80,6 +80,54 @@ describe('Netlify function ES module exports', () => {
     }
   });
 
+  it('pagina todos los bloques al leer el contenido de una página', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          object: 'list',
+          type: 'block',
+          block: {},
+          results: [{ id: 'block-1', type: 'paragraph' }],
+          has_more: true,
+          next_cursor: 'cursor-2'
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          object: 'list',
+          type: 'block',
+          block: {},
+          results: [{ id: 'block-2', type: 'image' }],
+          has_more: false,
+          next_cursor: null
+        })
+      });
+
+    try {
+      const response = await notionHandler(event('GET', {
+        pageId: 'long-page'
+      }, {
+        'X-Notion-Token': 'test-token'
+      }), {});
+      const body = JSON.parse(response.body);
+
+      expect(response.statusCode).toBe(200);
+      expect(body.results.map(block => block.id)).toEqual(['block-1', 'block-2']);
+      expect(body.has_more).toBe(false);
+      expect(body.next_cursor).toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[0][0]).toContain('/children?page_size=100');
+      expect(global.fetch.mock.calls[1][0]).toContain('start_cursor=cursor-2');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it.each([
     ['get-default-token', defaultTokenHandler],
     ['get-debug-mode', debugModeHandler],
@@ -285,7 +333,7 @@ describe('Notion proxy security contract', () => {
         `https://api.notion.com/v1/blocks/${childBlockId}`
       );
       expect(global.fetch.mock.calls[1][0]).toBe(
-        `https://api.notion.com/v1/blocks/${childBlockId}/children`
+        `https://api.notion.com/v1/blocks/${childBlockId}/children?page_size=100`
       );
       for (const [, options] of global.fetch.mock.calls) {
         expect(options.headers.Authorization).toBe(`Bearer ${DEFAULT_SECRET}`);

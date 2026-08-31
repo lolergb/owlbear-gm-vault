@@ -1111,7 +1111,8 @@ export class NotionRenderer {
           listType = currentListType;
         }
         
-        listItems.push(this.renderBlock(block));
+        const listItemHtml = await this._renderListItem(block, typesArray, headingLevelOffset);
+        if (listItemHtml) listItems.push(listItemHtml);
         continue;
       } else if (inList) {
         // Cerrar lista si el siguiente bloque no es de lista
@@ -1192,6 +1193,14 @@ export class NotionRenderer {
         continue;
       }
 
+      // Notion allows several additional block types (quotes, paragraphs,
+      // to-dos, templates, etc.) to contain children. Preserve those nested
+      // blocks instead of rendering only the parent's own rich text.
+      if (block.has_children) {
+        html += await this._renderBlockWithChildren(block, typesArray, headingLevelOffset);
+        continue;
+      }
+
       // Renderizar bloque normal (los code con 🔒 GM llevan clase notion-gm-only; se ocultan con CSS para players)
       // Los bloques con 🔒 HIDDEN llevan clase notion-hidden; se ocultan para todos (GM y players)
       html += this.renderBlock(block);
@@ -1203,6 +1212,69 @@ export class NotionRenderer {
     }
 
     return html;
+  }
+
+  /**
+   * Fetch and render the direct children of a block.
+   * @private
+   */
+  async _renderChildren(block, typesArray, headingLevelOffset) {
+    if (!block?.has_children || !this.notionService) return '';
+    const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
+    if (!children || children.length === 0) return '';
+    return this.renderBlocks(children, typesArray, headingLevelOffset);
+  }
+
+  /**
+   * Render a list item and keep any nested blocks inside its <li>.
+   * @private
+   */
+  async _renderListItem(block, typesArray, headingLevelOffset) {
+    const type = block.type;
+    const item = block[type];
+    const itemText = this.renderRichText(item?.rich_text);
+    const childrenHtml = await this._renderChildren(block, typesArray, headingLevelOffset);
+    const includeParent = !typesArray || typesArray.includes(type);
+
+    if (!includeParent && !childrenHtml.trim()) return '';
+
+    const className = type === 'bulleted_list_item'
+      ? 'notion-bulleted-list-item'
+      : 'notion-numbered-list-item';
+    const parentHtml = includeParent ? itemText : '';
+    const nestedHtml = childrenHtml
+      ? `<div class="notion-block-children">${childrenHtml}</div>`
+      : '';
+
+    return `<li class="${className}">${parentHtml}${nestedHtml}</li>`;
+  }
+
+  /**
+   * Render child-bearing blocks that do not have a specialized renderer.
+   * Quotes keep their descendants inside the quote; other types use a neutral
+   * wrapper so nested content remains visible and structurally associated.
+   * @private
+   */
+  async _renderBlockWithChildren(block, typesArray, headingLevelOffset) {
+    const childrenHtml = await this._renderChildren(block, typesArray, headingLevelOffset);
+    const includeParent = !typesArray || typesArray.includes(block.type);
+
+    if (!includeParent) return childrenHtml;
+
+    if (block.type === 'quote') {
+      const quoteGmClass = this._blockRichTextContainsGmTag(block) ? ' notion-gm-only' : '';
+      const quoteHiddenClass = this._blockRichTextContainsHiddenTag(block) ? ' notion-hidden' : '';
+      const quoteText = this.renderRichText(block.quote?.rich_text);
+      const nestedHtml = childrenHtml
+        ? `<div class="notion-quote-children">${childrenHtml}</div>`
+        : '';
+      return `<div class="notion-quote${quoteGmClass}${quoteHiddenClass}">${quoteText}${nestedHtml}</div>`;
+    }
+
+    const parentHtml = this.renderBlock(block);
+    if (!childrenHtml) return parentHtml;
+
+    return `<div class="notion-block-with-children" data-block-type="${this._escapeHtml(block.type)}">${parentHtml}<div class="notion-block-children">${childrenHtml}</div></div>`;
   }
 
   /**
