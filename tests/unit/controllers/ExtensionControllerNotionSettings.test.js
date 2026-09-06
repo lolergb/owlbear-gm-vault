@@ -15,7 +15,7 @@ describe('Notion token settings navigation', () => {
     const page = new Page('Test notes', 'https://www.notion.so/123456781234123412341234567890ab');
     controller.config = new Config({ pages: [page] });
     controller.notionService._hasDefaultAccess = jest.fn().mockResolvedValue(false);
-    controller._renderVaultStatusBox = jest.fn();
+    controller._updateVaultSettingsDescription = jest.fn();
     controller._setupUI({ pagesContainer: '#page-list', contentContainer: '#notion-content' });
 
     await controller.openPage(page);

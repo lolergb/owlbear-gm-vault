@@ -7,9 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Permanent+Marker&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=20260906-4">
-  <link rel="stylesheet" href="css/notion-markdown.css?v=20260722-4">
-  <link rel="stylesheet" href="css/vault-empty-state.css?v=20260906-4">
+  <link rel="stylesheet" href="css/app.css?v=20260906-8">
+  <link rel="stylesheet" href="css/ui-typography.css?v=20260906-8">
+  <link rel="stylesheet" href="css/notion-markdown.css?v=20260906-8">
+  <link rel="stylesheet" href="css/vault-empty-state.css?v=20260906-8">
   <!-- Preload iconos críticos -->
   <link rel="preload" href="img/icon-add.svg" as="image" type="image/svg+xml">
   <link rel="preload" href="img/icon-arrow.svg" as="image" type="image/svg+xml">
@@ -60,7 +61,7 @@
     <!-- Global header -->
     <header id="header" class="header">
       <button id="back-button" class="back-button hidden">
-        <img src="img/icon-arrow.svg" alt="Back" class="btn__icon">
+        <svg class="btn__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>
         Back
       </button>
       <h1 id="page-title" class="header__title">GM vault</h1>
@@ -138,6 +139,6 @@
   </div>
   <!-- La aplicación activa usa la arquitectura modular de js/main.js. -->
   <!-- One-time cache bust for clients that received the former 7-day JS cache policy. -->
-  <script type="module" src="js/main.js?v=20260906-4"></script>
+  <script type="module" src="js/main.js?v=20260906-8"></script>
 </body>
 </html>

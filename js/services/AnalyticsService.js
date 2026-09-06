@@ -189,11 +189,28 @@ export class AnalyticsService {
 
     document.body.appendChild(banner);
 
+    // Scrollable views can reserve exactly the space covered by this banner.
+    const rootStyle = document.documentElement.style;
+    const updateConsentSpace = () => {
+      rootStyle.setProperty('--consent-banner-height',
+        `${Math.ceil(banner.getBoundingClientRect().height)}px`);
+    };
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateConsentSpace)
+      : null;
+    resizeObserver?.observe(banner);
+    updateConsentSpace();
+    const removeBanner = () => {
+      resizeObserver?.disconnect();
+      banner.remove();
+      rootStyle.removeProperty('--consent-banner-height');
+    };
+
     // Botón Accept
     const acceptBtn = banner.querySelector('#cookie-accept');
     acceptBtn.addEventListener('click', () => {
       this.setConsent(true);
-      banner.remove();
+      removeBanner();
       // Inicializar Mixpanel después del consent
       this.init();
       banner.dispatchEvent(new Event('analytics-consent-changed'));
@@ -206,7 +223,7 @@ export class AnalyticsService {
     rejectBtn.addEventListener('click', () => {
       this.setConsent(false);
       // Nota: No podemos trackear el reject porque el usuario rechazó analytics
-      banner.remove();
+      removeBanner();
       banner.dispatchEvent(new Event('analytics-consent-changed'));
     });
   }

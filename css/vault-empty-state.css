@@ -29,7 +29,7 @@
   gap: 14px;
   max-width: calc(100% - 32px);
   /* The arrow tip aligns with the centre of the header's final 32px button. */
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
   pointer-events: none;
 }
 
@@ -81,14 +81,12 @@
 
 .vault-empty-state__description {
   margin: 24px 0 32px;
-  color: var(--color-text-secondary);
-  font-size: 16px;
-  line-height: 1.5;
+  color: var(--color-text-muted);
+  font: var(--ui-font-body);
   text-wrap: balance;
 }
 
 .vault-empty-state__guide {
-  color: var(--color-text-primary);
   text-decoration: underline;
   text-underline-offset: 3px;
   white-space: nowrap;
@@ -99,7 +97,6 @@
 .vault-empty-state__actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
 }
 
 .vault-empty-state__button svg {
@@ -117,11 +114,14 @@
   outline-offset: 4px;
 }
 
+@media (max-width: 480px) {
+  .vault-empty-state__actions { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 380px) {
   .vault-empty-state { padding-inline: 8px; }
   .vault-empty-state__hint { max-width: calc(100% - 16px); gap: 12px; }
   .vault-empty-state__hint-arrow { width: 60px; }
-  .vault-empty-state__actions { grid-template-columns: 1fr; gap: 12px; }
   .vault-empty-state__description { margin: 16px 0 24px; }
 }
 
@@ -133,6 +133,5 @@
 .vault-empty-state__error {
   margin-top: 16px;
   color: var(--color-text-primary);
-  font-size: 14px;
-  line-height: 1.5;
+  font: var(--ui-font-help);
 }

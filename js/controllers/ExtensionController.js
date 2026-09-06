@@ -42,7 +42,7 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-4';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-8';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import {
   getVaultState,
@@ -52,7 +52,7 @@ import {
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260816-1';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260906-8';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -61,8 +61,9 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
-import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-4';
-import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-4';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-8';
+import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-8';
+import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-8';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
@@ -2141,6 +2142,7 @@ export class ExtensionController {
     this.broadcastService.cleanup();
     this.announcementBanner.remove();
     this.vaultEmptyState?.remove();
+    this.stopResponsiveButtonGroups?.();
     
     log('✅ Recursos limpiados');
   }
@@ -2350,6 +2352,8 @@ export class ExtensionController {
 
     // Modal Manager
     this.modalManager.init(document.body);
+    this.stopResponsiveButtonGroups?.();
+    this.stopResponsiveButtonGroups = watchResponsiveButtonGroups(document.body);
 
     // Configurar botón back
     this._setupBackButton();
@@ -3437,7 +3441,7 @@ export class ExtensionController {
       if (exportVaultForm) exportVaultForm.style.display = 'none';
       if (feedbackForm) feedbackForm.style.display = '';
     } else if (this.isCoGM) {
-      // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
+      // Co-GM: ocultar Notion Token, mostrar Export vault y Feedback
       log('⚙️ Mostrando settings para Co-GM (export + feedback)');
       if (notionTokenForm) notionTokenForm.style.display = 'none';
       if (exportVaultForm) exportVaultForm.style.display = '';
@@ -3484,100 +3488,32 @@ export class ExtensionController {
       }
     }
 
-    // Renderizar vault status box (para GM y Co-GM)
-    this._renderVaultStatusBox();
+    // Mantener la descripción del backup ajustada al rol y al tamaño del vault.
+    this._updateVaultSettingsDescription();
 
     // Configurar event listeners de settings (solo una vez)
     this._setupSettingsEventListeners();
   }
 
   /**
-   * Renderiza el vault status box en settings
+   * Actualiza la descripción del backup según rol y capacidad de sincronización.
    * @private
    */
-  async _renderVaultStatusBox() {
-    // Eliminar vault status anterior si existe
-    const existing = document.getElementById('vault-status-box');
-    if (existing) existing.remove();
-
-    // Solo para GM (Master o Co-GM)
+  _updateVaultSettingsDescription() {
     if (!this.isGM) return;
 
-    const exportVaultForm = document.querySelector('.form--separated');
-    if (!exportVaultForm) return;
-
-    // Calcular stats del vault
-    const config = this.config || { categories: [] };
-    const configJson = JSON.stringify(config);
-    const configSize = new TextEncoder().encode(configJson).length;
-    const canSync = configSize < 16 * 1024; // 16KB límite
-
-    let pageCount = (config.pages || []).length;
-    let categoryCount = 0;
-    const countItems = (categories) => {
-      for (const cat of categories || []) {
-        categoryCount++;
-        pageCount += (cat.pages || []).length;
-        if (cat.categories) countItems(cat.categories);
-      }
-    };
-    countItems(config.categories);
-
-    const vaultStatusBox = document.createElement('div');
-    vaultStatusBox.id = 'vault-status-box';
+    const description = document.querySelector('#settings-container .form--separated .settings__description');
+    if (!description) return;
 
     if (this.isCoGM) {
-      // Co-GM: modo solo lectura
-      const owner = await this.storageService.getVaultOwner();
-      const players = await this.OBR?.party?.getPlayers?.() || [];
-      const masterGMName = players.find(player => player.id === owner?.id)?.name || 'Master GM';
-      vaultStatusBox.innerHTML = `
-        <div class="vault-status vault-status--cogm">
-          <div class="vault-status__icon">👁️</div>
-          <div class="vault-status__info">
-            <span class="vault-status__title">Read-only mode</span>
-            <span class="vault-status__detail">Viewing ${escapeHtml(masterGMName)}'s vault</span>
-            <span class="vault-status__detail">${pageCount} pages in ${categoryCount} folders</span>
-          </div>
-        </div>
-      `;
-      
-      // Actualizar descripción para Co-GM
-      const exportDescription = exportVaultForm.querySelector('.settings__description');
-      if (exportDescription) {
-        exportDescription.textContent = 'You can download a copy of the vault. Share content with players using the share button on pages.';
-      }
-    } else {
-      // Master GM: mostrar info completa con recomendación de backup
-      const syncMessage = canSync 
-        ? `<span class="vault-status__sync vault-status__sync--ok">✅ Can sync to Co-GM</span>`
-        : `<span class="vault-status__sync vault-status__sync--warn">⚠️ Too large to sync (>16KB)</span>`;
-
-      vaultStatusBox.innerHTML = `
-        <div class="vault-status vault-status--master">
-          <div class="vault-status__icon">👑</div>
-          <div class="vault-status__info">
-            <span class="vault-status__title">Master GM</span>
-            <span class="vault-status__detail">${(configSize / 1024).toFixed(1)} KB • ${pageCount} pages • ${categoryCount} folders</span>
-            ${syncMessage}
-          </div>
-        </div>
-      `;
-      
-      // Actualizar descripción para Master GM
-      const exportDescription = exportVaultForm.querySelector('.settings__description');
-      if (exportDescription) {
-        exportDescription.textContent = canSync
-          ? "Save and reuse your GM Vault. It's recommended to make regular backups. Your vault syncs automatically to Co-GMs."
-          : "Save and reuse your GM Vault. Your vault is too large (>16KB) to sync with Co-GMs. Make regular backups.";
-      }
+      description.textContent = 'You can download a copy of the vault. Share content with players using the share button on pages.';
+      return;
     }
 
-    // Inyectar vault status como primer hijo de .settings__content
-    const settingsContent = document.querySelector('#settings-container .settings__content');
-    if (settingsContent) {
-      settingsContent.insertBefore(vaultStatusBox, settingsContent.firstChild);
-    }
+    const configSize = new TextEncoder().encode(JSON.stringify(this.config || { categories: [] })).length;
+    description.textContent = configSize < 16 * 1024
+      ? "Save and reuse your GM Vault. It's recommended to make regular backups. Your vault syncs automatically to Co-GMs."
+      : "Save and reuse your GM Vault. Your vault is too large (>16KB) to sync with Co-GMs. Make regular backups.";
   }
 
   /**
@@ -6531,7 +6467,7 @@ export class ExtensionController {
           <p class="empty-state-text">Your GM is not active right now</p>
           <p class="empty-state-hint">Wait for them to join the session or send them a greeting!</p>
           <p class="empty-state-subhint">The content you're trying to view requires your GM to be online.</p>
-          <p class="empty-state-subhint" style="opacity: 0.6; font-size: 0.9em;">
+          <p class="empty-state-subhint">
             GM inactive for ${minutesText}
           </p>
           <button class="btn btn--secondary" onclick="window.location.reload()">
@@ -9368,12 +9304,10 @@ export class ExtensionController {
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: var(--color-bg-secondary, #333);
-      color: var(--color-text-primary, #fff);
+      background: var(--color-bg-surface);
       padding: 12px 24px;
       border-radius: 8px;
       z-index: 10001;
-      font-size: 14px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       animation: fadeInOut 2s ease forwards;
     `;

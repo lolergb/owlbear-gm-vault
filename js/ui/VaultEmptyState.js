@@ -94,7 +94,7 @@ export class VaultEmptyState {
     const actions = this.element.querySelector('.vault-empty-state__actions');
     const primary = actions.querySelector('.vault-empty-state__add');
     // Keep DOM/tab order aligned with the matching CSS breakpoint.
-    this.actionLayout = window.matchMedia('(max-width: 380px)');
+    this.actionLayout = window.matchMedia('(max-width: 480px)');
     this.onActionLayoutChanged = () => {
       const stacked = this.actionLayout.matches;
       if ((stacked ? actions.firstElementChild : actions.lastElementChild) === primary) return;
