@@ -42,7 +42,7 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260816-1';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260905-2';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import {
   getVaultState,
@@ -61,7 +61,8 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
-import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260819-1';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260905-2';
+import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260905-2';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
@@ -106,6 +107,8 @@ export class ExtensionController {
       analyticsService: this.analyticsService
     });
     this.announcementTask = null;
+    this.vaultEmptyState = new VaultEmptyState({ analyticsService: this.analyticsService });
+    this.exampleLoadPending = false;
     this.announcementCancelled = false;
 
     // Elementos DOM
@@ -220,7 +223,7 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
-      this._scheduleAnnouncement();
+      if (!this._canShowVaultEmptyState()) this._scheduleAnnouncement();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -445,6 +448,11 @@ export class ExtensionController {
       ? { isGM: false, isCoGM: false }
       : { isGM: this.isGM, isCoGM: this.isCoGM };
     
+    if (this._showVaultEmptyState()) {
+      this._updateContainerClass();
+      return;
+    }
+    this.vaultEmptyState?.remove();
     this.uiRenderer.renderAllCategories(
       this.config,
       this.pagesContainer,
@@ -1841,6 +1849,15 @@ export class ExtensionController {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
+    const consentBanner = document.getElementById('cookie-consent-banner');
+    const onConsentChanged = () => {
+      modal.querySelector('input, textarea, select, #modal-cancel')?.focus();
+    };
+    consentBanner?.addEventListener('analytics-consent-changed', onConsentChanged);
+    const cleanupConsent = () => {
+      consentBanner?.removeEventListener('analytics-consent-changed', onConsentChanged);
+    };
+
     const form = modal.querySelector('#modal-form');
     const cancelBtn = modal.querySelector('#modal-cancel');
 
@@ -1851,6 +1868,7 @@ export class ExtensionController {
     });
 
     const close = () => {
+      cleanupConsent();
       overlay.remove();
       if (onCancel) onCancel();
     };
@@ -1877,6 +1895,7 @@ export class ExtensionController {
         }
       });
       
+      cleanupConsent();
       overlay.remove();
       if (onSubmit) onSubmit(formData);
     });
@@ -2121,6 +2140,7 @@ export class ExtensionController {
     // Limpiar broadcast
     this.broadcastService.cleanup();
     this.announcementBanner.remove();
+    this.vaultEmptyState?.remove();
     
     log('✅ Recursos limpiados');
   }
@@ -2131,6 +2151,69 @@ export class ExtensionController {
    */
   _scheduleAnnouncement() {
     this.announcementTask = this._showConfiguredAnnouncement();
+  }
+
+  /** An empty folder is already user content; keep it in the normal list. */
+  _canShowVaultEmptyState() {
+    return Boolean(this.config && this.isGM && !this.isCoGM && !this.playerViewMode &&
+      !this.announcementCancelled && !document.documentElement.classList.contains('modal-mode') &&
+      !this.config.pages?.length && !this.config.categories?.length);
+  }
+
+  _showVaultEmptyState() {
+    return this.vaultEmptyState?.show({
+      container: this.pagesContainer,
+      canShow: () => this._canShowVaultEmptyState(),
+      onAddPage: () => this._addPage({ openAfterSave: true }),
+      onLoadExamples: () => this._loadExampleVault()
+    });
+  }
+
+  /** Fetch and persist the demo only after an explicit choice in an empty vault. */
+  async _loadExampleVault() {
+    if (this.exampleLoadPending || !this._canShowVaultEmptyState()) return false;
+    this.exampleLoadPending = true;
+    const previousConfig = this.config;
+    try {
+      let source;
+      try {
+        source = await this._fetchDefaultConfig();
+      } catch {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      // Edits, imports or role changes during the request must never be overwritten.
+      if (!this._canShowVaultEmptyState() || this.config !== previousConfig) return false;
+      if (!source || !this.configParser.validate(source).valid) {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      const exampleConfig = this.configParser.parse(source);
+      if (!exampleConfig.getTotalPageCount()) {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      markContentOrigin(exampleConfig.categories, exampleConfig.pages, 'demo');
+      const saved = await this.saveConfig(exampleConfig, { render: false });
+      if (saved === false) {
+        this.config = previousConfig;
+        this.configBuilder = new ConfigBuilder(previousConfig);
+        this.uiRenderer.setConfig(previousConfig);
+        throw new Error('The example vault could not be saved. Free up local storage and try again.');
+      }
+      this.notionRenderer.setDependencies({ config: this.config });
+      this.analyticsService.setVaultContext({ roomId: this.roomId, vaultState: 'demo' });
+      if (this.analyticsService.getConsent() === true) {
+        this.analyticsService.trackEvent('demo_vault_loaded');
+      }
+      await this.render();
+      this._goBackToList();
+      const collapseButton = document.getElementById('collapse-all-button');
+      if (collapseButton) this._toggleCollapseAll(collapseButton, false);
+      this.pagesContainer?.scrollTo?.({ top: 0 });
+      this.pagesContainer?.querySelector('.page-button')?.focus();
+      this._scheduleAnnouncement();
+      return true;
+    } finally {
+      this.exampleLoadPending = false;
+    }
   }
 
   /**
@@ -2349,6 +2432,7 @@ export class ExtensionController {
 
     // Limpiar referencia a página actual
     this.currentPage = null;
+    this._showVaultEmptyState();
   }
 
   /**
@@ -3330,6 +3414,7 @@ export class ExtensionController {
     if (pageTitle) pageTitle.textContent = 'Settings';
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
+    this._hidePageDetailButtons();
 
     // Actualizar clase del container
     this._updateContainerClass();
@@ -5268,9 +5353,7 @@ export class ExtensionController {
    * Toggle collapse/expand all folders
    * @private
    */
-  _toggleCollapseAll(button) {
-    const isCollapsed = button.dataset.collapsed === 'true';
-    const newState = !isCollapsed;
+  _toggleCollapseAll(button, newState = button.dataset.collapsed !== 'true') {
     
     // Track collapse all action
     this.analyticsService.trackCollapseAllFolders(newState);
@@ -5280,6 +5363,7 @@ export class ExtensionController {
       const newSrc = newState ? 'img/icon-collapse-true.svg' : 'img/icon-collapse-false.svg';
       icon.style.maskImage = `url('${newSrc}')`;
       icon.style.webkitMaskImage = `url('${newSrc}')`;
+      icon.setAttribute('aria-label', newState ? 'Expand all' : 'Collapse all');
     }
     button.dataset.collapsed = newState.toString();
     button.title = newState ? 'Expand all folders' : 'Collapse all folders';
@@ -5301,6 +5385,7 @@ export class ExtensionController {
         }
         collapseBtn.style.maskImage = `url('${folderSrc}')`;
         collapseBtn.style.webkitMaskImage = `url('${folderSrc}')`;
+        collapseBtn.setAttribute('aria-label', newState ? 'Expand' : 'Collapse');
 
         if (categoryName) {
           const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
@@ -5502,7 +5587,7 @@ export class ExtensionController {
    * Añade una nueva página
    * @private
    */
-  async _addPage() {
+  async _addPage({ openAfterSave = false } = {}) {
     // Obtener lista de carpetas para selector
     const folderOptions = this._getCategoryOptions();
     
@@ -5564,7 +5649,11 @@ export class ExtensionController {
         }
       }
       
-        await this.saveConfig(this.config);
+        const saved = await this.saveConfig(this.config);
+        if (saved === false) {
+          this.uiRenderer.showErrorToast('Page could not be saved', 'Free up local storage and try again.');
+          return;
+        }
         const pageType = this._detectPageType(safeUrl);
         this.analyticsService.trackPageAdded(data.name, pageType, {
           url: safeUrl,
@@ -5577,7 +5666,15 @@ export class ExtensionController {
           pageType,
           contentOrigin: 'user'
         });
-    });
+        if (openAfterSave) {
+          const savedPage = this.config.findPageById(newPage.id);
+          const categoryPath = data.parentFolder ? data.parentFolder.split('/') : [];
+          const parent = categoryPath.length ? this._findCategoryByPath(categoryPath) : this.config;
+          const pageIndex = parent?.pages.findIndex(page => page.id === newPage.id) ?? 0;
+          if (savedPage) await this.openPage(savedPage, categoryPath, pageIndex);
+        }
+    }, openAfterSave ? () => this.vaultEmptyState?.focusPrimary() : null,
+    { submitText: openAfterSave ? 'Save and open' : 'Save' });
   }
 
   /**
@@ -6011,22 +6108,7 @@ export class ExtensionController {
         log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
       }
       
-      // 2. Si no hay en localStorage, cargar default desde URL
-      // NO usar room metadata para GM (según arquitectura)
-      if (!config) {
-        try {
-          const defaultConfig = await this._fetchDefaultConfig();
-          if (defaultConfig && defaultConfig.categories && defaultConfig.categories.length > 0) {
-            config = defaultConfig;
-            configSource = 'defaultURL';
-            // Guardar en localStorage para próximas veces
-            this.storageService.saveLocalConfig(config);
-            log('📦 Config default cargada desde URL');
-          }
-        } catch (e) {
-          log('⚠️ No se pudo cargar config default:', e.message);
-        }
-      }
+      // First use starts empty. The example vault is fetched only on request.
     } else if (this.isCoGM) {
       // Co-GM: solicitar vault COMPLETO del Master GM (ve todo el vault, no solo páginas visibles)
       log('👁️ Co-GM: solicitando vault completo del Master GM...');
@@ -6076,7 +6158,7 @@ export class ExtensionController {
     } else {
       // Crear configuración vacía
       log('⚠️ No se encontró configuración, creando vacía');
-      this.config = ConfigBuilder.createDefault().build();
+      this.config = new ConfigBuilder().build();
       configSource = 'empty';
     }
 
@@ -6089,7 +6171,7 @@ export class ExtensionController {
   }
 
   /**
-   * Carga la configuración por defecto desde URL
+   * Carga el vault de ejemplo bajo demanda
    * @private
    */
   async _fetchDefaultConfig() {
@@ -6675,11 +6757,15 @@ export class ExtensionController {
           <div class="empty-state-icon">🔑</div>
           <p class="empty-state-text">Notion token required</p>
           <p class="empty-state-hint">Configure your Notion token in Settings to load this content.</p>
-          <button class="btn btn--sm btn--primary" onclick="document.getElementById('settings-button')?.click()">
+          <button type="button" class="btn btn--sm btn--primary" data-action="open-notion-settings">
             Open Settings
           </button>
         </div>
       `;
+      notionContent.querySelector('[data-action="open-notion-settings"]').addEventListener('click', () => {
+        this._showSettings();
+        document.getElementById('token-input')?.focus();
+      });
       return;
     }
 

@@ -1854,6 +1854,11 @@
   flex-wrap: wrap;
 }
 
+/* Consent stays above forms, context menus, and confirmation overlays. */
+#cookie-consent-banner {
+  z-index: 20000;
+}
+
 .cookie-consent-text {
   flex: 1;
   min-width: 200px;

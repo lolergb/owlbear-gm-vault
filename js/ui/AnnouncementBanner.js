@@ -175,7 +175,17 @@ export class AnnouncementBanner {
     const actions = this.document.createElement('div');
     actions.className = 'cookie-consent-actions announcement-banner__actions';
 
-    campaign.actions.forEach(action => {
+    const dismissButton = this.document.createElement('button');
+    dismissButton.type = 'button';
+    dismissButton.className = 'btn btn--ghost btn--small announcement-banner__dismiss';
+    dismissButton.textContent = campaign.dismissLabel;
+    dismissButton.addEventListener('click', () => this.dismiss());
+    actions.appendChild(dismissButton);
+
+    // Keep secondary actions first and the primary action on the right.
+    const orderedActions = [...campaign.actions].sort((a, b) =>
+      Number(a.variant === 'primary') - Number(b.variant === 'primary'));
+    orderedActions.forEach(action => {
       const link = this.document.createElement('a');
       link.className = `btn btn--${action.variant} btn--small announcement-banner__action`;
       link.href = action.url;
@@ -192,13 +202,6 @@ export class AnnouncementBanner {
       });
       actions.appendChild(link);
     });
-
-    const dismissButton = this.document.createElement('button');
-    dismissButton.type = 'button';
-    dismissButton.className = 'btn btn--ghost btn--small announcement-banner__dismiss';
-    dismissButton.textContent = campaign.dismissLabel;
-    dismissButton.addEventListener('click', () => this.dismiss());
-    actions.appendChild(dismissButton);
 
     content.append(copy, actions);
     banner.appendChild(content);

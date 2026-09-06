@@ -434,6 +434,7 @@ describe('Netlify static asset cache policy', () => {
     const legacyBuildTag = '20260722-4';
     const metadataBuildTag = '20260815-1';
     const buildTag = '20260816-1';
+    const welcomeBuildTag = '20260905-2';
     const storageBuildTag = '20260812-1';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
@@ -444,10 +445,13 @@ describe('Netlify static asset cache policy', () => {
     const parserJs = readProjectFile('js/parsers/ConfigParser.js');
     const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
 
-    expect(indexHtml).toContain(`href="css/app.css?v=${legacyBuildTag}"`);
+    expect(indexHtml).toContain(`href="css/app.css?v=${welcomeBuildTag}"`);
     expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${legacyBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${welcomeBuildTag}"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${welcomeBuildTag}`);
+    expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
+    expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
+    expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
     expect(mainJs).toContain(`2.1.0-beta.2`);
     expect(controllerJs).toContain(`../services/BroadcastService.js?v=${metadataBuildTag}`);
     expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${buildTag}`);
