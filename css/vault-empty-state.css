@@ -102,36 +102,6 @@
   gap: 24px;
 }
 
-.vault-empty-state__button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--color-text-primary);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-primary);
-  font: 700 16px/1.4 var(--font-family-base);
-  cursor: pointer;
-  transition: background-color var(--transition-fast);
-}
-
-.vault-empty-state__button:hover {
-  background: var(--color-surface-hover);
-}
-
-.vault-empty-state__add {
-  border-color: transparent;
-  background: var(--color-accent-primary-light);
-  color: #202331;
-}
-
-.vault-empty-state__add:hover {
-  background: color-mix(in srgb, var(--color-accent-primary-light) 90%, white);
-}
-
 .vault-empty-state__button svg {
   width: 24px;
   height: 24px;
@@ -142,7 +112,6 @@
   flex-shrink: 0;
 }
 
-.vault-empty-state button:focus-visible,
 .vault-empty-state a:focus-visible {
   outline: 2px solid var(--color-text-primary);
   outline-offset: 4px;
@@ -159,15 +128,6 @@
 @media (max-height: 540px) {
   .vault-empty-state__image { margin-bottom: 12px; }
   .vault-empty-state__description { margin: 12px 0 20px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vault-empty-state__button { transition: none; }
-}
-
-.vault-empty-state__button:disabled {
-  opacity: 0.6;
-  cursor: wait;
 }
 
 .vault-empty-state__error {

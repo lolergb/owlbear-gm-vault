@@ -181,8 +181,8 @@ export class AnalyticsService {
           🍪 We use analytics to improve the extension. Do you want to help us by sharing anonymous usage data?
         </p>
         <div class="cookie-consent-actions">
-          <button type="button" id="cookie-reject" class="btn btn--ghost btn--small">Decline</button>
-          <button type="button" id="cookie-accept" class="btn btn--primary btn--small">Accept</button>
+          <button type="button" id="cookie-reject" class="btn btn--ghost">Decline</button>
+          <button type="button" id="cookie-accept" class="btn btn--primary">Accept</button>
         </div>
       </div>
     `;

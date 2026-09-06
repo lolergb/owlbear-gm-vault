@@ -28,8 +28,8 @@ export class VaultEmptyState {
         <h2 id="vault-empty-title" class="vault-empty-state__title">Your next session starts here</h2>
         <p class="vault-empty-state__description">Add links to Notion pages, PDFs, images, and videos. <a class="vault-empty-state__guide" href="https://solid-jingle-6ee.notion.site/Quick-Start-Beta-3b8d4856c90e8092aa7fd83915f6e55e?source=copy_link" target="_blank" rel="noopener noreferrer" aria-label="Quick start guide (opens in a new tab)">Quick start guide</a></p>
         <div class="vault-empty-state__actions">
-          <button type="button" class="vault-empty-state__button vault-empty-state__example">Load example vault</button>
-          <button type="button" class="vault-empty-state__button vault-empty-state__add">
+          <button type="button" class="btn btn--lg btn--secondary vault-empty-state__button vault-empty-state__example">Load example vault</button>
+          <button type="button" class="btn btn--lg btn--primary vault-empty-state__button vault-empty-state__add">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v16M4 12h16"/></svg>
             Add page
           </button>

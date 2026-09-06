@@ -7,7 +7,7 @@
  */
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
-import { ExtensionController } from './controllers/ExtensionController.js?v=20260905-2';
+import { ExtensionController } from './controllers/ExtensionController.js?v=20260906-4';
 import { initTheme } from './utils/themeManager.js';
 import { escapeHtml } from './utils/htmlSecurity.js?v=20260722-4';
 

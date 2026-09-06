@@ -42,7 +42,7 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260905-2';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-4';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import {
   getVaultState,
@@ -61,8 +61,8 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
-import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260905-2';
-import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260905-2';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-4';
+import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-4';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
@@ -6534,7 +6534,7 @@ export class ExtensionController {
           <p class="empty-state-subhint" style="opacity: 0.6; font-size: 0.9em;">
             GM inactive for ${minutesText}
           </p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -6757,7 +6757,7 @@ export class ExtensionController {
           <div class="empty-state-icon">🔑</div>
           <p class="empty-state-text">Notion token required</p>
           <p class="empty-state-hint">Configure your Notion token in Settings to load this content.</p>
-          <button type="button" class="btn btn--sm btn--primary" data-action="open-notion-settings">
+          <button type="button" class="btn btn--primary" data-action="open-notion-settings">
             Open Settings
           </button>
         </div>
@@ -7061,7 +7061,7 @@ export class ExtensionController {
           <p class="empty-state-text">Your GM is not active right now</p>
           <p class="empty-state-hint">Wait for them to join the session or send them a greeting!</p>
           <p class="empty-state-subhint">The content you're trying to view requires your GM to be online.</p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -7110,7 +7110,7 @@ export class ExtensionController {
           <p class="empty-state-text">Content not available</p>
           <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
           <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -7516,7 +7516,7 @@ export class ExtensionController {
           <div class="empty-state-icon">☁️</div>
           <p class="empty-state-text">${title}</p>
           <p class="empty-state-hint">${hint}</p>
-          <button type="button" class="btn btn--sm btn--secondary" data-onedrive-retry>🔄 Retry</button>
+          <button type="button" class="btn btn--secondary" data-onedrive-retry>🔄 Retry</button>
         </div>
       `;
       notionContent.querySelector('[data-onedrive-retry]')?.addEventListener('click', () => {
@@ -7821,7 +7821,7 @@ export class ExtensionController {
 
         const reloadButton = document.createElement('button');
         reloadButton.type = 'button';
-        reloadButton.className = 'btn btn--sm btn--ghost';
+        reloadButton.className = 'btn btn--ghost';
         reloadButton.textContent = '🔄 Reload page';
         reloadButton.addEventListener('click', () => {
           if (typeof window.refreshImage === 'function') window.refreshImage(reloadButton);
@@ -8419,7 +8419,7 @@ export class ExtensionController {
                 <div class="empty-state-icon">👋</div>
                 <p class="empty-state-text">The GM is not active</p>
                 <p class="empty-state-hint">Wait for the GM to join the session to view this page</p>
-                <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                <button class="btn btn--secondary mention-modal__retry-btn">
                   🔄 Retry
                 </button>
               </div>
@@ -8461,7 +8461,7 @@ export class ExtensionController {
                 <p class="empty-state-text">Content not available</p>
                 <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
                 <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
-                <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                <button class="btn btn--secondary mention-modal__retry-btn">
                   🔄 Retry
                 </button>
               </div>

@@ -177,7 +177,7 @@ export class AnnouncementBanner {
 
     const dismissButton = this.document.createElement('button');
     dismissButton.type = 'button';
-    dismissButton.className = 'btn btn--ghost btn--small announcement-banner__dismiss';
+    dismissButton.className = 'btn btn--ghost announcement-banner__dismiss';
     dismissButton.textContent = campaign.dismissLabel;
     dismissButton.addEventListener('click', () => this.dismiss());
     actions.appendChild(dismissButton);
@@ -187,7 +187,7 @@ export class AnnouncementBanner {
       Number(a.variant === 'primary') - Number(b.variant === 'primary'));
     orderedActions.forEach(action => {
       const link = this.document.createElement('a');
-      link.className = `btn btn--${action.variant} btn--small announcement-banner__action`;
+      link.className = `btn btn--${action.variant} announcement-banner__action`;
       link.href = action.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
