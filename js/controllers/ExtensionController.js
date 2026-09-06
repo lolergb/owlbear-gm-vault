@@ -51,7 +51,7 @@ import {
 } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260906-10';
 import { UIRenderer } from '../renderers/UIRenderer.js?v=20260906-9';
 
 // Parsers & Builders
