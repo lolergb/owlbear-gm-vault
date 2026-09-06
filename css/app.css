@@ -40,7 +40,7 @@
     --button-primary-text: #202331;
     --button-primary-hover-bg: color-mix(in srgb, var(--color-accent-primary-light) 90%, white);
     --button-primary-active-bg: color-mix(in srgb, var(--color-accent-primary-light) 88%, black);
-    --button-secondary-text: var(--color-text-primary);
+    --button-secondary-text: var(--color-text-muted);
     --button-secondary-border: var(--color-text-secondary);
     --button-secondary-active-bg: var(--color-bg-active);
     --button-focus-ring: var(--color-text-primary);

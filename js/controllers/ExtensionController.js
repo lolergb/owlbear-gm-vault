@@ -42,7 +42,7 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-8';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-9';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import {
   getVaultState,
@@ -52,7 +52,7 @@ import {
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260906-8';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260906-9';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -61,9 +61,10 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
-import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-8';
-import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-8';
-import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-8';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-9';
+import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-9';
+import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
+import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
@@ -1189,7 +1190,7 @@ export class ExtensionController {
    * @private
    */
   _getFolderOptions(excludePath = []) {
-    const options = [{ value: '', label: '/ (Root)' }];
+    const options = [{ value: '', label: 'Root level', path: [], depth: 0 }];
     const excludePathStr = this._pathToString(excludePath);
 
     const addFolders = (categories, path = []) => {
@@ -1204,12 +1205,12 @@ export class ExtensionController {
           continue;
         }
         
-        // Usar non-breaking spaces (\u00A0) para indentación visible en <select>
-        const indent = '\u00A0\u00A0\u00A0\u00A0'.repeat(path.length);
-        const prefix = path.length > 0 ? '└─ ' : '';
         options.push({
-          value: currentPath.join('/'),
-          label: `${indent}${prefix}📁 ${cat.name}`
+          value: currentPathStr,
+          label: cat.name,
+          path: currentPath,
+          depth: path.length,
+          searchText: currentPath.join(' / ')
         });
         
         // Recursivamente agregar subcarpetas
@@ -1318,7 +1319,7 @@ export class ExtensionController {
 
     this._showModalForm('Edit Folder', [
       { name: 'name', label: 'Name', type: 'text', value: category.name, required: true },
-      { name: 'folder', label: 'Parent Folder', type: 'select', value: folderValue, options: folderOptions }
+      { name: 'folder', label: 'Parent Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions }
     ], async (data) => {
       const nameChanged = data.name && data.name !== category.name;
       const folderChanged = data.folder !== currentFolderPathStr;
@@ -1863,7 +1864,9 @@ export class ExtensionController {
     const cancelBtn = modal.querySelector('#modal-cancel');
 
     fields.forEach(field => {
-      if (field.type === 'select' && field.searchable) {
+      if (field.type === 'select' && field.folderPicker) {
+        this._setupFolderSelect(modal, field);
+      } else if (field.type === 'select' && field.searchable) {
         this._setupSearchableSelect(modal, field);
       }
     });
@@ -1906,6 +1909,11 @@ export class ExtensionController {
     if (firstInput) {
       setTimeout(() => firstInput.focus(), 100);
     }
+  }
+
+  _setupFolderSelect(modal, field) {
+    const select = modal.querySelector(`#field-${field.name}`);
+    return select ? new FolderSelect(select, field) : null;
   }
 
   /**
@@ -3077,7 +3085,7 @@ export class ExtensionController {
         required: true,
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
+      { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
@@ -3152,7 +3160,7 @@ export class ExtensionController {
         required: true,
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
+      { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
@@ -4346,10 +4354,8 @@ export class ExtensionController {
           <input type="hidden" name="import-mode" value="append" />
 
           <div class="form__field import-destination-field">
-            <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
-            <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
-            <select id="field-destination" name="destination" class="select select--searchable-source" data-searchable-select="true" hidden aria-hidden="true" tabindex="-1"></select>
-            <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+            <label class="form__label" for="field-destination">Destination folder</label>
+            <select id="field-destination" name="destination" class="select"></select>
             <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
           </div>
           
@@ -4382,12 +4388,10 @@ export class ExtensionController {
       // Insertar antes del progress
       progressEl.insertAdjacentHTML('beforebegin', optionsHtml);
 
-      this._setupSearchableSelect(document, {
+      const destinationPicker = this._setupFolderSelect(modal, {
         name: 'destination',
-        options: destinationOptions,
-        visibleOptions: 7,
-        resultLabel: 'folder',
-        searchPlaceholder: 'Search folders...'
+        label: 'Destination folder',
+        options: destinationOptions
       });
 
       // Botón "Back" - volver a la selección de páginas
@@ -4420,9 +4424,8 @@ export class ExtensionController {
         } else {
           destinationSelect.value = selectedDestinationId || 'root';
         }
-        document.querySelectorAll('#field-destination-listbox [role="option"]').forEach(option => {
-          option.setAttribute('aria-selected', String(option.dataset.value === selectedDestinationId));
-        });
+        destinationPicker?.close(false);
+        destinationPicker?.refresh();
       };
       modeInputs.forEach(input => input.addEventListener('change', syncDestinationState));
       syncDestinationState();
@@ -4636,13 +4639,14 @@ export class ExtensionController {
     searchInput.focus();
   }
 
-  _flattenCategoryOptions(categories, depth = 0) {
+  _flattenCategoryOptions(categories, depth = 0, parentPath = []) {
     const options = [];
     for (const category of categories || []) {
       if (!category?.id) continue;
-      const label = `${'— '.repeat(depth)}${category.name || 'Untitled folder'}`;
-      options.push({ value: category.id, label, searchText: label });
-      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1));
+      const label = category.name || 'Untitled folder';
+      const path = [...parentPath, label];
+      options.push({ value: category.id, label, path, depth, searchText: path.join(' / ') });
+      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1, path));
     }
     return options;
   }
@@ -4754,11 +4758,8 @@ export class ExtensionController {
       ? ''
       : `
         <div class="form__field import-destination-field">
-          <label class="form__label" for="field-destination-search">Destination for added content</label>
-          <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
-          <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
-          <select id="field-destination" class="select select--searchable-source" hidden aria-hidden="true" tabindex="-1">${destinationMarkup}</select>
-          <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+          <label class="form__label" for="field-destination">Destination folder</label>
+          <select id="field-destination" name="destination" class="select">${destinationMarkup}</select>
           <span class="form__help import-destination-help">Used only when adding the backup without combining or replacing.</span>
         </div>
       `;
@@ -4795,15 +4796,9 @@ export class ExtensionController {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     log('Modal created:', modal);
-    if (!isEmptyVault) {
-      this._setupSearchableSelect(modal, {
-        name: 'destination',
-        options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
-        visibleOptions: 7,
-        resultLabel: 'folder',
-        searchPlaceholder: 'Search folders...'
-      });
-    }
+    const destinationPicker = !isEmptyVault ? this._setupFolderSelect(modal, {
+      name: 'destination', label: 'Destination folder', options: destinationOptions
+    }) : null;
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
@@ -4821,6 +4816,7 @@ export class ExtensionController {
     const updateDestinationVisibility = () => {
       if (!destinationField) return;
       const mode = modal.querySelector('input[name="json-import-mode"]:checked')?.value;
+      destinationPicker?.close(false);
       destinationField.classList.toggle('hidden', mode !== 'append');
     };
 
@@ -5489,8 +5485,9 @@ export class ExtensionController {
       { 
         name: 'parentFolder', 
         label: 'Parent folder', 
-        type: 'select', 
-        options: [{ value: '', label: '— Root level —' }, ...folderOptions],
+        type: 'select',
+        folderPicker: true,
+        options: [{ value: '', label: 'Root level', path: [], depth: 0 }, ...folderOptions],
         required: false 
       }
     ], async (data) => {
@@ -5529,7 +5526,7 @@ export class ExtensionController {
     
     // Siempre incluir opción de root level
     const allOptions = [
-      { value: '', label: '— Root level —' },
+      { value: '', label: 'Root level', path: [], depth: 0 },
       ...folderOptions
     ];
     
@@ -5546,7 +5543,8 @@ export class ExtensionController {
       { 
         name: 'parentFolder', 
         label: 'Folder', 
-        type: 'select', 
+        type: 'select',
+        folderPicker: true,
         options: allOptions,
         required: false 
       },
@@ -5636,20 +5634,8 @@ export class ExtensionController {
    * Obtiene opciones de carpetas para selectores
    * @private
    */
-  _getCategoryOptions(categories = null, path = '') {
-    const options = [];
-    const cats = categories || (this.config?.categories || []);
-    
-    for (const cat of cats) {
-      const fullPath = path ? `${path}/${cat.name}` : cat.name;
-      options.push({ value: fullPath, label: path ? `${path} / ${cat.name}` : cat.name });
-      
-      if (cat.categories && cat.categories.length > 0) {
-        options.push(...this._getCategoryOptions(cat.categories, fullPath));
-      }
-    }
-    
-    return options;
+  _getCategoryOptions() {
+    return this._getFolderOptions().slice(1);
   }
 
   /**

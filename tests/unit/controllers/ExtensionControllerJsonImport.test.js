@@ -111,7 +111,6 @@ describe('ExtensionController JSON import preflight', () => {
     controller.config = {
       categories: [{ name: 'Existing', pages: [{ name: 'Old', url: 'https://example.com/old' }] }]
     };
-    controller._setupSearchableSelect = jest.fn();
     const importedConfig = {
       categories: [{
         name: 'World',
@@ -300,6 +299,53 @@ describe('ExtensionController JSON import preflight', () => {
       categories: expect.any(Array),
       pages: expect.any(Array)
     }));
+  });
+
+  it('busca una carpeta sin cambiar el destino y confirma su ID al importar', async () => {
+    const controller = createController();
+    controller.config = { categories: [{ id: 'campaign', name: 'Campaign', pages: [], categories: [
+      { id: 'target-folder', name: 'Ángel', pages: [], categories: [] }
+    ] }] };
+    controller._applyJsonImport = jest.fn().mockResolvedValue();
+    const setup = jest.spyOn(controller, '_setupFolderSelect');
+    const importedConfig = { categories: [], pages: [{ name: 'Map', url: 'https://example.com/map' }] };
+    await controller._showLoadJsonOptionsModal(importedConfig, 0, 1, 'backup.json');
+    const picker = setup.mock.results[0].value;
+    picker.trigger.getClientRects = () => [{}];
+    expect(picker.popup.hidden).toBe(true);
+    picker.open();
+    picker.search.value = 'angel';
+    picker.search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(picker.select.value).toBe('root');
+    expect(picker.list.children).toHaveLength(1);
+    expect(picker.list.firstElementChild.getAttribute('aria-label')).toBe('Campaign / Ángel');
+    picker.list.firstElementChild.click();
+    expect(picker.select.value).toBe('target-folder');
+    expect(controller._applyJsonImport).not.toHaveBeenCalled();
+    document.getElementById('json-import-confirm').click();
+    expect(controller._applyJsonImport).toHaveBeenCalledWith(importedConfig, 'append', 1, 'target-folder', 'file');
+  });
+
+  it('Escape cierra primero el selector y cambiar a combinar oculta su popup', async () => {
+    const controller = createController();
+    controller.config = { categories: [{ id: 'campaign', name: 'Campaign', pages: [] }] };
+    const setup = jest.spyOn(controller, '_setupFolderSelect');
+    await controller._showLoadJsonOptionsModal({ categories: [], pages: [{ name: 'Map', url: 'https://example.com/map' }] }, 0, 1, 'backup.json');
+    const picker = setup.mock.results[0].value;
+    picker.trigger.getClientRects = () => [{}];
+    picker.open();
+    picker.search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(picker.popup.hidden).toBe(true);
+    expect(document.getElementById('json-import-modal')).not.toBeNull();
+    picker.open();
+    document.querySelector('input[name="json-import-mode"][value="merge"]').click();
+    expect(picker.popup.hidden).toBe(true);
+    expect(document.querySelector('.import-destination-field').classList.contains('hidden')).toBe(true);
+    document.querySelector('input[name="json-import-mode"][value="append"]').click();
+    expect(document.querySelector('.import-destination-field').classList.contains('hidden')).toBe(false);
+    document.getElementById('json-import-cancel').click();
+    await Promise.resolve();
+    expect(picker.popup.isConnected).toBe(false);
   });
 
   it('vuelve a validar justo antes de guardar y bloquea llamadas directas inválidas', async () => {
