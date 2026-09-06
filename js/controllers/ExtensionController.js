@@ -42,7 +42,7 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260816-1';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-9';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import {
   getVaultState,
@@ -51,8 +51,8 @@ import {
 } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260816-1';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260906-10';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260906-9';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -61,6 +61,11 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-9';
+import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-9';
+import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
+import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
+import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
  * Controlador principal de la extensión
@@ -100,6 +105,13 @@ export class ExtensionController {
     // UI Components
     this.modalManager = new ModalManager();
     this.eventHandlers = new EventHandlers();
+    this.announcementBanner = new AnnouncementBanner({
+      analyticsService: this.analyticsService
+    });
+    this.announcementTask = null;
+    this.vaultEmptyState = new VaultEmptyState({ analyticsService: this.analyticsService });
+    this.exampleLoadPending = false;
+    this.announcementCancelled = false;
 
     // Elementos DOM
     this.pagesContainer = null;
@@ -119,6 +131,7 @@ export class ExtensionController {
     console.log('🚀 Inicializando ExtensionController...');
     
     this.OBR = OBR;
+    this.announcementCancelled = false;
     
     // Debug: verificar estructura de OBR
     console.log('📦 OBR disponible:', !!OBR);
@@ -212,6 +225,7 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
+      if (!this._canShowVaultEmptyState()) this._scheduleAnnouncement();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -436,6 +450,11 @@ export class ExtensionController {
       ? { isGM: false, isCoGM: false }
       : { isGM: this.isGM, isCoGM: this.isCoGM };
     
+    if (this._showVaultEmptyState()) {
+      this._updateContainerClass();
+      return;
+    }
+    this.vaultEmptyState?.remove();
     this.uiRenderer.renderAllCategories(
       this.config,
       this.pagesContainer,
@@ -1171,7 +1190,7 @@ export class ExtensionController {
    * @private
    */
   _getFolderOptions(excludePath = []) {
-    const options = [{ value: '', label: '/ (Root)' }];
+    const options = [{ value: '', label: 'Root level', path: [], depth: 0 }];
     const excludePathStr = this._pathToString(excludePath);
 
     const addFolders = (categories, path = []) => {
@@ -1186,12 +1205,12 @@ export class ExtensionController {
           continue;
         }
         
-        // Usar non-breaking spaces (\u00A0) para indentación visible en <select>
-        const indent = '\u00A0\u00A0\u00A0\u00A0'.repeat(path.length);
-        const prefix = path.length > 0 ? '└─ ' : '';
         options.push({
-          value: currentPath.join('/'),
-          label: `${indent}${prefix}📁 ${cat.name}`
+          value: currentPathStr,
+          label: cat.name,
+          path: currentPath,
+          depth: path.length,
+          searchText: currentPath.join(' / ')
         });
         
         // Recursivamente agregar subcarpetas
@@ -1300,7 +1319,7 @@ export class ExtensionController {
 
     this._showModalForm('Edit Folder', [
       { name: 'name', label: 'Name', type: 'text', value: category.name, required: true },
-      { name: 'folder', label: 'Parent Folder', type: 'select', value: folderValue, options: folderOptions }
+      { name: 'folder', label: 'Parent Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions }
     ], async (data) => {
       const nameChanged = data.name && data.name !== category.name;
       const folderChanged = data.folder !== currentFolderPathStr;
@@ -1832,16 +1851,28 @@ export class ExtensionController {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
+    const consentBanner = document.getElementById('cookie-consent-banner');
+    const onConsentChanged = () => {
+      modal.querySelector('input, textarea, select, #modal-cancel')?.focus();
+    };
+    consentBanner?.addEventListener('analytics-consent-changed', onConsentChanged);
+    const cleanupConsent = () => {
+      consentBanner?.removeEventListener('analytics-consent-changed', onConsentChanged);
+    };
+
     const form = modal.querySelector('#modal-form');
     const cancelBtn = modal.querySelector('#modal-cancel');
 
     fields.forEach(field => {
-      if (field.type === 'select' && field.searchable) {
+      if (field.type === 'select' && field.folderPicker) {
+        this._setupFolderSelect(modal, field);
+      } else if (field.type === 'select' && field.searchable) {
         this._setupSearchableSelect(modal, field);
       }
     });
 
     const close = () => {
+      cleanupConsent();
       overlay.remove();
       if (onCancel) onCancel();
     };
@@ -1868,6 +1899,7 @@ export class ExtensionController {
         }
       });
       
+      cleanupConsent();
       overlay.remove();
       if (onSubmit) onSubmit(formData);
     });
@@ -1877,6 +1909,11 @@ export class ExtensionController {
     if (firstInput) {
       setTimeout(() => firstInput.focus(), 100);
     }
+  }
+
+  _setupFolderSelect(modal, field) {
+    const select = modal.querySelector(`#field-${field.name}`);
+    return select ? new FolderSelect(select, field) : null;
   }
 
   /**
@@ -2102,6 +2139,7 @@ export class ExtensionController {
    */
   cleanup() {
     log('🧹 Limpiando recursos...');
+    this.announcementCancelled = true;
     
     if (this.roleChangeUnsubscribe) {
       this.roleChangeUnsubscribe();
@@ -2110,8 +2148,104 @@ export class ExtensionController {
     
     // Limpiar broadcast
     this.broadcastService.cleanup();
+    this.announcementBanner.remove();
+    this.vaultEmptyState?.remove();
+    this.stopResponsiveButtonGroups?.();
     
     log('✅ Recursos limpiados');
+  }
+
+  /**
+   * Starts announcement evaluation without extending the initialization path.
+   * @private
+   */
+  _scheduleAnnouncement() {
+    this.announcementTask = this._showConfiguredAnnouncement();
+  }
+
+  /** An empty folder is already user content; keep it in the normal list. */
+  _canShowVaultEmptyState() {
+    return Boolean(this.config && this.isGM && !this.isCoGM && !this.playerViewMode &&
+      !this.announcementCancelled && !document.documentElement.classList.contains('modal-mode') &&
+      !this.config.pages?.length && !this.config.categories?.length);
+  }
+
+  _showVaultEmptyState() {
+    return this.vaultEmptyState?.show({
+      container: this.pagesContainer,
+      canShow: () => this._canShowVaultEmptyState(),
+      onAddPage: () => this._addPage({ openAfterSave: true }),
+      onLoadExamples: () => this._loadExampleVault()
+    });
+  }
+
+  /** Fetch and persist the demo only after an explicit choice in an empty vault. */
+  async _loadExampleVault() {
+    if (this.exampleLoadPending || !this._canShowVaultEmptyState()) return false;
+    this.exampleLoadPending = true;
+    const previousConfig = this.config;
+    try {
+      let source;
+      try {
+        source = await this._fetchDefaultConfig();
+      } catch {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      // Edits, imports or role changes during the request must never be overwritten.
+      if (!this._canShowVaultEmptyState() || this.config !== previousConfig) return false;
+      if (!source || !this.configParser.validate(source).valid) {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      const exampleConfig = this.configParser.parse(source);
+      if (!exampleConfig.getTotalPageCount()) {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      markContentOrigin(exampleConfig.categories, exampleConfig.pages, 'demo');
+      const saved = await this.saveConfig(exampleConfig, { render: false });
+      if (saved === false) {
+        this.config = previousConfig;
+        this.configBuilder = new ConfigBuilder(previousConfig);
+        this.uiRenderer.setConfig(previousConfig);
+        throw new Error('The example vault could not be saved. Free up local storage and try again.');
+      }
+      this.notionRenderer.setDependencies({ config: this.config });
+      this.analyticsService.setVaultContext({ roomId: this.roomId, vaultState: 'demo' });
+      if (this.analyticsService.getConsent() === true) {
+        this.analyticsService.trackEvent('demo_vault_loaded');
+      }
+      await this.render();
+      this._goBackToList();
+      const collapseButton = document.getElementById('collapse-all-button');
+      if (collapseButton) this._toggleCollapseAll(collapseButton, false);
+      this.pagesContainer?.scrollTo?.({ top: 0 });
+      this.pagesContainer?.querySelector('.page-button')?.focus();
+      this._scheduleAnnouncement();
+      return true;
+    } finally {
+      this.exampleLoadPending = false;
+    }
+  }
+
+  /**
+   * Verifies the current role directly with Owlbear and fails closed.
+   * @private
+   */
+  async _showConfiguredAnnouncement(campaign = ACTIVE_ANNOUNCEMENT_CAMPAIGN) {
+    if (!campaign || this.announcementCancelled) return false;
+
+    try {
+      const role = await this.OBR?.player?.getRole?.();
+      if (!role || this.announcementCancelled) return false;
+
+      return this.announcementBanner.show({
+        campaign,
+        role,
+        userId: this.playerId
+      });
+    } catch (error) {
+      logWarn('No se pudo verificar el rol para mostrar el aviso:', error);
+      return false;
+    }
   }
 
   // ============================================
@@ -2226,6 +2360,8 @@ export class ExtensionController {
 
     // Modal Manager
     this.modalManager.init(document.body);
+    this.stopResponsiveButtonGroups?.();
+    this.stopResponsiveButtonGroups = watchResponsiveButtonGroups(document.body);
 
     // Configurar botón back
     this._setupBackButton();
@@ -2308,6 +2444,7 @@ export class ExtensionController {
 
     // Limpiar referencia a página actual
     this.currentPage = null;
+    this._showVaultEmptyState();
   }
 
   /**
@@ -2948,7 +3085,7 @@ export class ExtensionController {
         required: true,
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
+      { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
@@ -3023,7 +3160,7 @@ export class ExtensionController {
         required: true,
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
+      { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
@@ -3289,6 +3426,7 @@ export class ExtensionController {
     if (pageTitle) pageTitle.textContent = 'Settings';
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
+    this._hidePageDetailButtons();
 
     // Actualizar clase del container
     this._updateContainerClass();
@@ -3311,7 +3449,7 @@ export class ExtensionController {
       if (exportVaultForm) exportVaultForm.style.display = 'none';
       if (feedbackForm) feedbackForm.style.display = '';
     } else if (this.isCoGM) {
-      // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
+      // Co-GM: ocultar Notion Token, mostrar Export vault y Feedback
       log('⚙️ Mostrando settings para Co-GM (export + feedback)');
       if (notionTokenForm) notionTokenForm.style.display = 'none';
       if (exportVaultForm) exportVaultForm.style.display = '';
@@ -3358,100 +3496,336 @@ export class ExtensionController {
       }
     }
 
-    // Renderizar vault status box (para GM y Co-GM)
-    this._renderVaultStatusBox();
+    // Mantener la descripción del backup ajustada al rol y al tamaño del vault.
+    this._updateVaultSettingsDescription();
 
     // Configurar event listeners de settings (solo una vez)
     this._setupSettingsEventListeners();
   }
 
   /**
-   * Renderiza el vault status box en settings
+   * Actualiza la descripción del backup según rol y capacidad de sincronización.
    * @private
    */
-  async _renderVaultStatusBox() {
-    // Eliminar vault status anterior si existe
-    const existing = document.getElementById('vault-status-box');
-    if (existing) existing.remove();
-
-    // Solo para GM (Master o Co-GM)
+  _updateVaultSettingsDescription() {
     if (!this.isGM) return;
 
-    const exportVaultForm = document.querySelector('.form--separated');
-    if (!exportVaultForm) return;
-
-    // Calcular stats del vault
-    const config = this.config || { categories: [] };
-    const configJson = JSON.stringify(config);
-    const configSize = new TextEncoder().encode(configJson).length;
-    const canSync = configSize < 16 * 1024; // 16KB límite
-
-    let pageCount = (config.pages || []).length;
-    let categoryCount = 0;
-    const countItems = (categories) => {
-      for (const cat of categories || []) {
-        categoryCount++;
-        pageCount += (cat.pages || []).length;
-        if (cat.categories) countItems(cat.categories);
-      }
-    };
-    countItems(config.categories);
-
-    const vaultStatusBox = document.createElement('div');
-    vaultStatusBox.id = 'vault-status-box';
+    const description = document.querySelector('#settings-container .form--separated .settings__description');
+    if (!description) return;
 
     if (this.isCoGM) {
-      // Co-GM: modo solo lectura
-      const owner = await this.storageService.getVaultOwner();
-      const players = await this.OBR?.party?.getPlayers?.() || [];
-      const masterGMName = players.find(player => player.id === owner?.id)?.name || 'Master GM';
-      vaultStatusBox.innerHTML = `
-        <div class="vault-status vault-status--cogm">
-          <div class="vault-status__icon">👁️</div>
-          <div class="vault-status__info">
-            <span class="vault-status__title">Read-only mode</span>
-            <span class="vault-status__detail">Viewing ${escapeHtml(masterGMName)}'s vault</span>
-            <span class="vault-status__detail">${pageCount} pages in ${categoryCount} folders</span>
+      description.textContent = 'You can download a copy of the vault. Share content with players using the share button on pages.';
+      return;
+    }
+
+    const configSize = new TextEncoder().encode(JSON.stringify(this.config || { categories: [] })).length;
+    description.textContent = configSize < 16 * 1024
+      ? "Save and reuse your GM Vault. It's recommended to make regular backups. Your vault syncs automatically to Co-GMs."
+      : "Save and reuse your GM Vault. Your vault is too large (>16KB) to sync with Co-GMs. Make regular backups.";
+  }
+
+  /**
+   * Crea un error de importación con una etapa estable para analytics y UI.
+   * @private
+   */
+  _createJsonImportError(stage, title, message, cause = null) {
+    const error = new Error(message);
+    error.name = cause?.name || (stage === 'parse' ? 'SyntaxError' : 'Error');
+    error.importStage = stage;
+    error.userTitle = title;
+    error.cause = cause || undefined;
+    return error;
+  }
+
+  /**
+   * Convierte los fallos de estructura en un mensaje breve y accionable.
+   * @private
+   */
+  _createJsonValidationError(preflight) {
+    const issueCount = preflight.errors.length;
+    const issueLabel = issueCount === 1 ? 'one issue' : `${issueCount} issues`;
+    const error = this._createJsonImportError(
+      'validate',
+      'This backup can’t be imported',
+      `GM Vault found ${issueLabel} in this backup. Fix ${issueCount === 1 ? 'it' : 'them'} in the JSON file, then try again.`
+    );
+    error.validationErrors = preflight.errors;
+    return error;
+  }
+
+  /**
+   * Parsea y valida texto JSON sin modificar el vault.
+   * @private
+   */
+  _prepareJsonImportText(text, source = 'file') {
+    const sourceLabel = source === 'url' ? 'The URL response' : 'The selected file';
+    if (typeof text !== 'string' || text.trim() === '') {
+      throw this._createJsonImportError(
+        'parse',
+        'This file is empty',
+        `${sourceLabel} does not contain any data. Choose a GM Vault backup with folders or pages.`
+      );
+    }
+
+    let importedConfig;
+    try {
+      // Algunos editores añaden BOM al principio de los archivos UTF-8.
+      importedConfig = JSON.parse(text.replace(/^\uFEFF/, ''));
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'parse',
+        'This file isn’t valid JSON',
+        `GM Vault could not read ${source === 'url' ? 'the downloaded file' : 'this file'}. Check for missing commas, brackets, or quotation marks, then try again.`,
+        cause
+      );
+    }
+
+    const preflight = this.configParser.preflight(importedConfig);
+    if (!preflight.valid) {
+      throw this._createJsonValidationError(preflight);
+    }
+
+    if (preflight.summary.categoryCount === 0 && preflight.summary.pageCount === 0) {
+      const error = this._createJsonImportError(
+        'validate',
+        'This backup is empty',
+        'There are no folders or pages to import. Choose a backup that contains vault content.'
+      );
+      error.name = 'EmptyVaultError';
+      throw error;
+    }
+
+    return { importedConfig, preflight };
+  }
+
+  /**
+   * Lee y prepara un archivo JSON local sin persistirlo.
+   * @private
+   */
+  async _readJsonImportFile(file) {
+    if (!file || typeof file.text !== 'function') {
+      throw this._createJsonImportError(
+        'read',
+        'Could not read file',
+        'Choose a readable JSON file and try again.'
+      );
+    }
+
+    let text;
+    try {
+      text = await file.text();
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'read',
+        'Could not read file',
+        'The selected file could not be read. Check its permissions and try again.',
+        cause
+      );
+    }
+
+    return this._prepareJsonImportText(text, 'file');
+  }
+
+  /**
+   * Descarga y prepara un JSON remoto sin persistirlo.
+   * @private
+   */
+  async _fetchJsonImport(url) {
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'fetch',
+        'Could not reach URL',
+        'Check the address, your connection, and whether the server allows browser requests, then try again.',
+        cause
+      );
+    }
+
+    if (!response.ok) {
+      throw this._createJsonImportError(
+        'http',
+        'Could not download backup',
+        `The server returned HTTP ${response.status}. Check the URL and try again.`
+      );
+    }
+
+    let text;
+    try {
+      text = await response.text();
+    } catch (cause) {
+      throw this._createJsonImportError(
+        'read',
+        'Could not read response',
+        'The backup was downloaded but its response could not be read. Try again.',
+        cause
+      );
+    }
+
+    return this._prepareJsonImportText(text, 'url');
+  }
+
+  /**
+   * Abre los pasos necesarios para una importación ya preparada.
+   * @private
+   */
+  async _showPreparedJsonImport(importedConfig, preflight, fileName, source) {
+    const currentConfig = this.config || { categories: [] };
+    const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
+    const currentPagesCount = this._countPagesInConfig(configForCount);
+    const importedPagesCount = preflight.summary.pageCount;
+
+    log(`Prepared JSON import: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
+    if (preflight.warnings.length > 0) {
+      const shouldContinue = await this._showJsonImportWarningsStep(preflight, fileName);
+      if (!shouldContinue) return false;
+    }
+
+    return this._showLoadJsonOptionsModal(
+      importedConfig,
+      currentPagesCount,
+      importedPagesCount,
+      fileName,
+      source,
+      preflight
+    );
+  }
+
+  /**
+   * Muestra los datos que se descartarán y exige confirmación para continuar.
+   * @private
+   */
+  _showJsonImportWarningsStep(preflight, fileName) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'json-import-warning-modal';
+      overlay.className = 'modal';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'json-import-warning-title');
+
+      const modal = document.createElement('div');
+      modal.className = 'modal__content notion-pages-modal';
+
+      modal.innerHTML = `
+        <h2 class="modal__title" id="json-import-warning-title">Review this backup</h2>
+        <div class="form import-warning-step">
+          <p class="import-warning-step__intro">This backup can be imported, but some details will be left out.</p>
+          <div class="import-preview" aria-label="Backup summary">
+            <p class="import-source-label">Importing <strong>${escapeHtml(fileName || 'vault backup')}</strong></p>
+            <dl class="import-preview__stats">
+              <div>
+                <dt>Folders</dt>
+                <dd>${preflight.summary.categoryCount}</dd>
+              </div>
+              <div>
+                <dt>Pages</dt>
+                <dd>${preflight.summary.pageCount}</dd>
+              </div>
+            </dl>
+            <div class="import-preview__warnings" role="note" aria-label="Import notices">
+              <h3 class="import-preview__warnings-title">What will be left out</h3>
+              ${preflight.warnings.map(warning => `<p class="import-preview__warning-message">${escapeHtml(warning)}</p>`).join('')}
+            </div>
+          </div>
+          <div class="form__actions import-options__actions">
+            <button type="button" id="json-import-warning-cancel" class="btn btn--ghost btn--flex">Cancel</button>
+            <button type="button" id="json-import-warning-next" class="btn btn--primary btn--flex">Next</button>
           </div>
         </div>
       `;
-      
-      // Actualizar descripción para Co-GM
-      const exportDescription = exportVaultForm.querySelector('.settings__description');
-      if (exportDescription) {
-        exportDescription.textContent = 'You can download a copy of the vault. Share content with players using the share button on pages.';
-      }
-    } else {
-      // Master GM: mostrar info completa con recomendación de backup
-      const syncMessage = canSync 
-        ? `<span class="vault-status__sync vault-status__sync--ok">✅ Can sync to Co-GM</span>`
-        : `<span class="vault-status__sync vault-status__sync--warn">⚠️ Too large to sync (>16KB)</span>`;
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
 
-      vaultStatusBox.innerHTML = `
-        <div class="vault-status vault-status--master">
-          <div class="vault-status__icon">👑</div>
-          <div class="vault-status__info">
-            <span class="vault-status__title">Master GM</span>
-            <span class="vault-status__detail">${(configSize / 1024).toFixed(1)} KB • ${pageCount} pages • ${categoryCount} folders</span>
-            ${syncMessage}
+      let settled = false;
+      const finish = shouldContinue => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', handleKeydown);
+        overlay.remove();
+        resolve(shouldContinue);
+      };
+      const handleKeydown = event => {
+        if (event.key === 'Escape') finish(false);
+      };
+
+      modal.querySelector('#json-import-warning-cancel').addEventListener('click', () => finish(false));
+      modal.querySelector('#json-import-warning-next').addEventListener('click', () => finish(true));
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) finish(false);
+      });
+      document.addEventListener('keydown', handleKeydown);
+      modal.querySelector('#json-import-warning-next').focus();
+    });
+  }
+
+  /**
+   * Comunica un error bloqueante. No ofrece ninguna ruta hacia la importación.
+   * @private
+   */
+  _showJsonImportErrorAlert(error) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'json-import-error-modal';
+      overlay.className = 'modal';
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'json-import-error-title');
+      overlay.setAttribute('aria-describedby', 'json-import-error-message');
+
+      const modal = document.createElement('div');
+      modal.className = 'modal__content notion-pages-modal';
+      const validationDetails = Array.isArray(error?.validationErrors) && error.validationErrors.length > 0
+        ? `<ul class="import-error__details">${error.validationErrors.slice(0, 5).map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}</ul>`
+        : '';
+
+      modal.innerHTML = `
+        <h2 class="modal__title" id="json-import-error-title">${escapeHtml(error?.userTitle || 'Import problem')}</h2>
+        <div class="import-error">
+          <p class="import-error__message" id="json-import-error-message">${escapeHtml(error?.message || 'The backup could not be prepared.')}</p>
+          ${validationDetails}
+          <div class="form__actions form__actions--single import-options__actions">
+            <button type="button" id="json-import-error-ok" class="btn btn--primary btn--flex">Close</button>
           </div>
         </div>
       `;
-      
-      // Actualizar descripción para Master GM
-      const exportDescription = exportVaultForm.querySelector('.settings__description');
-      if (exportDescription) {
-        exportDescription.textContent = canSync
-          ? "Save and reuse your GM Vault. It's recommended to make regular backups. Your vault syncs automatically to Co-GMs."
-          : "Save and reuse your GM Vault. Your vault is too large (>16KB) to sync with Co-GMs. Make regular backups.";
-      }
-    }
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
 
-    // Inyectar vault status como primer hijo de .settings__content
-    const settingsContent = document.querySelector('#settings-container .settings__content');
-    if (settingsContent) {
-      settingsContent.insertBefore(vaultStatusBox, settingsContent.firstChild);
-    }
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', handleKeydown);
+        overlay.remove();
+        resolve();
+      };
+      const handleKeydown = event => {
+        if (event.key === 'Escape') finish();
+      };
+
+      modal.querySelector('#json-import-error-ok').addEventListener('click', finish);
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) finish();
+      });
+      document.addEventListener('keydown', handleKeydown);
+      modal.querySelector('#json-import-error-ok').focus();
+    });
+  }
+
+  /**
+   * Registra y comunica un error bloqueante.
+   * @private
+   */
+  _handleJsonImportError(error, source, fallbackStage = 'read', context = {}) {
+    this.analyticsService?.trackVaultImportFailed?.({
+      source,
+      stage: error?.importStage || fallbackStage,
+      errorType: error?.name || 'Error',
+      ...context
+    });
+    return this._showJsonImportErrorAlert(error);
   }
 
   /**
@@ -3580,37 +3954,11 @@ export class ExtensionController {
           if (!file) return;
           
           try {
-            const text = await file.text();
-            const importedConfig = JSON.parse(text);
-            
-            if (!importedConfig.categories) {
-              throw new Error('Invalid config: missing categories');
-            }
-            
-            // Contar páginas actuales e importadas
-            const currentConfig = this.config || { categories: [] };
-            const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
-            const currentPagesCount = this._countPagesInConfig(configForCount);
-            const importedPagesCount = this._countPagesInConfig(importedConfig);
-            
-            log(`Load JSON: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
-            
-            // Mostrar modal con opciones de importación
-            await this._showLoadJsonOptionsModal(
-              importedConfig,
-              currentPagesCount,
-              importedPagesCount,
-              file.name,
-              'file'
-            );
+            const { importedConfig, preflight } = await this._readJsonImportFile(file);
+            await this._showPreparedJsonImport(importedConfig, preflight, file.name, 'file');
             
           } catch (err) {
-            this.analyticsService?.trackVaultImportFailed?.({
-              source: 'file',
-              stage: 'read',
-              errorType: err?.name
-            });
-            alert('❌ Error loading file: ' + err.message);
+            await this._handleJsonImportError(err, 'file', 'read');
           }
         });
         
@@ -3631,11 +3979,14 @@ export class ExtensionController {
         const url = vaultUrlInput ? vaultUrlInput.value.trim() : '';
         log('URL value:', url);
         if (!url) {
-          this.uiRenderer.showErrorToast('URL required', 'Enter the URL of a GM Vault JSON file.');
+          const error = this._createJsonImportError(
+            'input',
+            'URL required',
+            'Enter the complete URL of a GM Vault JSON file.'
+          );
+          await this._handleJsonImportError(error, 'url', 'input');
           return;
         }
-        
-        this.analyticsService.trackLoadFromUrlClicked(url);
 
         // Validar que sea una URL válida
         try {
@@ -3644,9 +3995,18 @@ export class ExtensionController {
             throw new Error('Unsupported URL protocol');
           }
         } catch (e) {
-          this.uiRenderer.showErrorToast('Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+          const error = this._createJsonImportError(
+            'input',
+            'Invalid URL',
+            'Use a complete HTTP or HTTPS URL.'
+          );
+          await this._handleJsonImportError(error, 'url', 'input');
           return;
         }
+
+        this.analyticsService.trackLoadFromUrlClicked(url);
+        const urlObj = new URL(url);
+        const vaultName = urlObj.pathname.split('/').pop() || 'vault';
 
         // Mostrar indicador de carga
         loadUrlBtn.disabled = true;
@@ -3655,46 +4015,12 @@ export class ExtensionController {
 
         try {
           log('Loading vault from URL:', url);
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          
-          const importedConfig = await response.json();
-          
-          if (!importedConfig.categories) {
-            throw new Error('Invalid config: missing categories');
-          }
-          
-          // Contar páginas actuales e importadas
-          const currentConfig = this.config || { categories: [] };
-          const configForCount = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
-          const currentPagesCount = this._countPagesInConfig(configForCount);
-          const importedPagesCount = this._countPagesInConfig(importedConfig);
-          
-          log(`Load from URL: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
-          
-          // Extraer nombre del vault de la URL para mostrar en el modal
-          const urlObj = new URL(url);
-          const vaultName = urlObj.pathname.split('/').pop() || 'vault';
-          
-          // Mostrar modal con opciones de importación
-          await this._showLoadJsonOptionsModal(
-            importedConfig,
-            currentPagesCount,
-            importedPagesCount,
-            vaultName,
-            'url'
-          );
+          const { importedConfig, preflight } = await this._fetchJsonImport(url);
+          await this._showPreparedJsonImport(importedConfig, preflight, vaultName, 'url');
           
         } catch (err) {
           console.error('Error loading from URL:', err);
-          this.analyticsService?.trackVaultImportFailed?.({
-            source: 'url',
-            stage: 'fetch',
-            errorType: err?.name
-          });
-          this.uiRenderer.showErrorToast('Could not import from URL', err.message);
+          await this._handleJsonImportError(err, 'url', 'fetch');
         } finally {
           loadUrlBtn.disabled = false;
           loadUrlBtn.textContent = originalText;
@@ -4028,10 +4354,8 @@ export class ExtensionController {
           <input type="hidden" name="import-mode" value="append" />
 
           <div class="form__field import-destination-field">
-            <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
-            <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
-            <select id="field-destination" name="destination" class="select select--searchable-source" data-searchable-select="true" hidden aria-hidden="true" tabindex="-1"></select>
-            <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+            <label class="form__label" for="field-destination">Destination folder</label>
+            <select id="field-destination" name="destination" class="select"></select>
             <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
           </div>
           
@@ -4064,12 +4388,10 @@ export class ExtensionController {
       // Insertar antes del progress
       progressEl.insertAdjacentHTML('beforebegin', optionsHtml);
 
-      this._setupSearchableSelect(document, {
+      const destinationPicker = this._setupFolderSelect(modal, {
         name: 'destination',
-        options: destinationOptions,
-        visibleOptions: 7,
-        resultLabel: 'folder',
-        searchPlaceholder: 'Search folders...'
+        label: 'Destination folder',
+        options: destinationOptions
       });
 
       // Botón "Back" - volver a la selección de páginas
@@ -4102,9 +4424,8 @@ export class ExtensionController {
         } else {
           destinationSelect.value = selectedDestinationId || 'root';
         }
-        document.querySelectorAll('#field-destination-listbox [role="option"]').forEach(option => {
-          option.setAttribute('aria-selected', String(option.dataset.value === selectedDestinationId));
-        });
+        destinationPicker?.close(false);
+        destinationPicker?.refresh();
       };
       modeInputs.forEach(input => input.addEventListener('change', syncDestinationState));
       syncDestinationState();
@@ -4318,13 +4639,14 @@ export class ExtensionController {
     searchInput.focus();
   }
 
-  _flattenCategoryOptions(categories, depth = 0) {
+  _flattenCategoryOptions(categories, depth = 0, parentPath = []) {
     const options = [];
     for (const category of categories || []) {
       if (!category?.id) continue;
-      const label = `${'— '.repeat(depth)}${category.name || 'Untitled folder'}`;
-      options.push({ value: category.id, label, searchText: label });
-      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1));
+      const label = category.name || 'Untitled folder';
+      const path = [...parentPath, label];
+      options.push({ value: category.id, label, path, depth, searchText: path.join(' / ') });
+      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1, path));
     }
     return options;
   }
@@ -4363,24 +4685,37 @@ export class ExtensionController {
    * @param {number} currentPagesCount - Número de páginas en el vault actual
    * @param {number} importedPagesCount - Número de páginas en el archivo importado
    * @param {string} fileName - Nombre del archivo importado
+   * @param {string} source - Origen de la importación
+   * @param {Object|null} preflight - Resultado de validación previa
    * @private
    */
-  async _showLoadJsonOptionsModal(importedConfig, currentPagesCount, importedPagesCount, fileName, source = 'file') {
+  async _showLoadJsonOptionsModal(
+    importedConfig,
+    currentPagesCount,
+    importedPagesCount,
+    fileName,
+    source = 'file',
+    preflight = null
+  ) {
     log(`_showLoadJsonOptionsModal: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}, file=${fileName}`);
-    
-    // Si el vault actual está vacío, hacer replace directamente sin mostrar opciones
-    if (currentPagesCount === 0) {
-      log('Vault is empty, applying direct replace');
-      await this._applyJsonImport(importedConfig, 'replace', importedPagesCount, 'root', source);
-      return;
+
+    const configParser = this.configParser || new ConfigParser();
+    const importPreflight = preflight || configParser.preflight(importedConfig);
+    if (!importPreflight.valid) {
+      throw this._createJsonValidationError(importPreflight);
     }
+
+    importedPagesCount = importPreflight.summary.pageCount;
 
     // Crear el contenido del modal
     const destinationConfig = this.config?.toJSON ? this.config.toJSON() : (this.config || {});
-    const destinationItemsConfig = this.configParser?.detectFormat
-      ? (this.configParser.detectFormat(destinationConfig) === 'items'
+    const currentFolderCount = configParser.preflight(destinationConfig).summary.categoryCount;
+    // La confirmación es obligatoria también cuando el vault está vacío.
+    const isEmptyVault = currentPagesCount === 0 && currentFolderCount === 0;
+    const destinationItemsConfig = configParser.detectFormat
+      ? (configParser.detectFormat(destinationConfig) === 'items'
         ? destinationConfig
-        : this.configParser.toItemsFormat(destinationConfig))
+        : configParser.toItemsFormat(destinationConfig))
       : { categories: [] };
     const destinationOptions = [
       { value: 'root', label: 'Root level' },
@@ -4389,47 +4724,62 @@ export class ExtensionController {
     const destinationMarkup = destinationOptions.map(option =>
       `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
     ).join('');
+    const importChoicesMarkup = isEmptyVault
+      ? '<input type="hidden" name="json-import-mode" value="replace" />'
+      : `
+        <fieldset class="import-options__modes">
+          <legend class="import-options__question">How would you like to add it?</legend>
+          <label class="import-option">
+            <input type="radio" name="json-import-mode" value="append" checked />
+            <span class="import-option__content">
+              <span class="import-option__title">Add to vault</span>
+              <span class="import-option__hint">Keep current content and add this backup</span>
+            </span>
+          </label>
+
+          <label class="import-option">
+            <input type="radio" name="json-import-mode" value="merge" />
+            <span class="import-option__content">
+              <span class="import-option__title">Combine with existing</span>
+              <span class="import-option__hint">Add new pages and update duplicates</span>
+            </span>
+          </label>
+
+          <label class="import-option">
+            <input type="radio" name="json-import-mode" value="replace" />
+            <span class="import-option__content">
+              <span class="import-option__title">Replace everything</span>
+              <span class="import-option__hint import-option__hint--warning">Your current ${currentPagesCount} page${currentPagesCount === 1 ? '' : 's'} and ${currentFolderCount} folder${currentFolderCount === 1 ? '' : 's'} will be removed</span>
+            </span>
+          </label>
+        </fieldset>
+      `;
+    const destinationMarkupBlock = isEmptyVault
+      ? ''
+      : `
+        <div class="form__field import-destination-field">
+          <label class="form__label" for="field-destination">Destination folder</label>
+          <select id="field-destination" name="destination" class="select">${destinationMarkup}</select>
+          <span class="form__help import-destination-help">Used only when adding the backup without combining or replacing.</span>
+        </div>
+      `;
     const modalContent = `
       <div class="import-options">
-        <span class="import-source-label" hidden>Importing <strong>${escapeHtml(fileName)}</strong></span>
-        <p class="import-options__question">How would you like to add this?</p>
-        <input type="hidden" name="json-import-mode" value="append" />
-        <div class="form__field import-destination-field">
-          <label class="form__label" for="field-destination-search">Destination folder</label>
-          <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
-          <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
-          <select id="field-destination" class="select select--searchable-source" hidden aria-hidden="true" tabindex="-1">${destinationMarkup}</select>
-          <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
-          <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
-        </div>
-        
-        <label class="import-option">
-          <input type="radio" name="json-import-mode" value="merge" />
-          <div class="import-option__content">
-            <span class="import-option__title">Combine with existing</span>
-            <span class="import-option__hint">New pages will be added, duplicates updated</span>
-          </div>
-        </label>
-        
-        <label class="import-option">
-          <input type="radio" name="json-import-mode" value="replace" />
-          <div class="import-option__content">
-            <span class="import-option__title">Replace everything</span>
-            <span class="import-option__hint import-option__hint--warning">⚠️ You'll lose your current ${currentPagesCount} page${currentPagesCount !== 1 ? 's' : ''}</span>
-          </div>
-        </label>
+        <p class="import-source-label">Importing <strong>${escapeHtml(fileName || 'vault backup')}</strong></p>
 
-        <div class="form__actions" style="margin-top: var(--spacing-lg);">
-          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Back</button>
-          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Confirm import</button>
+        ${importChoicesMarkup}
+        ${destinationMarkupBlock}
+
+        <div class="form__actions import-options__actions">
+          <button type="button" id="json-import-cancel" class="btn btn--ghost btn--flex">Cancel</button>
+          <button type="button" id="json-import-confirm" class="btn btn--primary btn--flex">Import backup</button>
         </div>
       </div>
     `;
 
     // Keep lightweight controller tests compatible with their modal mock.
     if (this.modalManager?.showCustom?.mock) {
-      this.modalManager.showCustom({ title: 'Import from Notion', content: modalContent });
-      return;
+      return this.modalManager.showCustom({ title: 'Choose where to import', content: modalContent });
     }
 
     // Use the same modal structure as the Notion importer.
@@ -4437,36 +4787,65 @@ export class ExtensionController {
     const overlay = document.createElement('div');
     overlay.id = 'json-import-modal';
     overlay.className = 'modal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'json-import-title');
     const modal = document.createElement('div');
     modal.className = 'modal__content notion-pages-modal';
-    modal.innerHTML = `<h2 class="modal__title">Import from Notion</h2><div class="form">${modalContent}</div>`;
+    modal.innerHTML = `<h2 class="modal__title" id="json-import-title">Choose where to import</h2><div class="form">${modalContent}</div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     log('Modal created:', modal);
-    this._setupSearchableSelect(modal, {
-      name: 'destination',
-      options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
-      visibleOptions: 7,
-      resultLabel: 'folder',
-      searchPlaceholder: 'Search folders...'
-    });
+    const destinationPicker = !isEmptyVault ? this._setupFolderSelect(modal, {
+      name: 'destination', label: 'Destination folder', options: destinationOptions
+    }) : null;
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
     const confirmBtn = modal.querySelector('#json-import-confirm');
+    const destinationField = modal.querySelector('.import-destination-field');
     log('Cancel button:', cancelBtn, 'Confirm button:', confirmBtn);
 
-    cancelBtn.addEventListener('click', () => {
+    const closeModal = () => {
       overlay.remove();
+      document.removeEventListener('keydown', handleKeydown);
+    };
+    const handleKeydown = (event) => {
+      if (event.key === 'Escape') closeModal();
+    };
+    const updateDestinationVisibility = () => {
+      if (!destinationField) return;
+      const mode = modal.querySelector('input[name="json-import-mode"]:checked')?.value;
+      destinationPicker?.close(false);
+      destinationField.classList.toggle('hidden', mode !== 'append');
+    };
+
+    modal.querySelectorAll('input[name="json-import-mode"][type="radio"]').forEach(input => {
+      input.addEventListener('change', updateDestinationVisibility);
     });
+    updateDestinationVisibility();
+
+    cancelBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) closeModal();
+    });
+    document.addEventListener('keydown', handleKeydown);
 
     confirmBtn.addEventListener('click', async () => {
       const importMode = modal.querySelector('input[name="json-import-mode"]:checked')?.value
-        || modal.querySelector('input[name="json-import-mode"][value="append"]').value;
-      overlay.remove();
-      const destinationId = modal.querySelector('#field-destination')?.value || 'root';
+        || modal.querySelector('input[name="json-import-mode"]')?.value
+        || 'append';
+      const destinationId = importMode === 'append'
+        ? (modal.querySelector('#field-destination')?.value || 'root')
+        : 'root';
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Importing...';
+      closeModal();
       await this._applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId, source);
     });
+
+    confirmBtn.focus();
+    return overlay;
   }
 
   /**
@@ -4478,8 +4857,30 @@ export class ExtensionController {
    */
   async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root', source = 'file') {
     try {
+      const importPreflight = this.configParser.preflight(importedConfig);
+      if (!importPreflight.valid) {
+        throw this._createJsonValidationError(importPreflight);
+      }
+      if (importPreflight.summary.categoryCount === 0 && importPreflight.summary.pageCount === 0) {
+        const error = this._createJsonImportError(
+          'validate',
+          'This backup is empty',
+          'There are no folders or pages to import. Choose a backup that contains vault content.'
+        );
+        error.name = 'EmptyVaultError';
+        throw error;
+      }
+      if (!['append', 'merge', 'replace'].includes(importMode)) {
+        throw this._createJsonImportError(
+          'validate',
+          'Invalid import option',
+          'Choose how to add the backup and try again.'
+        );
+      }
+      importedPagesCount = importPreflight.summary.pageCount;
+
       // Detectar formato del JSON importado
-      const format = this.configParser.detectFormat(importedConfig);
+      const format = importPreflight.format;
       log(`_applyJsonImport: detected format="${format}", mode="${importMode}"`);
       
       // Si ya está en formato items[], usarlo directamente; si es legacy, convertir
@@ -4588,19 +4989,14 @@ export class ExtensionController {
 
       // Volver a la lista
       this._goBackToList();
+      return true;
     } catch (err) {
       logError('Error applying JSON import:', err);
-      this.analyticsService?.trackVaultImportFailed?.({
-        source,
-        stage: 'save',
+      await this._handleJsonImportError(err, source, 'save', {
         mode: importMode,
-        destinationType: destinationId === 'root' ? 'root' : 'folder',
-        errorType: err?.name
+        destinationType: destinationId === 'root' ? 'root' : 'folder'
       });
-      this.uiRenderer.showErrorToast(
-        'Import failed',
-        err.message || 'An error occurred while importing.'
-      );
+      return false;
     }
   }
 
@@ -4889,9 +5285,7 @@ export class ExtensionController {
    * Toggle collapse/expand all folders
    * @private
    */
-  _toggleCollapseAll(button) {
-    const isCollapsed = button.dataset.collapsed === 'true';
-    const newState = !isCollapsed;
+  _toggleCollapseAll(button, newState = button.dataset.collapsed !== 'true') {
     
     // Track collapse all action
     this.analyticsService.trackCollapseAllFolders(newState);
@@ -4901,6 +5295,7 @@ export class ExtensionController {
       const newSrc = newState ? 'img/icon-collapse-true.svg' : 'img/icon-collapse-false.svg';
       icon.style.maskImage = `url('${newSrc}')`;
       icon.style.webkitMaskImage = `url('${newSrc}')`;
+      icon.setAttribute('aria-label', newState ? 'Expand all' : 'Collapse all');
     }
     button.dataset.collapsed = newState.toString();
     button.title = newState ? 'Expand all folders' : 'Collapse all folders';
@@ -4922,6 +5317,7 @@ export class ExtensionController {
         }
         collapseBtn.style.maskImage = `url('${folderSrc}')`;
         collapseBtn.style.webkitMaskImage = `url('${folderSrc}')`;
+        collapseBtn.setAttribute('aria-label', newState ? 'Expand' : 'Collapse');
 
         if (categoryName) {
           const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
@@ -5089,8 +5485,9 @@ export class ExtensionController {
       { 
         name: 'parentFolder', 
         label: 'Parent folder', 
-        type: 'select', 
-        options: [{ value: '', label: '— Root level —' }, ...folderOptions],
+        type: 'select',
+        folderPicker: true,
+        options: [{ value: '', label: 'Root level', path: [], depth: 0 }, ...folderOptions],
         required: false 
       }
     ], async (data) => {
@@ -5123,13 +5520,13 @@ export class ExtensionController {
    * Añade una nueva página
    * @private
    */
-  async _addPage() {
+  async _addPage({ openAfterSave = false } = {}) {
     // Obtener lista de carpetas para selector
     const folderOptions = this._getCategoryOptions();
     
     // Siempre incluir opción de root level
     const allOptions = [
-      { value: '', label: '— Root level —' },
+      { value: '', label: 'Root level', path: [], depth: 0 },
       ...folderOptions
     ];
     
@@ -5146,7 +5543,8 @@ export class ExtensionController {
       { 
         name: 'parentFolder', 
         label: 'Folder', 
-        type: 'select', 
+        type: 'select',
+        folderPicker: true,
         options: allOptions,
         required: false 
       },
@@ -5185,7 +5583,11 @@ export class ExtensionController {
         }
       }
       
-        await this.saveConfig(this.config);
+        const saved = await this.saveConfig(this.config);
+        if (saved === false) {
+          this.uiRenderer.showErrorToast('Page could not be saved', 'Free up local storage and try again.');
+          return;
+        }
         const pageType = this._detectPageType(safeUrl);
         this.analyticsService.trackPageAdded(data.name, pageType, {
           url: safeUrl,
@@ -5198,7 +5600,15 @@ export class ExtensionController {
           pageType,
           contentOrigin: 'user'
         });
-    });
+        if (openAfterSave) {
+          const savedPage = this.config.findPageById(newPage.id);
+          const categoryPath = data.parentFolder ? data.parentFolder.split('/') : [];
+          const parent = categoryPath.length ? this._findCategoryByPath(categoryPath) : this.config;
+          const pageIndex = parent?.pages.findIndex(page => page.id === newPage.id) ?? 0;
+          if (savedPage) await this.openPage(savedPage, categoryPath, pageIndex);
+        }
+    }, openAfterSave ? () => this.vaultEmptyState?.focusPrimary() : null,
+    { submitText: openAfterSave ? 'Save and open' : 'Save' });
   }
 
   /**
@@ -5224,20 +5634,8 @@ export class ExtensionController {
    * Obtiene opciones de carpetas para selectores
    * @private
    */
-  _getCategoryOptions(categories = null, path = '') {
-    const options = [];
-    const cats = categories || (this.config?.categories || []);
-    
-    for (const cat of cats) {
-      const fullPath = path ? `${path}/${cat.name}` : cat.name;
-      options.push({ value: fullPath, label: path ? `${path} / ${cat.name}` : cat.name });
-      
-      if (cat.categories && cat.categories.length > 0) {
-        options.push(...this._getCategoryOptions(cat.categories, fullPath));
-      }
-    }
-    
-    return options;
+  _getCategoryOptions() {
+    return this._getFolderOptions().slice(1);
   }
 
   /**
@@ -5632,22 +6030,7 @@ export class ExtensionController {
         log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
       }
       
-      // 2. Si no hay en localStorage, cargar default desde URL
-      // NO usar room metadata para GM (según arquitectura)
-      if (!config) {
-        try {
-          const defaultConfig = await this._fetchDefaultConfig();
-          if (defaultConfig && defaultConfig.categories && defaultConfig.categories.length > 0) {
-            config = defaultConfig;
-            configSource = 'defaultURL';
-            // Guardar en localStorage para próximas veces
-            this.storageService.saveLocalConfig(config);
-            log('📦 Config default cargada desde URL');
-          }
-        } catch (e) {
-          log('⚠️ No se pudo cargar config default:', e.message);
-        }
-      }
+      // First use starts empty. The example vault is fetched only on request.
     } else if (this.isCoGM) {
       // Co-GM: solicitar vault COMPLETO del Master GM (ve todo el vault, no solo páginas visibles)
       log('👁️ Co-GM: solicitando vault completo del Master GM...');
@@ -5697,7 +6080,7 @@ export class ExtensionController {
     } else {
       // Crear configuración vacía
       log('⚠️ No se encontró configuración, creando vacía');
-      this.config = ConfigBuilder.createDefault().build();
+      this.config = new ConfigBuilder().build();
       configSource = 'empty';
     }
 
@@ -5710,7 +6093,7 @@ export class ExtensionController {
   }
 
   /**
-   * Carga la configuración por defecto desde URL
+   * Carga el vault de ejemplo bajo demanda
    * @private
    */
   async _fetchDefaultConfig() {
@@ -6070,10 +6453,10 @@ export class ExtensionController {
           <p class="empty-state-text">Your GM is not active right now</p>
           <p class="empty-state-hint">Wait for them to join the session or send them a greeting!</p>
           <p class="empty-state-subhint">The content you're trying to view requires your GM to be online.</p>
-          <p class="empty-state-subhint" style="opacity: 0.6; font-size: 0.9em;">
+          <p class="empty-state-subhint">
             GM inactive for ${minutesText}
           </p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -6296,11 +6679,15 @@ export class ExtensionController {
           <div class="empty-state-icon">🔑</div>
           <p class="empty-state-text">Notion token required</p>
           <p class="empty-state-hint">Configure your Notion token in Settings to load this content.</p>
-          <button class="btn btn--sm btn--primary" onclick="document.getElementById('settings-button')?.click()">
+          <button type="button" class="btn btn--primary" data-action="open-notion-settings">
             Open Settings
           </button>
         </div>
       `;
+      notionContent.querySelector('[data-action="open-notion-settings"]').addEventListener('click', () => {
+        this._showSettings();
+        document.getElementById('token-input')?.focus();
+      });
       return;
     }
 
@@ -6596,7 +6983,7 @@ export class ExtensionController {
           <p class="empty-state-text">Your GM is not active right now</p>
           <p class="empty-state-hint">Wait for them to join the session or send them a greeting!</p>
           <p class="empty-state-subhint">The content you're trying to view requires your GM to be online.</p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -6645,7 +7032,7 @@ export class ExtensionController {
           <p class="empty-state-text">Content not available</p>
           <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
           <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -7051,7 +7438,7 @@ export class ExtensionController {
           <div class="empty-state-icon">☁️</div>
           <p class="empty-state-text">${title}</p>
           <p class="empty-state-hint">${hint}</p>
-          <button type="button" class="btn btn--sm btn--secondary" data-onedrive-retry>🔄 Retry</button>
+          <button type="button" class="btn btn--secondary" data-onedrive-retry>🔄 Retry</button>
         </div>
       `;
       notionContent.querySelector('[data-onedrive-retry]')?.addEventListener('click', () => {
@@ -7356,7 +7743,7 @@ export class ExtensionController {
 
         const reloadButton = document.createElement('button');
         reloadButton.type = 'button';
-        reloadButton.className = 'btn btn--sm btn--ghost';
+        reloadButton.className = 'btn btn--ghost';
         reloadButton.textContent = '🔄 Reload page';
         reloadButton.addEventListener('click', () => {
           if (typeof window.refreshImage === 'function') window.refreshImage(reloadButton);
@@ -7954,7 +8341,7 @@ export class ExtensionController {
                 <div class="empty-state-icon">👋</div>
                 <p class="empty-state-text">The GM is not active</p>
                 <p class="empty-state-hint">Wait for the GM to join the session to view this page</p>
-                <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                <button class="btn btn--secondary mention-modal__retry-btn">
                   🔄 Retry
                 </button>
               </div>
@@ -7996,7 +8383,7 @@ export class ExtensionController {
                 <p class="empty-state-text">Content not available</p>
                 <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
                 <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
-                <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                <button class="btn btn--secondary mention-modal__retry-btn">
                   🔄 Retry
                 </button>
               </div>
@@ -8903,12 +9290,10 @@ export class ExtensionController {
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: var(--color-bg-secondary, #333);
-      color: var(--color-text-primary, #fff);
+      background: var(--color-bg-surface);
       padding: 12px 24px;
       border-radius: 8px;
       z-index: 10001;
-      font-size: 14px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       animation: fadeInOut 2s ease forwards;
     `;

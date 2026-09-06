@@ -147,6 +147,58 @@ function errorResponse(statusCode, error) {
   };
 }
 
+/**
+ * Retrieve every direct child of a Notion block. The API returns at most 100
+ * results per request, so callers must follow next_cursor until has_more is
+ * false. This helper intentionally returns direct children only; recursion is
+ * handled by the renderer for blocks whose has_children flag is true.
+ */
+async function fetchAllBlockChildren(blockId, token) {
+  let combined = null;
+  let results = [];
+  let startCursor = null;
+
+  do {
+    const params = new URLSearchParams({ page_size: '100' });
+    if (startCursor) params.set('start_cursor', startCursor);
+
+    const response = await fetch(
+      `https://api.notion.com/v1/blocks/${encodeURIComponent(blockId)}/children?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: notionHeaders(token)
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.message || 'Notion API error');
+      error.statusCode = response.status;
+      error.code = errorData.code;
+      throw error;
+    }
+
+    const data = await response.json();
+    combined ||= data;
+    results = results.concat(data.results || []);
+
+    if (data.has_more === true && !data.next_cursor) {
+      const error = new Error('Notion returned an incomplete paginated response.');
+      error.statusCode = 502;
+      throw error;
+    }
+
+    startCursor = data.has_more === true ? data.next_cursor : null;
+  } while (startCursor);
+
+  return {
+    ...(combined || { object: 'list', type: 'block', block: {} }),
+    results,
+    has_more: false,
+    next_cursor: null
+  };
+}
+
 export const handler = async (event) => {
   // Manejar CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -291,42 +343,8 @@ export const handler = async (event) => {
         };
       }
 
-      // Obtener todos los bloques hijos con paginación
-      let allBlocks = [];
-      let hasMore = true;
-      let startCursor = null;
-
-      while (hasMore) {
-        const url = startCursor 
-          ? `https://api.notion.com/v1/blocks/${pageId}/children?start_cursor=${startCursor}&page_size=100`
-          : `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`;
-
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          return {
-            statusCode: response.status,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ 
-              error: errorData.message || 'Notion API error',
-              code: errorData.code
-            })
-          };
-        }
-
-        const data = await response.json();
-        allBlocks = allBlocks.concat(data.results || []);
-        hasMore = data.has_more;
-        startCursor = data.next_cursor;
-      }
+      const data = await fetchAllBlockChildren(pageId, authToken);
+      const allBlocks = data.results;
 
       // La jerarquía solo se deriva de contención real. `link_to_page` es una
       // referencia de navegación y se renderiza dentro del contenido, pero no
@@ -497,14 +515,17 @@ export const handler = async (event) => {
     };
   }
 
-    // Si type es 'page', obtener información de la página (para last_edited_time)
-    // Si no, obtener los bloques hijos
-    const apiEndpoint = type === 'page' 
-      ? `https://api.notion.com/v1/pages/${pageId}`
-      : `https://api.notion.com/v1/blocks/${pageId}/children`;
+    if (type !== 'page') {
+      const data = await fetchAllBlockChildren(pageId, authToken);
+      return {
+        statusCode: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      };
+    }
     
-    // Hacer la petición a la API de Notion usando el token del usuario
-    const response = await fetch(apiEndpoint, {
+    // Obtener información de la página (last_edited_time, icono, portada...).
+    const response = await fetch(`https://api.notion.com/v1/pages/${encodeURIComponent(pageId)}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${authToken}`,

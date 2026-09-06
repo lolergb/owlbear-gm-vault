@@ -21,6 +21,7 @@ describe('AnalyticsService beta events', () => {
     service.mixpanelEnabled = true;
     service.mixpanelToken = 'mixpanel-test-token';
     service.mixpanelDistinctId = 'player-1';
+    service.isBeta = true;
     service.environment = 'beta';
     service.deployContext = 'deploy-preview';
     service.OBR = {
@@ -36,9 +37,11 @@ describe('AnalyticsService beta events', () => {
       expect(event.properties).toMatchObject({
         role: 'GM',
         feature: 'imports',
+        is_beta: true,
         environment: 'beta',
         deploy_context: 'deploy-preview'
       });
+      expect(typeof event.properties.is_beta).toBe('boolean');
     } finally {
       global.fetch = originalFetch;
       if (originalTextEncoder) global.TextEncoder = originalTextEncoder;

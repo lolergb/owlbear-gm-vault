@@ -13,6 +13,7 @@ import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=202608
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
 const VAULT_ANALYTICS_KEY_PREFIX = 'gm_vault_analytics_';
+const PRODUCTION_HOSTNAME = 'owlbear-gm-vault.netlify.app';
 
 /**
  * Servicio de Analytics
@@ -23,6 +24,7 @@ export class AnalyticsService {
     this.mixpanelToken = null;
     this.mixpanelEnabled = false;
     this.mixpanelDistinctId = null;
+    this.initializationTask = null;
     this.isBeta = false;
     this.environment = 'unknown';
     this.deployContext = 'unknown';
@@ -105,17 +107,30 @@ export class AnalyticsService {
     // Es beta si:
     // - Es un deploy-preview de Netlify
     // - Es localhost
-    // - No es el dominio de producción
+    // - Es un branch deploy de Netlify (cualquier hostname distinto al oficial)
     const isBeta = 
       origin.includes('deploy-preview') ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
-      hostname.includes('.local');
+      hostname.includes('.local') ||
+      (hostname.endsWith('.netlify.app') && hostname !== PRODUCTION_HOSTNAME);
     
     this.isBeta = isBeta;
     this.environment = isBeta ? 'beta' : 'production';
+    this.deployContext = this._detectDeployContext(hostname, origin);
     log(`📊 Entorno detectado: ${isBeta ? 'BETA' : 'PRODUCCIÓN'}`);
     return isBeta;
+  }
+
+  _detectDeployContext(hostname, origin) {
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('.local')) {
+      return 'dev';
+    }
+    if (origin.includes('deploy-preview')) return 'deploy-preview';
+    if (hostname.endsWith('.netlify.app') && hostname !== PRODUCTION_HOSTNAME) {
+      return 'branch-deploy';
+    }
+    return 'production';
   }
 
   /**
@@ -150,13 +165,15 @@ export class AnalyticsService {
    */
   showConsentBanner() {
     // Solo mostrar si no se ha establecido consent
-    if (this.getConsent() !== null) {
+    if (this.getConsent() !== null || document.getElementById('cookie-consent-banner')) {
       return;
     }
 
     const banner = document.createElement('div');
     banner.id = 'cookie-consent-banner';
     banner.className = 'cookie-consent-banner';
+    banner.setAttribute('role', 'region');
+    banner.setAttribute('aria-label', 'Analytics preferences');
 
     banner.innerHTML = `
       <div class="cookie-consent-content">
@@ -164,21 +181,39 @@ export class AnalyticsService {
           🍪 We use analytics to improve the extension. Do you want to help us by sharing anonymous usage data?
         </p>
         <div class="cookie-consent-actions">
-          <button id="cookie-accept" class="btn btn--primary btn--small">Accept</button>
-          <button id="cookie-reject" class="btn btn--ghost btn--small">Decline</button>
+          <button type="button" id="cookie-reject" class="btn btn--ghost">Decline</button>
+          <button type="button" id="cookie-accept" class="btn btn--primary">Accept</button>
         </div>
       </div>
     `;
 
     document.body.appendChild(banner);
 
+    // Scrollable views can reserve exactly the space covered by this banner.
+    const rootStyle = document.documentElement.style;
+    const updateConsentSpace = () => {
+      rootStyle.setProperty('--consent-banner-height',
+        `${Math.ceil(banner.getBoundingClientRect().height)}px`);
+    };
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateConsentSpace)
+      : null;
+    resizeObserver?.observe(banner);
+    updateConsentSpace();
+    const removeBanner = () => {
+      resizeObserver?.disconnect();
+      banner.remove();
+      rootStyle.removeProperty('--consent-banner-height');
+    };
+
     // Botón Accept
     const acceptBtn = banner.querySelector('#cookie-accept');
     acceptBtn.addEventListener('click', () => {
       this.setConsent(true);
-      banner.remove();
+      removeBanner();
       // Inicializar Mixpanel después del consent
       this.init();
+      banner.dispatchEvent(new Event('analytics-consent-changed'));
       // Nota: No trackeamos "accepted" aquí porque Mixpanel se inicializa después
       // El evento extension_opened ya indica que el usuario aceptó
     });
@@ -188,14 +223,24 @@ export class AnalyticsService {
     rejectBtn.addEventListener('click', () => {
       this.setConsent(false);
       // Nota: No podemos trackear el reject porque el usuario rechazó analytics
-      banner.remove();
+      removeBanner();
+      banner.dispatchEvent(new Event('analytics-consent-changed'));
     });
   }
 
   /**
    * Inicializa el servicio de analytics
    */
-  async init({ trackExtensionOpened = true, showConsentBanner = true } = {}) {
+  init(options = {}) {
+    if (!this.initializationTask) {
+      this.initializationTask = this._initialize(options).finally(() => {
+        this.initializationTask = null;
+      });
+    }
+    return this.initializationTask;
+  }
+
+  async _initialize({ trackExtensionOpened = true, showConsentBanner = true } = {}) {
     // Detectar si es beta
     const isBeta = this._detectBeta();
     
@@ -232,14 +277,21 @@ export class AnalyticsService {
       const response = await fetch('/.netlify/functions/get-mixpanel-token');
       if (response.ok) {
         const data = await response.json();
-        this.environment = this._normalizeEnum(
-          data.environment || this.environment,
+        const serverEnvironment = this._normalizeEnum(
+          data.environment,
           ['beta', 'production']
         );
-        this.deployContext = this._normalizeEnum(
+        const serverDeployContext = this._normalizeEnum(
           data.deployContext,
           ['production', 'deploy-preview', 'branch-deploy', 'dev']
         );
+        if (serverEnvironment !== 'unknown') {
+          this.environment = serverEnvironment;
+          this.isBeta = serverEnvironment === 'beta';
+        }
+        if (serverDeployContext !== 'unknown') {
+          this.deployContext = serverDeployContext;
+        }
         if (data.enabled && data.token) {
           this.mixpanelToken = data.token;
           this.mixpanelEnabled = true;
@@ -279,11 +331,16 @@ export class AnalyticsService {
    * @param {Object} properties - Propiedades adicionales
    */
   async trackEvent(eventName, properties = {}) {
-    if (!this.mixpanelEnabled || !this.mixpanelToken) {
-      return;
-    }
+    const time = Math.floor(Date.now() / 1000);
+    const vaultState = this.vaultState;
+    const vaultInstanceId = this.vaultInstanceId;
 
     try {
+      // Consent can be accepted while using the empty state. Preserve events
+      // raised while the token and user identity are still loading.
+      if (this.initializationTask) await this.initializationTask;
+      if (!this.mixpanelEnabled || !this.mixpanelToken) return;
+
       // Obtener rol del usuario
       let userRole = 'unknown';
       try {
@@ -299,12 +356,13 @@ export class AnalyticsService {
         properties: {
           token: this.mixpanelToken,
           distinct_id: this.mixpanelDistinctId,
-          time: Math.floor(Date.now() / 1000),
+          time,
           $insert_id: Math.random().toString(36).substring(2, 15),
           role: userRole,
-          ...(this.vaultInstanceId ? { vault_instance_id: this.vaultInstanceId } : {}),
-          vault_state: this.vaultState,
+          ...(vaultInstanceId ? { vault_instance_id: vaultInstanceId } : {}),
+          vault_state: vaultState,
           ...properties,
+          is_beta: this.isBeta,
           environment: this.environment,
           deploy_context: this.deployContext
         }
@@ -359,6 +417,31 @@ export class AnalyticsService {
    */
   trackExtensionOpened() {
     this.trackEvent('extension_opened');
+  }
+
+  trackAnnouncementViewed({ campaignId, campaignVersion, role } = {}) {
+    this.trackEvent('announcement_viewed', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
+  trackAnnouncementAction({ campaignId, campaignVersion, actionId, role } = {}) {
+    this.trackEvent('announcement_action_clicked', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      action_id: String(actionId || 'unknown').slice(0, 80),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
+  }
+
+  trackAnnouncementDismissed({ campaignId, campaignVersion, role } = {}) {
+    this.trackEvent('announcement_dismissed', {
+      campaign_id: String(campaignId || 'unknown').slice(0, 80),
+      campaign_version: String(campaignVersion || 'unknown').slice(0, 40),
+      role: ['GM', 'PLAYER'].includes(role) ? role : 'unknown'
+    });
   }
 
   /**
@@ -487,6 +570,12 @@ export class AnalyticsService {
    * Returns true only when a new milestone was emitted.
    */
   trackFirstUserContentCreated({ creationMethod, pageType, contentOrigin = 'user' } = {}) {
+    if (this.initializationTask) {
+      this.initializationTask.then(() => this.trackFirstUserContentCreated({
+        creationMethod, pageType, contentOrigin
+      })).catch(() => {});
+      return false;
+    }
     if (!this.mixpanelEnabled || !this.mixpanelToken) return false;
     if (this.firstUserContentCreatedTracked) return false;
 

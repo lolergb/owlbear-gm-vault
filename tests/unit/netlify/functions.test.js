@@ -80,6 +80,54 @@ describe('Netlify function ES module exports', () => {
     }
   });
 
+  it('pagina todos los bloques al leer el contenido de una página', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          object: 'list',
+          type: 'block',
+          block: {},
+          results: [{ id: 'block-1', type: 'paragraph' }],
+          has_more: true,
+          next_cursor: 'cursor-2'
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          object: 'list',
+          type: 'block',
+          block: {},
+          results: [{ id: 'block-2', type: 'image' }],
+          has_more: false,
+          next_cursor: null
+        })
+      });
+
+    try {
+      const response = await notionHandler(event('GET', {
+        pageId: 'long-page'
+      }, {
+        'X-Notion-Token': 'test-token'
+      }), {});
+      const body = JSON.parse(response.body);
+
+      expect(response.statusCode).toBe(200);
+      expect(body.results.map(block => block.id)).toEqual(['block-1', 'block-2']);
+      expect(body.has_more).toBe(false);
+      expect(body.next_cursor).toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[0][0]).toContain('/children?page_size=100');
+      expect(global.fetch.mock.calls[1][0]).toContain('start_cursor=cursor-2');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it.each([
     ['get-default-token', defaultTokenHandler],
     ['get-debug-mode', debugModeHandler],
@@ -110,10 +158,33 @@ describe('Mixpanel deployment metadata', () => {
       expect(response.statusCode).toBe(200);
       expect(body).toMatchObject({
         enabled: true,
+        isBeta: environment === 'unknown' ? null : environment === 'beta',
         environment,
         deployContext: environment === 'unknown' ? 'unknown' : deployContext
       });
       expect(response.headers['Cache-Control']).toBe('no-store');
+    } finally {
+      restoreEnv('MIXPANEL_TOKEN', originalToken);
+      restoreEnv('CONTEXT', originalContext);
+    }
+  });
+
+  it('falls back to the Netlify hostname when CONTEXT is unavailable', async () => {
+    const originalToken = process.env.MIXPANEL_TOKEN;
+    const originalContext = process.env.CONTEXT;
+    process.env.MIXPANEL_TOKEN = 'mixpanel-test-token';
+    delete process.env.CONTEXT;
+
+    try {
+      const response = await mixpanelTokenHandler(event('GET', {}, {
+        host: 'develop--owlbear-gm-vault.netlify.app'
+      }), {});
+
+      expect(JSON.parse(response.body)).toMatchObject({
+        isBeta: true,
+        environment: 'beta',
+        deployContext: 'branch-deploy'
+      });
     } finally {
       restoreEnv('MIXPANEL_TOKEN', originalToken);
       restoreEnv('CONTEXT', originalContext);
@@ -262,7 +333,7 @@ describe('Notion proxy security contract', () => {
         `https://api.notion.com/v1/blocks/${childBlockId}`
       );
       expect(global.fetch.mock.calls[1][0]).toBe(
-        `https://api.notion.com/v1/blocks/${childBlockId}/children`
+        `https://api.notion.com/v1/blocks/${childBlockId}/children?page_size=100`
       );
       for (const [, options] of global.fetch.mock.calls) {
         expect(options.headers.Authorization).toBe(`Bearer ${DEFAULT_SECRET}`);
@@ -363,6 +434,8 @@ describe('Netlify static asset cache policy', () => {
     const legacyBuildTag = '20260722-4';
     const metadataBuildTag = '20260815-1';
     const buildTag = '20260816-1';
+    const welcomeBuildTag = '20260906-9';
+    const rendererBuildTag = '20260906-10';
     const storageBuildTag = '20260812-1';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
@@ -373,19 +446,22 @@ describe('Netlify static asset cache policy', () => {
     const parserJs = readProjectFile('js/parsers/ConfigParser.js');
     const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
 
-    expect(indexHtml).toContain(`href="css/app.css?v=${legacyBuildTag}"`);
-    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${legacyBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
+    expect(indexHtml).toContain(`href="css/app.css?v=${welcomeBuildTag}"`);
+    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${welcomeBuildTag}"`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${rendererBuildTag}"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${rendererBuildTag}`);
+    expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
+    expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
+    expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
     expect(mainJs).toContain(`2.1.0-beta.2`);
     expect(controllerJs).toContain(`../services/BroadcastService.js?v=${metadataBuildTag}`);
-    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(uiRendererJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(controllerJs).toContain(`../services/NotionService.js?v=${storageBuildTag}`);
     expect(controllerJs).toContain(`../services/StorageService.js?v=${storageBuildTag}`);
     expect(controllerJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
-    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${legacyBuildTag}`);
+    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${rendererBuildTag}`);
     expect(controllerJs).toContain(`../utils/helpers.js?v=${legacyBuildTag}`);
     expect(notionServiceJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
     expect(parserJs).toContain(`../models/Config.js?v=${legacyBuildTag}`);
