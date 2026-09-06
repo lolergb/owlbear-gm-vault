@@ -15,6 +15,9 @@ const GM_ONLY_CODE_TAG = '🔒 GM';
 /** Tag en bloques code que marca contenido oculto para todos (GM y players) */
 const HIDDEN_CODE_TAG = '🔒 HIDDEN';
 
+// Their descendants belong to another page/database, not to this page's body.
+const PAGE_BOUNDARY_BLOCK_TYPES = new Set(['child_page', 'child_database', 'link_to_page']);
+
 /**
  * Renderizador de contenido de Notion
  */
@@ -180,7 +183,7 @@ export class NotionRenderer {
     if (!blocks || blocks.length === 0) return false;
     for (const block of blocks) {
       if (this._getCodeBlockGmTag(block) || this._blockRichTextContainsGmTag(block)) return true;
-      if (block.has_children && this.notionService) {
+      if (this._hasInlineChildren(block) && this.notionService) {
         const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
         if (await this._hasGmOnlyContentInDescendants(children)) return true;
       }
@@ -199,7 +202,7 @@ export class NotionRenderer {
     if (!blocks || blocks.length === 0) return false;
     for (const block of blocks) {
       if (this._getCodeBlockHiddenTag(block) || this._blockRichTextContainsHiddenTag(block)) return true;
-      if (block.has_children && this.notionService) {
+      if (this._hasInlineChildren(block) && this.notionService) {
         const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
         if (await this._hasHiddenContentInDescendants(children)) return true;
       }
@@ -668,6 +671,13 @@ export class NotionRenderer {
 
       case 'link_to_page':
         return this._renderLinkToPage(block);
+
+      case 'child_page':
+        return `<div class="notion-child-page">${this._renderPageMention({
+          type: 'mention',
+          plain_text: block.child_page?.title || 'Page',
+          mention: { type: 'page', page: { id: block.id } }
+        })}</div>`;
       
       case 'column_list':
         return '<div class="notion-column-list">[Columnas - Procesando...]</div>';
@@ -1196,7 +1206,7 @@ export class NotionRenderer {
       // Notion allows several additional block types (quotes, paragraphs,
       // to-dos, templates, etc.) to contain children. Preserve those nested
       // blocks instead of rendering only the parent's own rich text.
-      if (block.has_children) {
+      if (this._hasInlineChildren(block)) {
         html += await this._renderBlockWithChildren(block, typesArray, headingLevelOffset);
         continue;
       }
@@ -1215,11 +1225,20 @@ export class NotionRenderer {
   }
 
   /**
+   * Only traverse content nested within the current page. A child_page may
+   * also have children, but expanding it here would embed a separate page.
+   * @private
+   */
+  _hasInlineChildren(block) {
+    return !!block?.has_children && !PAGE_BOUNDARY_BLOCK_TYPES.has(block.type);
+  }
+
+  /**
    * Fetch and render the direct children of a block.
    * @private
    */
   async _renderChildren(block, typesArray, headingLevelOffset) {
-    if (!block?.has_children || !this.notionService) return '';
+    if (!this._hasInlineChildren(block) || !this.notionService) return '';
     const children = await this.notionService.fetchChildBlocks(block.id, this.useCache);
     if (!children || children.length === 0) return '';
     return this.renderBlocks(children, typesArray, headingLevelOffset);
@@ -1284,10 +1303,10 @@ export class NotionRenderer {
   _matchesFilter(block, typesArray) {
     if (!typesArray) return true;
     
-    // Los toggles, column_list, callouts, synced_block y bloques con hijos siempre se procesan 
+    // Los toggles, column_list, callouts, synced_block y bloques con hijos de contenido siempre se procesan
     // para buscar contenido filtrado dentro de ellos
     if (block.type === 'toggle' || block.type === 'column_list' || block.type === 'callout' || 
-        block.type === 'synced_block' || block.has_children) {
+        block.type === 'synced_block' || this._hasInlineChildren(block)) {
       return true;
     }
     

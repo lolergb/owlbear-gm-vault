@@ -1241,7 +1241,6 @@ export class UIRenderer {
       const actions = document.createElement('div');
       actions.className = 'form__actions';
       actions.style.display = 'flex';
-      actions.style.gap = 'var(--spacing-md)';
 
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'btn btn--ghost btn--flex';

@@ -26,7 +26,8 @@ const CONTENT_TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml; charset=utf-8',
-  '.webp': 'image/webp'
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2'
 };
 
 function setDevelopmentHeaders(response, request) {
@@ -109,6 +110,18 @@ const server = http.createServer(async (request, response) => {
   try {
     const requestUrl = new URL(request.url || '/', `http://${HOST}:${PORT}`);
     let pathname = decodeURIComponent(requestUrl.pathname);
+    // Local-only preview: real UI/controllers, with an isolated Owlbear stand-in.
+    if (pathname === '/__dev/welcome' || pathname === '/__dev/start') {
+      const source = await readFile(resolve(ROOT, 'index.html'), 'utf8');
+      const preview = source
+        .replace('<head>', '<head><base href="/">')
+        .replace(/<script type="module" src="js\/main\.js[^\"]*"><\/script>/,
+          '<script type="module" src="/scripts/welcome-preview.js"></script>');
+      response.statusCode = 200;
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.end(preview);
+      return;
+    }
     if (pathname.endsWith('/')) pathname += 'index.html';
 
     let filePath = resolve(ROOT, `.${pathname}`);

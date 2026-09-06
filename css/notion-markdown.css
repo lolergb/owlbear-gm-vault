@@ -192,7 +192,7 @@ body.role-player .notion-gm-only {
   width: 100%;
 }
 
-.notion-content .notion-image img {
+.notion-content .notion-image .notion-image-container > img {
   width: 100%;
   height: auto;
   border-radius: var(--radius-sm);

@@ -434,6 +434,8 @@ describe('Netlify static asset cache policy', () => {
     const legacyBuildTag = '20260722-4';
     const metadataBuildTag = '20260815-1';
     const buildTag = '20260816-1';
+    const welcomeBuildTag = '20260906-9';
+    const rendererBuildTag = '20260906-10';
     const storageBuildTag = '20260812-1';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
@@ -444,19 +446,22 @@ describe('Netlify static asset cache policy', () => {
     const parserJs = readProjectFile('js/parsers/ConfigParser.js');
     const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
 
-    expect(indexHtml).toContain(`href="css/app.css?v=${legacyBuildTag}"`);
-    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${legacyBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${buildTag}"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${buildTag}`);
+    expect(indexHtml).toContain(`href="css/app.css?v=${welcomeBuildTag}"`);
+    expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${welcomeBuildTag}"`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${rendererBuildTag}"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${rendererBuildTag}`);
+    expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
+    expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
+    expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
     expect(mainJs).toContain(`2.1.0-beta.2`);
     expect(controllerJs).toContain(`../services/BroadcastService.js?v=${metadataBuildTag}`);
-    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${buildTag}`);
+    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(uiRendererJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(controllerJs).toContain(`../services/NotionService.js?v=${storageBuildTag}`);
     expect(controllerJs).toContain(`../services/StorageService.js?v=${storageBuildTag}`);
     expect(controllerJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
-    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${legacyBuildTag}`);
+    expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${rendererBuildTag}`);
     expect(controllerJs).toContain(`../utils/helpers.js?v=${legacyBuildTag}`);
     expect(notionServiceJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
     expect(parserJs).toContain(`../models/Config.js?v=${legacyBuildTag}`);

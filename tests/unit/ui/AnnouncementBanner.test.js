@@ -81,6 +81,24 @@ describe('AnnouncementBanner', () => {
     expect(document.getElementById('gm-vault-announcement-banner')).toBeNull();
   });
 
+  it('places supporting actions before the primary regardless of campaign order and preserves their handlers', () => {
+    const { banner, analyticsService } = createBanner();
+    const campaign = { ...CAMPAIGN, actions: [
+      ...CAMPAIGN.actions,
+      { id: 'feedback', label: 'Feedback', url: 'https://example.com/feedback', variant: 'ghost' }
+    ] };
+    banner.show({ campaign, role: 'GM', userId: 'gm-action-order' });
+    const buttons = [...document.querySelector('.announcement-banner__actions').children];
+    expect(buttons.map(button => button.textContent)).toEqual(['Got it', 'Feedback', 'Read more']);
+    expect(campaign.actions[0].id).toBe('read-more');
+    buttons[2].dispatchEvent(new MouseEvent('click'));
+    expect(analyticsService.trackAnnouncementAction).toHaveBeenCalledWith({
+      campaignId: 'release-update', campaignVersion: '2', actionId: 'read-more', role: 'GM'
+    });
+    buttons[0].click();
+    expect(document.querySelector('.announcement-banner')).toBeNull();
+  });
+
   it('persists dismissal per campaign version and user', () => {
     const first = createBanner();
     first.banner.show({ campaign: CAMPAIGN, role: 'GM', userId: 'gm-dismiss' });

@@ -37,7 +37,7 @@ describe('ExtensionController config loading', () => {
     expect(controller.config.categories).toHaveLength(0);
   });
 
-  it('uses the demo only when no local Master GM config exists', async () => {
+  it('starts empty without fetching or saving a demo when no local vault exists', async () => {
     const controller = createController({
       isGM: true,
       isCoGM: false,
@@ -46,9 +46,10 @@ describe('ExtensionController config loading', () => {
 
     await controller._loadConfig();
 
-    expect(controller._fetchDefaultConfig).toHaveBeenCalledTimes(1);
-    expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.config.categories[0].name).toBe('Demo');
+    expect(controller._fetchDefaultConfig).not.toHaveBeenCalled();
+    expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
+    expect(controller.config.categories).toHaveLength(0);
+    expect(controller.config.getTotalPageCount()).toBe(0);
   });
 
   it('accepts an empty Co-GM fallback vault', async () => {

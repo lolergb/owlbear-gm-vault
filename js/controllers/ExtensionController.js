@@ -42,7 +42,7 @@ import { StorageService } from '../services/StorageService.js?v=20260812-1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260816-1';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-9';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import {
   getVaultState,
@@ -51,8 +51,8 @@ import {
 } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260722-4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=20260816-1';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=20260906-10';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=20260906-9';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=20260722-4';
@@ -61,7 +61,10 @@ import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=20260722-4';
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
-import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260819-1';
+import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-9';
+import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-9';
+import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
+import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 
 /**
@@ -106,6 +109,8 @@ export class ExtensionController {
       analyticsService: this.analyticsService
     });
     this.announcementTask = null;
+    this.vaultEmptyState = new VaultEmptyState({ analyticsService: this.analyticsService });
+    this.exampleLoadPending = false;
     this.announcementCancelled = false;
 
     // Elementos DOM
@@ -220,7 +225,7 @@ export class ExtensionController {
     } else {
       // Modo normal: renderizar lista de páginas
       await this.render();
-      this._scheduleAnnouncement();
+      if (!this._canShowVaultEmptyState()) this._scheduleAnnouncement();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -445,6 +450,11 @@ export class ExtensionController {
       ? { isGM: false, isCoGM: false }
       : { isGM: this.isGM, isCoGM: this.isCoGM };
     
+    if (this._showVaultEmptyState()) {
+      this._updateContainerClass();
+      return;
+    }
+    this.vaultEmptyState?.remove();
     this.uiRenderer.renderAllCategories(
       this.config,
       this.pagesContainer,
@@ -1180,7 +1190,7 @@ export class ExtensionController {
    * @private
    */
   _getFolderOptions(excludePath = []) {
-    const options = [{ value: '', label: '/ (Root)' }];
+    const options = [{ value: '', label: 'Root level', path: [], depth: 0 }];
     const excludePathStr = this._pathToString(excludePath);
 
     const addFolders = (categories, path = []) => {
@@ -1195,12 +1205,12 @@ export class ExtensionController {
           continue;
         }
         
-        // Usar non-breaking spaces (\u00A0) para indentación visible en <select>
-        const indent = '\u00A0\u00A0\u00A0\u00A0'.repeat(path.length);
-        const prefix = path.length > 0 ? '└─ ' : '';
         options.push({
-          value: currentPath.join('/'),
-          label: `${indent}${prefix}📁 ${cat.name}`
+          value: currentPathStr,
+          label: cat.name,
+          path: currentPath,
+          depth: path.length,
+          searchText: currentPath.join(' / ')
         });
         
         // Recursivamente agregar subcarpetas
@@ -1309,7 +1319,7 @@ export class ExtensionController {
 
     this._showModalForm('Edit Folder', [
       { name: 'name', label: 'Name', type: 'text', value: category.name, required: true },
-      { name: 'folder', label: 'Parent Folder', type: 'select', value: folderValue, options: folderOptions }
+      { name: 'folder', label: 'Parent Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions }
     ], async (data) => {
       const nameChanged = data.name && data.name !== category.name;
       const folderChanged = data.folder !== currentFolderPathStr;
@@ -1841,16 +1851,28 @@ export class ExtensionController {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
+    const consentBanner = document.getElementById('cookie-consent-banner');
+    const onConsentChanged = () => {
+      modal.querySelector('input, textarea, select, #modal-cancel')?.focus();
+    };
+    consentBanner?.addEventListener('analytics-consent-changed', onConsentChanged);
+    const cleanupConsent = () => {
+      consentBanner?.removeEventListener('analytics-consent-changed', onConsentChanged);
+    };
+
     const form = modal.querySelector('#modal-form');
     const cancelBtn = modal.querySelector('#modal-cancel');
 
     fields.forEach(field => {
-      if (field.type === 'select' && field.searchable) {
+      if (field.type === 'select' && field.folderPicker) {
+        this._setupFolderSelect(modal, field);
+      } else if (field.type === 'select' && field.searchable) {
         this._setupSearchableSelect(modal, field);
       }
     });
 
     const close = () => {
+      cleanupConsent();
       overlay.remove();
       if (onCancel) onCancel();
     };
@@ -1877,6 +1899,7 @@ export class ExtensionController {
         }
       });
       
+      cleanupConsent();
       overlay.remove();
       if (onSubmit) onSubmit(formData);
     });
@@ -1886,6 +1909,11 @@ export class ExtensionController {
     if (firstInput) {
       setTimeout(() => firstInput.focus(), 100);
     }
+  }
+
+  _setupFolderSelect(modal, field) {
+    const select = modal.querySelector(`#field-${field.name}`);
+    return select ? new FolderSelect(select, field) : null;
   }
 
   /**
@@ -2121,6 +2149,8 @@ export class ExtensionController {
     // Limpiar broadcast
     this.broadcastService.cleanup();
     this.announcementBanner.remove();
+    this.vaultEmptyState?.remove();
+    this.stopResponsiveButtonGroups?.();
     
     log('✅ Recursos limpiados');
   }
@@ -2131,6 +2161,69 @@ export class ExtensionController {
    */
   _scheduleAnnouncement() {
     this.announcementTask = this._showConfiguredAnnouncement();
+  }
+
+  /** An empty folder is already user content; keep it in the normal list. */
+  _canShowVaultEmptyState() {
+    return Boolean(this.config && this.isGM && !this.isCoGM && !this.playerViewMode &&
+      !this.announcementCancelled && !document.documentElement.classList.contains('modal-mode') &&
+      !this.config.pages?.length && !this.config.categories?.length);
+  }
+
+  _showVaultEmptyState() {
+    return this.vaultEmptyState?.show({
+      container: this.pagesContainer,
+      canShow: () => this._canShowVaultEmptyState(),
+      onAddPage: () => this._addPage({ openAfterSave: true }),
+      onLoadExamples: () => this._loadExampleVault()
+    });
+  }
+
+  /** Fetch and persist the demo only after an explicit choice in an empty vault. */
+  async _loadExampleVault() {
+    if (this.exampleLoadPending || !this._canShowVaultEmptyState()) return false;
+    this.exampleLoadPending = true;
+    const previousConfig = this.config;
+    try {
+      let source;
+      try {
+        source = await this._fetchDefaultConfig();
+      } catch {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      // Edits, imports or role changes during the request must never be overwritten.
+      if (!this._canShowVaultEmptyState() || this.config !== previousConfig) return false;
+      if (!source || !this.configParser.validate(source).valid) {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      const exampleConfig = this.configParser.parse(source);
+      if (!exampleConfig.getTotalPageCount()) {
+        throw new Error('The example vault could not be loaded. Try again.');
+      }
+      markContentOrigin(exampleConfig.categories, exampleConfig.pages, 'demo');
+      const saved = await this.saveConfig(exampleConfig, { render: false });
+      if (saved === false) {
+        this.config = previousConfig;
+        this.configBuilder = new ConfigBuilder(previousConfig);
+        this.uiRenderer.setConfig(previousConfig);
+        throw new Error('The example vault could not be saved. Free up local storage and try again.');
+      }
+      this.notionRenderer.setDependencies({ config: this.config });
+      this.analyticsService.setVaultContext({ roomId: this.roomId, vaultState: 'demo' });
+      if (this.analyticsService.getConsent() === true) {
+        this.analyticsService.trackEvent('demo_vault_loaded');
+      }
+      await this.render();
+      this._goBackToList();
+      const collapseButton = document.getElementById('collapse-all-button');
+      if (collapseButton) this._toggleCollapseAll(collapseButton, false);
+      this.pagesContainer?.scrollTo?.({ top: 0 });
+      this.pagesContainer?.querySelector('.page-button')?.focus();
+      this._scheduleAnnouncement();
+      return true;
+    } finally {
+      this.exampleLoadPending = false;
+    }
   }
 
   /**
@@ -2267,6 +2360,8 @@ export class ExtensionController {
 
     // Modal Manager
     this.modalManager.init(document.body);
+    this.stopResponsiveButtonGroups?.();
+    this.stopResponsiveButtonGroups = watchResponsiveButtonGroups(document.body);
 
     // Configurar botón back
     this._setupBackButton();
@@ -2349,6 +2444,7 @@ export class ExtensionController {
 
     // Limpiar referencia a página actual
     this.currentPage = null;
+    this._showVaultEmptyState();
   }
 
   /**
@@ -2989,7 +3085,7 @@ export class ExtensionController {
         required: true,
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
+      { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
@@ -3064,7 +3160,7 @@ export class ExtensionController {
         required: true,
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'folder', label: 'Folder', type: 'select', value: folderValue, options: folderOptions },
+      { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
       { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
@@ -3330,6 +3426,7 @@ export class ExtensionController {
     if (pageTitle) pageTitle.textContent = 'Settings';
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
+    this._hidePageDetailButtons();
 
     // Actualizar clase del container
     this._updateContainerClass();
@@ -3352,7 +3449,7 @@ export class ExtensionController {
       if (exportVaultForm) exportVaultForm.style.display = 'none';
       if (feedbackForm) feedbackForm.style.display = '';
     } else if (this.isCoGM) {
-      // Co-GM: ocultar Notion Token, mostrar Export vault (con vault status) y Feedback
+      // Co-GM: ocultar Notion Token, mostrar Export vault y Feedback
       log('⚙️ Mostrando settings para Co-GM (export + feedback)');
       if (notionTokenForm) notionTokenForm.style.display = 'none';
       if (exportVaultForm) exportVaultForm.style.display = '';
@@ -3399,100 +3496,32 @@ export class ExtensionController {
       }
     }
 
-    // Renderizar vault status box (para GM y Co-GM)
-    this._renderVaultStatusBox();
+    // Mantener la descripción del backup ajustada al rol y al tamaño del vault.
+    this._updateVaultSettingsDescription();
 
     // Configurar event listeners de settings (solo una vez)
     this._setupSettingsEventListeners();
   }
 
   /**
-   * Renderiza el vault status box en settings
+   * Actualiza la descripción del backup según rol y capacidad de sincronización.
    * @private
    */
-  async _renderVaultStatusBox() {
-    // Eliminar vault status anterior si existe
-    const existing = document.getElementById('vault-status-box');
-    if (existing) existing.remove();
-
-    // Solo para GM (Master o Co-GM)
+  _updateVaultSettingsDescription() {
     if (!this.isGM) return;
 
-    const exportVaultForm = document.querySelector('.form--separated');
-    if (!exportVaultForm) return;
-
-    // Calcular stats del vault
-    const config = this.config || { categories: [] };
-    const configJson = JSON.stringify(config);
-    const configSize = new TextEncoder().encode(configJson).length;
-    const canSync = configSize < 16 * 1024; // 16KB límite
-
-    let pageCount = (config.pages || []).length;
-    let categoryCount = 0;
-    const countItems = (categories) => {
-      for (const cat of categories || []) {
-        categoryCount++;
-        pageCount += (cat.pages || []).length;
-        if (cat.categories) countItems(cat.categories);
-      }
-    };
-    countItems(config.categories);
-
-    const vaultStatusBox = document.createElement('div');
-    vaultStatusBox.id = 'vault-status-box';
+    const description = document.querySelector('#settings-container .form--separated .settings__description');
+    if (!description) return;
 
     if (this.isCoGM) {
-      // Co-GM: modo solo lectura
-      const owner = await this.storageService.getVaultOwner();
-      const players = await this.OBR?.party?.getPlayers?.() || [];
-      const masterGMName = players.find(player => player.id === owner?.id)?.name || 'Master GM';
-      vaultStatusBox.innerHTML = `
-        <div class="vault-status vault-status--cogm">
-          <div class="vault-status__icon">👁️</div>
-          <div class="vault-status__info">
-            <span class="vault-status__title">Read-only mode</span>
-            <span class="vault-status__detail">Viewing ${escapeHtml(masterGMName)}'s vault</span>
-            <span class="vault-status__detail">${pageCount} pages in ${categoryCount} folders</span>
-          </div>
-        </div>
-      `;
-      
-      // Actualizar descripción para Co-GM
-      const exportDescription = exportVaultForm.querySelector('.settings__description');
-      if (exportDescription) {
-        exportDescription.textContent = 'You can download a copy of the vault. Share content with players using the share button on pages.';
-      }
-    } else {
-      // Master GM: mostrar info completa con recomendación de backup
-      const syncMessage = canSync 
-        ? `<span class="vault-status__sync vault-status__sync--ok">✅ Can sync to Co-GM</span>`
-        : `<span class="vault-status__sync vault-status__sync--warn">⚠️ Too large to sync (>16KB)</span>`;
-
-      vaultStatusBox.innerHTML = `
-        <div class="vault-status vault-status--master">
-          <div class="vault-status__icon">👑</div>
-          <div class="vault-status__info">
-            <span class="vault-status__title">Master GM</span>
-            <span class="vault-status__detail">${(configSize / 1024).toFixed(1)} KB • ${pageCount} pages • ${categoryCount} folders</span>
-            ${syncMessage}
-          </div>
-        </div>
-      `;
-      
-      // Actualizar descripción para Master GM
-      const exportDescription = exportVaultForm.querySelector('.settings__description');
-      if (exportDescription) {
-        exportDescription.textContent = canSync
-          ? "Save and reuse your GM Vault. It's recommended to make regular backups. Your vault syncs automatically to Co-GMs."
-          : "Save and reuse your GM Vault. Your vault is too large (>16KB) to sync with Co-GMs. Make regular backups.";
-      }
+      description.textContent = 'You can download a copy of the vault. Share content with players using the share button on pages.';
+      return;
     }
 
-    // Inyectar vault status como primer hijo de .settings__content
-    const settingsContent = document.querySelector('#settings-container .settings__content');
-    if (settingsContent) {
-      settingsContent.insertBefore(vaultStatusBox, settingsContent.firstChild);
-    }
+    const configSize = new TextEncoder().encode(JSON.stringify(this.config || { categories: [] })).length;
+    description.textContent = configSize < 16 * 1024
+      ? "Save and reuse your GM Vault. It's recommended to make regular backups. Your vault syncs automatically to Co-GMs."
+      : "Save and reuse your GM Vault. Your vault is too large (>16KB) to sync with Co-GMs. Make regular backups.";
   }
 
   /**
@@ -4325,10 +4354,8 @@ export class ExtensionController {
           <input type="hidden" name="import-mode" value="append" />
 
           <div class="form__field import-destination-field">
-            <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
-            <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
-            <select id="field-destination" name="destination" class="select select--searchable-source" data-searchable-select="true" hidden aria-hidden="true" tabindex="-1"></select>
-            <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+            <label class="form__label" for="field-destination">Destination folder</label>
+            <select id="field-destination" name="destination" class="select"></select>
             <span class="form__help import-destination-help">Imported content is placed under this folder when adding to the vault.</span>
           </div>
           
@@ -4361,12 +4388,10 @@ export class ExtensionController {
       // Insertar antes del progress
       progressEl.insertAdjacentHTML('beforebegin', optionsHtml);
 
-      this._setupSearchableSelect(document, {
+      const destinationPicker = this._setupFolderSelect(modal, {
         name: 'destination',
-        options: destinationOptions,
-        visibleOptions: 7,
-        resultLabel: 'folder',
-        searchPlaceholder: 'Search folders...'
+        label: 'Destination folder',
+        options: destinationOptions
       });
 
       // Botón "Back" - volver a la selección de páginas
@@ -4399,9 +4424,8 @@ export class ExtensionController {
         } else {
           destinationSelect.value = selectedDestinationId || 'root';
         }
-        document.querySelectorAll('#field-destination-listbox [role="option"]').forEach(option => {
-          option.setAttribute('aria-selected', String(option.dataset.value === selectedDestinationId));
-        });
+        destinationPicker?.close(false);
+        destinationPicker?.refresh();
       };
       modeInputs.forEach(input => input.addEventListener('change', syncDestinationState));
       syncDestinationState();
@@ -4615,13 +4639,14 @@ export class ExtensionController {
     searchInput.focus();
   }
 
-  _flattenCategoryOptions(categories, depth = 0) {
+  _flattenCategoryOptions(categories, depth = 0, parentPath = []) {
     const options = [];
     for (const category of categories || []) {
       if (!category?.id) continue;
-      const label = `${'— '.repeat(depth)}${category.name || 'Untitled folder'}`;
-      options.push({ value: category.id, label, searchText: label });
-      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1));
+      const label = category.name || 'Untitled folder';
+      const path = [...parentPath, label];
+      options.push({ value: category.id, label, path, depth, searchText: path.join(' / ') });
+      options.push(...this._flattenCategoryOptions(category.items?.filter(item => item?.type === 'category') || [], depth + 1, path));
     }
     return options;
   }
@@ -4733,11 +4758,8 @@ export class ExtensionController {
       ? ''
       : `
         <div class="form__field import-destination-field">
-          <label class="form__label" for="field-destination-search">Destination for added content</label>
-          <input type="search" id="field-destination-search" class="input" placeholder="Search folders..." aria-label="Search destination folders" autocomplete="off" spellcheck="false">
-          <span id="field-destination-search-status" class="form__help form__search-status" role="status" aria-live="polite"></span>
-          <select id="field-destination" class="select select--searchable-source" hidden aria-hidden="true" tabindex="-1">${destinationMarkup}</select>
-          <div id="field-destination-listbox" class="select select--searchable" role="listbox" tabindex="0" aria-labelledby="field-destination-search"></div>
+          <label class="form__label" for="field-destination">Destination folder</label>
+          <select id="field-destination" name="destination" class="select">${destinationMarkup}</select>
           <span class="form__help import-destination-help">Used only when adding the backup without combining or replacing.</span>
         </div>
       `;
@@ -4774,15 +4796,9 @@ export class ExtensionController {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     log('Modal created:', modal);
-    if (!isEmptyVault) {
-      this._setupSearchableSelect(modal, {
-        name: 'destination',
-        options: destinationOptions.map(option => ({ ...option, searchText: option.label })),
-        visibleOptions: 7,
-        resultLabel: 'folder',
-        searchPlaceholder: 'Search folders...'
-      });
-    }
+    const destinationPicker = !isEmptyVault ? this._setupFolderSelect(modal, {
+      name: 'destination', label: 'Destination folder', options: destinationOptions
+    }) : null;
 
     // Handlers de botones
     const cancelBtn = modal.querySelector('#json-import-cancel');
@@ -4800,6 +4816,7 @@ export class ExtensionController {
     const updateDestinationVisibility = () => {
       if (!destinationField) return;
       const mode = modal.querySelector('input[name="json-import-mode"]:checked')?.value;
+      destinationPicker?.close(false);
       destinationField.classList.toggle('hidden', mode !== 'append');
     };
 
@@ -5268,9 +5285,7 @@ export class ExtensionController {
    * Toggle collapse/expand all folders
    * @private
    */
-  _toggleCollapseAll(button) {
-    const isCollapsed = button.dataset.collapsed === 'true';
-    const newState = !isCollapsed;
+  _toggleCollapseAll(button, newState = button.dataset.collapsed !== 'true') {
     
     // Track collapse all action
     this.analyticsService.trackCollapseAllFolders(newState);
@@ -5280,6 +5295,7 @@ export class ExtensionController {
       const newSrc = newState ? 'img/icon-collapse-true.svg' : 'img/icon-collapse-false.svg';
       icon.style.maskImage = `url('${newSrc}')`;
       icon.style.webkitMaskImage = `url('${newSrc}')`;
+      icon.setAttribute('aria-label', newState ? 'Expand all' : 'Collapse all');
     }
     button.dataset.collapsed = newState.toString();
     button.title = newState ? 'Expand all folders' : 'Collapse all folders';
@@ -5301,6 +5317,7 @@ export class ExtensionController {
         }
         collapseBtn.style.maskImage = `url('${folderSrc}')`;
         collapseBtn.style.webkitMaskImage = `url('${folderSrc}')`;
+        collapseBtn.setAttribute('aria-label', newState ? 'Expand' : 'Collapse');
 
         if (categoryName) {
           const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
@@ -5468,8 +5485,9 @@ export class ExtensionController {
       { 
         name: 'parentFolder', 
         label: 'Parent folder', 
-        type: 'select', 
-        options: [{ value: '', label: '— Root level —' }, ...folderOptions],
+        type: 'select',
+        folderPicker: true,
+        options: [{ value: '', label: 'Root level', path: [], depth: 0 }, ...folderOptions],
         required: false 
       }
     ], async (data) => {
@@ -5502,13 +5520,13 @@ export class ExtensionController {
    * Añade una nueva página
    * @private
    */
-  async _addPage() {
+  async _addPage({ openAfterSave = false } = {}) {
     // Obtener lista de carpetas para selector
     const folderOptions = this._getCategoryOptions();
     
     // Siempre incluir opción de root level
     const allOptions = [
-      { value: '', label: '— Root level —' },
+      { value: '', label: 'Root level', path: [], depth: 0 },
       ...folderOptions
     ];
     
@@ -5525,7 +5543,8 @@ export class ExtensionController {
       { 
         name: 'parentFolder', 
         label: 'Folder', 
-        type: 'select', 
+        type: 'select',
+        folderPicker: true,
         options: allOptions,
         required: false 
       },
@@ -5564,7 +5583,11 @@ export class ExtensionController {
         }
       }
       
-        await this.saveConfig(this.config);
+        const saved = await this.saveConfig(this.config);
+        if (saved === false) {
+          this.uiRenderer.showErrorToast('Page could not be saved', 'Free up local storage and try again.');
+          return;
+        }
         const pageType = this._detectPageType(safeUrl);
         this.analyticsService.trackPageAdded(data.name, pageType, {
           url: safeUrl,
@@ -5577,7 +5600,15 @@ export class ExtensionController {
           pageType,
           contentOrigin: 'user'
         });
-    });
+        if (openAfterSave) {
+          const savedPage = this.config.findPageById(newPage.id);
+          const categoryPath = data.parentFolder ? data.parentFolder.split('/') : [];
+          const parent = categoryPath.length ? this._findCategoryByPath(categoryPath) : this.config;
+          const pageIndex = parent?.pages.findIndex(page => page.id === newPage.id) ?? 0;
+          if (savedPage) await this.openPage(savedPage, categoryPath, pageIndex);
+        }
+    }, openAfterSave ? () => this.vaultEmptyState?.focusPrimary() : null,
+    { submitText: openAfterSave ? 'Save and open' : 'Save' });
   }
 
   /**
@@ -5603,20 +5634,8 @@ export class ExtensionController {
    * Obtiene opciones de carpetas para selectores
    * @private
    */
-  _getCategoryOptions(categories = null, path = '') {
-    const options = [];
-    const cats = categories || (this.config?.categories || []);
-    
-    for (const cat of cats) {
-      const fullPath = path ? `${path}/${cat.name}` : cat.name;
-      options.push({ value: fullPath, label: path ? `${path} / ${cat.name}` : cat.name });
-      
-      if (cat.categories && cat.categories.length > 0) {
-        options.push(...this._getCategoryOptions(cat.categories, fullPath));
-      }
-    }
-    
-    return options;
+  _getCategoryOptions() {
+    return this._getFolderOptions().slice(1);
   }
 
   /**
@@ -6011,22 +6030,7 @@ export class ExtensionController {
         log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
       }
       
-      // 2. Si no hay en localStorage, cargar default desde URL
-      // NO usar room metadata para GM (según arquitectura)
-      if (!config) {
-        try {
-          const defaultConfig = await this._fetchDefaultConfig();
-          if (defaultConfig && defaultConfig.categories && defaultConfig.categories.length > 0) {
-            config = defaultConfig;
-            configSource = 'defaultURL';
-            // Guardar en localStorage para próximas veces
-            this.storageService.saveLocalConfig(config);
-            log('📦 Config default cargada desde URL');
-          }
-        } catch (e) {
-          log('⚠️ No se pudo cargar config default:', e.message);
-        }
-      }
+      // First use starts empty. The example vault is fetched only on request.
     } else if (this.isCoGM) {
       // Co-GM: solicitar vault COMPLETO del Master GM (ve todo el vault, no solo páginas visibles)
       log('👁️ Co-GM: solicitando vault completo del Master GM...');
@@ -6076,7 +6080,7 @@ export class ExtensionController {
     } else {
       // Crear configuración vacía
       log('⚠️ No se encontró configuración, creando vacía');
-      this.config = ConfigBuilder.createDefault().build();
+      this.config = new ConfigBuilder().build();
       configSource = 'empty';
     }
 
@@ -6089,7 +6093,7 @@ export class ExtensionController {
   }
 
   /**
-   * Carga la configuración por defecto desde URL
+   * Carga el vault de ejemplo bajo demanda
    * @private
    */
   async _fetchDefaultConfig() {
@@ -6449,10 +6453,10 @@ export class ExtensionController {
           <p class="empty-state-text">Your GM is not active right now</p>
           <p class="empty-state-hint">Wait for them to join the session or send them a greeting!</p>
           <p class="empty-state-subhint">The content you're trying to view requires your GM to be online.</p>
-          <p class="empty-state-subhint" style="opacity: 0.6; font-size: 0.9em;">
+          <p class="empty-state-subhint">
             GM inactive for ${minutesText}
           </p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -6675,11 +6679,15 @@ export class ExtensionController {
           <div class="empty-state-icon">🔑</div>
           <p class="empty-state-text">Notion token required</p>
           <p class="empty-state-hint">Configure your Notion token in Settings to load this content.</p>
-          <button class="btn btn--sm btn--primary" onclick="document.getElementById('settings-button')?.click()">
+          <button type="button" class="btn btn--primary" data-action="open-notion-settings">
             Open Settings
           </button>
         </div>
       `;
+      notionContent.querySelector('[data-action="open-notion-settings"]').addEventListener('click', () => {
+        this._showSettings();
+        document.getElementById('token-input')?.focus();
+      });
       return;
     }
 
@@ -6975,7 +6983,7 @@ export class ExtensionController {
           <p class="empty-state-text">Your GM is not active right now</p>
           <p class="empty-state-hint">Wait for them to join the session or send them a greeting!</p>
           <p class="empty-state-subhint">The content you're trying to view requires your GM to be online.</p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -7024,7 +7032,7 @@ export class ExtensionController {
           <p class="empty-state-text">Content not available</p>
           <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
           <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
-          <button class="btn btn--sm btn--secondary" onclick="window.location.reload()">
+          <button class="btn btn--secondary" onclick="window.location.reload()">
             🔄 Retry
           </button>
         </div>
@@ -7430,7 +7438,7 @@ export class ExtensionController {
           <div class="empty-state-icon">☁️</div>
           <p class="empty-state-text">${title}</p>
           <p class="empty-state-hint">${hint}</p>
-          <button type="button" class="btn btn--sm btn--secondary" data-onedrive-retry>🔄 Retry</button>
+          <button type="button" class="btn btn--secondary" data-onedrive-retry>🔄 Retry</button>
         </div>
       `;
       notionContent.querySelector('[data-onedrive-retry]')?.addEventListener('click', () => {
@@ -7735,7 +7743,7 @@ export class ExtensionController {
 
         const reloadButton = document.createElement('button');
         reloadButton.type = 'button';
-        reloadButton.className = 'btn btn--sm btn--ghost';
+        reloadButton.className = 'btn btn--ghost';
         reloadButton.textContent = '🔄 Reload page';
         reloadButton.addEventListener('click', () => {
           if (typeof window.refreshImage === 'function') window.refreshImage(reloadButton);
@@ -8333,7 +8341,7 @@ export class ExtensionController {
                 <div class="empty-state-icon">👋</div>
                 <p class="empty-state-text">The GM is not active</p>
                 <p class="empty-state-hint">Wait for the GM to join the session to view this page</p>
-                <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                <button class="btn btn--secondary mention-modal__retry-btn">
                   🔄 Retry
                 </button>
               </div>
@@ -8375,7 +8383,7 @@ export class ExtensionController {
                 <p class="empty-state-text">Content not available</p>
                 <p class="empty-state-hint">The GM needs to open this page first to cache it.</p>
                 <p class="empty-state-subhint">Ask your GM to view this page so you can access it.</p>
-                <button class="btn btn--sm btn--secondary mention-modal__retry-btn">
+                <button class="btn btn--secondary mention-modal__retry-btn">
                   🔄 Retry
                 </button>
               </div>
@@ -9282,12 +9290,10 @@ export class ExtensionController {
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: var(--color-bg-secondary, #333);
-      color: var(--color-text-primary, #fff);
+      background: var(--color-bg-surface);
       padding: 12px 24px;
       border-radius: 8px;
       z-index: 10001;
-      font-size: 14px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       animation: fadeInOut 2s ease forwards;
     `;

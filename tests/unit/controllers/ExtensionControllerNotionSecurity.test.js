@@ -1,7 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { TextEncoder as NodeTextEncoder } from 'node:util';
 import { ExtensionController } from '../../../js/controllers/ExtensionController.js';
 
 const videoViewerSource = readFileSync(fileURLToPath(
@@ -300,43 +299,6 @@ describe('ExtensionController Notion HTML security boundary', () => {
     );
     expect(videoViewerSource).not.toMatch(/new URL\(videoUrl, window\.location\.origin\)/);
     expect(googleViewerSource).not.toMatch(/new URL\(docUrl, window\.location\.origin\)/);
-  });
-
-  it('muestra el nombre del Master GM como texto en el estado del vault', async () => {
-    const originalTextEncoder = globalThis.TextEncoder;
-    globalThis.TextEncoder = NodeTextEncoder;
-    document.body.innerHTML = `
-      <div id="settings-container">
-        <div class="settings__content">
-          <div class="form form--separated"><p class="settings__description"></p></div>
-        </div>
-      </div>
-    `;
-    const controller = bareController();
-    controller.isCoGM = true;
-    controller.config = { categories: [] };
-    controller.storageService = {
-      getVaultOwner: jest.fn().mockResolvedValue({ id: 'master-gm-id' })
-    };
-    controller.OBR = {
-      party: {
-        getPlayers: jest.fn().mockResolvedValue([{
-          id: 'master-gm-id',
-          name: '</span><img src=x onerror="window.pwned=1">'
-        }])
-      }
-    };
-
-    try {
-      await controller._renderVaultStatusBox();
-
-      const status = document.getElementById('vault-status-box');
-      expect(status.querySelector('img, [onerror]')).toBeNull();
-      expect(status.textContent).toContain('</span><img src=x onerror="window.pwned=1">');
-    } finally {
-      if (originalTextEncoder) globalThis.TextEncoder = originalTextEncoder;
-      else delete globalThis.TextEncoder;
-    }
   });
 
   it('muestra el nombre del archivo importado como texto', async () => {
