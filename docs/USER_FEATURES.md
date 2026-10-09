@@ -2,6 +2,7 @@
 
 This document lists all the features available to users from the interface, what they do, and where they are explained in the documentation.
 
+
 ## 📋 Table of Contents
 
 1. [Main Interface Buttons](#main-interface-buttons)
