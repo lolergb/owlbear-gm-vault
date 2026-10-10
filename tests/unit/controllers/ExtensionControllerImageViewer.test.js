@@ -140,6 +140,58 @@ describe('ExtensionController image viewer', () => {
   });
 });
 
+describe('child-page image sharing', () => {
+  it('wires image sharing when a child page opens and after it reloads', async () => {
+    document.body.innerHTML = '';
+    const controller = bareController();
+    controller.isCoGM = false;
+    controller.notionRenderer = { setRenderingOptions: jest.fn() };
+    controller.cacheService = { clearPageCache: jest.fn() };
+    controller._attachMentionHandlers = jest.fn();
+    controller._shareImageToPlayers = jest.fn().mockResolvedValue(true);
+    controller._showImageModal = jest.fn();
+    controller._extractNotionPageTitle = jest.fn().mockReturnValue('Child page');
+    controller._repairStoredPageTitle = jest.fn().mockResolvedValue('Child page');
+    controller._generateNotionHtmlWithHeader = jest.fn().mockResolvedValue({
+      pageInfo: {},
+      html: `<div class="notion-image-container">
+        <img class="notion-image-clickable" src="https://assets.example/child.png"
+             data-image-url="https://assets.example/child.png" data-image-caption="Child image">
+        <button class="notion-image-share-button" title="Share with room">Share</button>
+      </div>`
+    });
+    const page = {
+      getNotionPageId: () => 'child-page-id',
+      hasEmbeddedHtml: () => false
+    };
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = callback => callback();
+
+    try {
+      await controller._showMentionPageModal(page, 'Child page');
+      const overlay = document.querySelector('.mention-modal-overlay');
+      const content = overlay.querySelector('.mention-modal__content');
+      content.querySelector('.notion-image-share-button').click();
+      expect(controller._shareImageToPlayers).toHaveBeenCalledWith(
+        'https://assets.example/child.png', 'Child image'
+      );
+      expect(controller._attachMentionHandlers).not.toHaveBeenCalled();
+
+      await controller._reloadMentionModalContent(overlay, content);
+      content.querySelector('.notion-image-share-button').click();
+      expect(controller._shareImageToPlayers).toHaveBeenCalledTimes(2);
+      expect(controller._attachMentionHandlers).not.toHaveBeenCalled();
+
+      content.querySelector('.notion-image-clickable').click();
+      expect(controller._showImageModal).toHaveBeenCalledWith(
+        'https://assets.example/child.png', 'Child image'
+      );
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
+});
+
 describe('image-viewer.html contract', () => {
   const source = readFileSync(viewerPath, 'utf8');
 

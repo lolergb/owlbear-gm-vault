@@ -7768,7 +7768,7 @@ export class ExtensionController {
    * Attach event handlers para imágenes
    * @private
    */
-  _attachImageHandlers(container = null) {
+  _attachImageHandlers(container = null, { attachMentions = true } = {}) {
     const targetContainer = container || document.getElementById('notion-content');
     if (!targetContainer) return;
 
@@ -7820,7 +7820,7 @@ export class ExtensionController {
     });
     
     // También adjuntar handlers para mentions
-    this._attachMentionHandlers(targetContainer);
+    if (attachMentions) this._attachMentionHandlers(targetContainer);
   }
 
   /**
@@ -8091,19 +8091,7 @@ export class ExtensionController {
       
       // Mostrar contenido
       content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlSanitizer(htmlContent)}</div>`;
-      this._attachImageLifecycleHandlers(content);
-      
-      // Adjuntar handlers de imágenes
-      const images = content.querySelectorAll('.notion-image-clickable');
-      images.forEach(img => {
-        if (img.dataset.listenerAdded) return;
-        img.dataset.listenerAdded = 'true';
-        img.addEventListener('click', () => {
-          const url = img.dataset.imageUrl;
-          const caption = img.dataset.imageCaption;
-          this._showImageModal(url, caption);
-        });
-      });
+      this._attachImageHandlers(content, { attachMentions: false });
       
     } catch (error) {
       logError('Error recargando contenido del modal:', error);
@@ -8414,19 +8402,8 @@ export class ExtensionController {
       
       // Mostrar contenido con header completo (cover, título, icono, propiedades, bloques)
       content.innerHTML = `<div class="notion-content mention-modal__notion-content">${htmlSanitizer(htmlContent)}</div>`;
-      this._attachImageLifecycleHandlers(content);
-      
-      // Adjuntar handlers de imágenes PERO NO de mentions (evita navegación infinita)
-      const images = content.querySelectorAll('.notion-image-clickable');
-      images.forEach(img => {
-        if (img.dataset.listenerAdded) return;
-        img.dataset.listenerAdded = 'true';
-        img.addEventListener('click', () => {
-          const url = img.dataset.imageUrl;
-          const caption = img.dataset.imageCaption;
-          this._showImageModal(url, caption);
-        });
-      });
+      // Keep mentions inert inside the modal while wiring image open and share actions.
+      this._attachImageHandlers(content, { attachMentions: false });
       
       // Handler para compartir (si existe el botón)
       // TODO: Temporalmente oculto - descomentar cuando se necesite
