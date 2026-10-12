@@ -4,8 +4,8 @@
  * Gestiona las llamadas a la API de Notion a través del proxy de Netlify.
  */
 
-import { ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
-import { log, logError, logWarn } from '../utils/logger.js';
+import { isNotionUrl } from '../utils/helpers.js';
+import { log, logError, logWarn } from '../utils/logger.js?v=20260722-4';
 
 /**
  * Servicio para interactuar con Notion
@@ -18,9 +18,10 @@ export class NotionService {
     this.cacheService = null;
     // Referencia al StorageService
     this.storageService = null;
-    // Token de default cacheado
-    this._defaultToken = null;
-    this._defaultTokenFetched = false;
+    // El cliente solo conoce si existe acceso demo. La credencial permanece
+    // dentro de la Netlify Function y nunca se descarga en el navegador.
+    this._defaultAccessAvailable = false;
+    this._defaultAccessChecked = false;
     
     // Configuración de rate limiting y reintentos
     this._maxRetries = 3;
@@ -195,57 +196,6 @@ export class NotionService {
   }
 
   /**
-   * Verifica si un label coincide con un nombre de categoría (matching flexible)
-   * Ejemplos: "NPC" coincide con "NPCs de mi juego", "Villain" con "Villains"
-   * @param {string} label - Label de la página
-   * @param {string} categoryName - Nombre de la categoría
-   * @returns {boolean} - true si hay coincidencia
-   */
-  _labelMatchesCategory(label, categoryName) {
-    if (!label || !categoryName) return false;
-    
-    const normalizedLabel = label.toLowerCase().trim();
-    const normalizedCategory = categoryName.toLowerCase().trim();
-    
-    // Match exacto
-    if (normalizedLabel === normalizedCategory) return true;
-    
-    // El label está contenido en el nombre de la categoría
-    // "npc" está en "npcs de mi juego"
-    if (normalizedCategory.includes(normalizedLabel)) return true;
-    
-    // La categoría empieza con el label + variaciones plurales
-    // "npc" coincide con "npcs"
-    if (normalizedCategory.startsWith(normalizedLabel)) return true;
-    
-    // El label es plural y la categoría es singular o viceversa
-    // "npcs" coincide con "npc", "villains" con "villain"
-    const labelWithoutS = normalizedLabel.endsWith('s') ? normalizedLabel.slice(0, -1) : normalizedLabel;
-    const categoryWithoutS = normalizedCategory.endsWith('s') ? normalizedCategory.slice(0, -1) : normalizedCategory;
-    
-    if (labelWithoutS === categoryWithoutS) return true;
-    if (normalizedCategory.includes(labelWithoutS)) return true;
-    if (normalizedCategory.startsWith(labelWithoutS)) return true;
-    
-    return false;
-  }
-
-  /**
-   * Encuentra la mejor categoría para un label dado las categorías existentes
-   * @param {string} label - Label a buscar
-   * @param {Array<string>} categoryNames - Nombres de categorías existentes
-   * @returns {string|null} - Nombre de la categoría coincidente o null
-   */
-  _findMatchingCategory(label, categoryNames) {
-    for (const categoryName of categoryNames) {
-      if (this._labelMatchesCategory(label, categoryName)) {
-        return categoryName;
-      }
-    }
-    return null;
-  }
-
-  /**
    * Inyecta dependencias
    * @param {Object} deps - Dependencias
    */
@@ -256,31 +206,57 @@ export class NotionService {
   }
 
   /**
-   * Obtiene el token de default desde Netlify (solo una vez)
+   * Comprueba si el proxy tiene acceso demo sin descargar ninguna credencial.
    * @private
-   * @returns {Promise<string|null>}
+   * @returns {Promise<boolean>}
    */
-  async _getDefaultToken() {
-    if (this._defaultTokenFetched) {
-      return this._defaultToken;
+  async _hasDefaultAccess() {
+    if (this._defaultAccessChecked) {
+      return this._defaultAccessAvailable;
     }
 
     try {
-      const response = await fetch('/.netlify/functions/get-default-token');
+      const response = await fetch('/.netlify/functions/get-default-token', {
+        method: 'GET',
+        cache: 'no-store'
+      });
       if (response.ok) {
         const data = await response.json();
-        this._defaultToken = data.token || null;
-        this._defaultTokenFetched = true;
-        if (this._defaultToken) {
-          log('🔑 Token de default-config obtenido');
-        }
-        return this._defaultToken;
+        this._defaultAccessAvailable = data.available === true;
       }
     } catch (e) {
-      logWarn('No se pudo obtener token de default:', e);
+      logWarn('No se pudo comprobar el acceso demo de Notion:', e);
     }
 
-    this._defaultTokenFetched = true;
+    this._defaultAccessChecked = true;
+    return this._defaultAccessAvailable;
+  }
+
+  /**
+   * Construye la autenticación para el proxy sin incluir secretos en la URL.
+   * Los flujos de importación pueden desactivar el acceso demo porque siempre
+   * deben operar con la conexión personal del usuario.
+   * @private
+   * @param {Object} [options]
+   * @param {boolean} [options.allowDefault=true]
+   * @returns {Promise<Object|null>}
+   */
+  async _getNotionAuthHeaders({ allowDefault = true } = {}) {
+    const userToken = this.storageService?.getUserToken();
+    if (userToken) {
+      return {
+        'Content-Type': 'application/json',
+        'X-Notion-Token': userToken
+      };
+    }
+
+    if (allowDefault && await this._hasDefaultAccess()) {
+      return {
+        'Content-Type': 'application/json',
+        'X-GM-Vault-Default': '1'
+      };
+    }
+
     return null;
   }
 
@@ -304,32 +280,21 @@ export class NotionService {
     }
 
     try {
-      // Obtener token del usuario
-      let tokenToUse = this.storageService?.getUserToken();
-      
-      // Si no hay token de usuario, intentar usar el token de default
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
-        // Sin token, intentar obtener del caché compartido
-        const sharedBlocks = await this._getFromSharedCache(pageId);
-        if (sharedBlocks) {
-          return sharedBlocks;
-        }
-        // Retornar null para que el controlador solicite al GM
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
+        // El contenido compartido es efímero: el controlador se lo solicita al GM.
         log('⚠️ No hay token, el contenido debe ser solicitado al GM');
         return null;
       }
 
       log('🌐 Obteniendo bloques desde la API para:', pageId);
       
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(tokenToUse)}`;
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}`;
       
       const response = await this._fetchWithRetry(apiUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -389,21 +354,17 @@ export class NotionService {
     }
 
     try {
-      // Obtener token del usuario o usar el de default
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         return { lastEditedTime: null, icon: null };
       }
 
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(tokenToUse)}&type=page`;
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page`;
       
       const response = await this._fetchWithRetry(apiUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -455,23 +416,19 @@ export class NotionService {
     }
 
     try {
-      // Obtener token del usuario o usar el de default
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         return [];
       }
 
       // Usar el mismo endpoint que para páginas - la API de Notion usa el mismo endpoint
       // para obtener hijos de bloques, pasando el blockId como pageId
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}&token=${encodeURIComponent(tokenToUse)}`;
+      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}`;
       
       const response = await this._fetchWithRetry(apiUrl, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -500,14 +457,17 @@ export class NotionService {
    */
   async validateToken() {
     try {
-      const userToken = this.storageService?.getUserToken();
-      
-      if (!userToken) {
+      const authHeaders = await this._getNotionAuthHeaders({ allowDefault: false });
+
+      if (!authHeaders) {
         return false;
       }
 
       // Hacer una llamada simple para verificar el token
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?validate=true&token=${encodeURIComponent(userToken)}`);
+      const response = await this._fetchWithRetry(
+        '/.netlify/functions/notion-api?validate=true',
+        { method: 'GET', headers: authHeaders }
+      );
       
       return response.ok;
     } catch (e) {
@@ -522,9 +482,9 @@ export class NotionService {
    */
   async searchWorkspacePages(query = '') {
     try {
-      const userToken = this.storageService?.getUserToken();
-      
-      if (!userToken) {
+      const authHeaders = await this._getNotionAuthHeaders({ allowDefault: false });
+
+      if (!authHeaders) {
         throw new Error('No Notion token configured. Please add your token in Settings.');
       }
 
@@ -532,7 +492,6 @@ export class NotionService {
       
       const params = new URLSearchParams({
         action: 'search',
-        token: userToken,
         filter: 'page'
       });
       
@@ -540,7 +499,10 @@ export class NotionService {
         params.append('query', query);
       }
       
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
+      const response = await this._fetchWithRetry(
+        `/.netlify/functions/notion-api?${params.toString()}`,
+        { method: 'GET', headers: authHeaders }
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -572,15 +534,15 @@ export class NotionService {
   }
 
   /**
-   * Obtiene las páginas hijas y enlaces de una página (en orden de Notion)
+   * Obtiene la contención estructural de una página (en orden de Notion)
    * @param {string} pageId - ID de la página padre
-   * @returns {Promise<Array>} - Lista de páginas hijas y enlazadas en orden
+   * @returns {Promise<Array>} - Lista de páginas hijas y bases de datos
    */
   async fetchChildPages(pageId) {
     try {
-      const userToken = this.storageService?.getUserToken();
-      
-      if (!userToken) {
+      const authHeaders = await this._getNotionAuthHeaders({ allowDefault: false });
+
+      if (!authHeaders) {
         throw new Error('No Notion token configured');
       }
 
@@ -588,11 +550,13 @@ export class NotionService {
       
       const params = new URLSearchParams({
         action: 'children',
-        pageId: pageId,
-        token: userToken
+        pageId: pageId
       });
       
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
+      const response = await this._fetchWithRetry(
+        `/.netlify/functions/notion-api?${params.toString()}`,
+        { method: 'GET', headers: authHeaders }
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -604,22 +568,8 @@ export class NotionService {
       
       log('📂 Bloques de página encontrados:', pageBlocks.length);
       
-      // Extraer mentions del contenido para filtrar bases de datos
-      const mentionsInContent = await this._extractMentionsFromBlocks(pageBlocks);
-      const mentionedPageIds = new Set(mentionsInContent.map(m => {
-        // Normalizar ID para comparación
-        let id = m.pageId;
-        if (!id.includes('-') && id.length === 32) {
-          id = `${id.substring(0, 8)}-${id.substring(8, 12)}-${id.substring(12, 16)}-${id.substring(16, 20)}-${id.substring(20, 32)}`;
-        }
-        return id;
-      }));
-      
-      if (mentionedPageIds.size > 0) {
-        log(`🔍 Mentions encontrados en contenido: ${mentionedPageIds.size} (se usarán para filtrar bases de datos)`);
-      }
-      
-      // Procesar bloques en orden (child_page, link_to_page y child_database mezclados)
+      // Procesar solo contención real. Los link_to_page se resuelven al
+      // renderizar el contenido y nunca alteran la jerarquía del vault.
       const results = [];
       
       for (const block of pageBlocks) {
@@ -631,86 +581,9 @@ export class NotionService {
             url: this._buildNotionUrl(title, block.id),
             type: 'child_page'
           });
-        } else if (block.type === 'link_to_page') {
-          const linkInfo = block.link_to_page;
-          if (!linkInfo) continue;
-
-          let linkedPageId = null;
-          if (linkInfo.type === 'page_id') {
-            linkedPageId = linkInfo.page_id;
-          } else if (linkInfo.type === 'database_id') {
-            // link_to_page a una base de datos - obtener páginas (filtradas por mentions si existen)
-            const databaseId = linkInfo.database_id;
-            try {
-              const dbPages = await this.fetchDatabasePages(databaseId);
-              
-              // Escanear mentions dentro de las propiedades de las páginas de DB
-              for (const dbPage of dbPages) {
-                if (dbPage.properties) {
-                  const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties, dbPage.title);
-                  for (const mention of propertyMentions) {
-                    const normalizedId = this._normalizeId(mention.pageId);
-                    mentionedPageIds.add(normalizedId);
-                  }
-                }
-              }
-              
-              if (mentionedPageIds.size > 0) {
-                log(`🔍 Total mentions encontrados (incluyendo properties de DB): ${mentionedPageIds.size}`);
-              }
-              
-              // Filtrar por mentions si hay alguno en el contenido
-              let pagesToAdd = dbPages;
-              if (mentionedPageIds.size > 0) {
-                const filteredPages = dbPages.filter(dbPage => {
-                  let pageId = dbPage.id;
-                  if (!pageId.includes('-') && pageId.length === 32) {
-                    pageId = `${pageId.substring(0, 8)}-${pageId.substring(8, 12)}-${pageId.substring(12, 16)}-${pageId.substring(16, 20)}-${pageId.substring(20, 32)}`;
-                  }
-                  return mentionedPageIds.has(pageId) || mentionedPageIds.has(dbPage.id);
-                });
-                
-                if (filteredPages.length > 0) {
-                  pagesToAdd = filteredPages;
-                  log(`🔍 Linked DB filtrado por mentions: ${filteredPages.length} de ${dbPages.length} páginas`);
-                } else {
-                  log('📊 Linked DB: no hay coincidencias con mentions, importando todas las páginas');
-                }
-              }
-              
-              for (const dbPage of pagesToAdd) {
-                results.push({
-                  id: dbPage.id,
-                  title: dbPage.title,
-                  url: dbPage.url,
-                  type: 'database_page',
-                  databaseId: databaseId,
-                  labels: dbPage.labels || [] // Incluir labels para agrupación
-                });
-              }
-            } catch (e) {
-              logWarn('No se pudo obtener páginas de base de datos enlazada:', databaseId, e);
-            }
-            continue;
-          }
-
-          if (!linkedPageId) continue;
-
-          try {
-            const pageInfo = await this.fetchPageInfo(linkedPageId, false);
-            const title = this._extractPageTitleFromInfo(pageInfo) || 'Linked Page';
-            
-            results.push({
-              id: linkedPageId,
-              title,
-              url: this._buildNotionUrl(title, linkedPageId),
-              type: 'link_to_page'
-            });
-          } catch (e) {
-            logWarn('No se pudo obtener info de página enlazada:', linkedPageId, e);
-          }
         } else if (block.type === 'child_database') {
-          // Base de datos inline - obtener páginas (filtradas por mentions si existen)
+          // Base de datos inline: todas sus páginas pertenecen estructuralmente
+          // a la base. Mentions y relations no filtran ni reubican filas.
           const databaseId = block.id;
           const databaseTitle = block.child_database?.title || 'Database';
           
@@ -719,54 +592,20 @@ export class NotionService {
           try {
             const dbPages = await this.fetchDatabasePages(databaseId);
             log('📊 Páginas encontradas en DB:', dbPages.length);
-            
-            // Escanear mentions dentro de las propiedades de las páginas de DB
-            for (const dbPage of dbPages) {
-              if (dbPage.properties) {
-                const propertyMentions = this._extractMentionsFromPageProperties(dbPage.properties, dbPage.title);
-                for (const mention of propertyMentions) {
-                  const normalizedId = this._normalizeId(mention.pageId);
-                  mentionedPageIds.add(normalizedId);
-                }
-              }
-            }
-            
-            if (mentionedPageIds.size > 0) {
-              log(`🔍 Total mentions encontrados (incluyendo properties de DB): ${mentionedPageIds.size}`);
-            }
-            
-            // Filtrar por mentions si hay alguno en el contenido
-            let pagesToAdd = dbPages;
-            if (mentionedPageIds.size > 0) {
-              // Normalizar IDs de páginas de la DB para comparación
-              const filteredPages = dbPages.filter(dbPage => {
-                let pageId = dbPage.id;
-                if (!pageId.includes('-') && pageId.length === 32) {
-                  pageId = `${pageId.substring(0, 8)}-${pageId.substring(8, 12)}-${pageId.substring(12, 16)}-${pageId.substring(16, 20)}-${pageId.substring(20, 32)}`;
-                }
-                return mentionedPageIds.has(pageId) || mentionedPageIds.has(dbPage.id);
-              });
-              
-              if (filteredPages.length > 0) {
-                pagesToAdd = filteredPages;
-                log(`🔍 Filtrado por mentions: ${filteredPages.length} de ${dbPages.length} páginas`);
-              } else {
-                // Si no hay coincidencias, importar todas (comportamiento por defecto)
-                log('📊 No hay coincidencias con mentions, importando todas las páginas');
-              }
-            }
-            
-            for (const dbPage of pagesToAdd) {
-              results.push({
+
+            results.push({
+              id: databaseId,
+              title: databaseTitle,
+              type: 'child_database',
+              pages: dbPages.map(dbPage => ({
                 id: dbPage.id,
                 title: dbPage.title,
                 url: dbPage.url,
                 type: 'database_page',
                 databaseId: databaseId,
-                databaseTitle: databaseTitle,
-                labels: dbPage.labels || [] // Incluir labels para agrupación
-              });
-            }
+                databaseTitle: databaseTitle
+              }))
+            });
           } catch (e) {
             logWarn('No se pudo obtener páginas de base de datos:', databaseId, e);
           }
@@ -784,7 +623,8 @@ export class NotionService {
    * Verifica si una página tiene contenido real
    * Patrón: (título/heading || párrafo con texto) & NO solo bases de datos
    * Una página con solo child_database NO cuenta como contenido propio
-   * Una página con solo título + lista de mentions NO cuenta (es solo navegación)
+   * Las páginas de índice con mentions o link_to_page sí cuentan: los enlaces
+   * se resuelven al renderizar, pero la página contenedora debe seguir visible.
    * @param {string} pageId - ID de la página
    * @returns {Promise<boolean>} - true si tiene contenido real
    */
@@ -798,14 +638,21 @@ export class NotionService {
 
       let hasTextContent = false;  // Tiene párrafo con texto real (no solo mentions)
       let hasRichContent = false;  // Tiene imágenes, videos, tablas, etc.
+      let hasNavigationContent = false; // Mentions o link_to_page visibles
       let onlyHasDatabase = true;  // Solo tiene child_database (sin contenido real)
-      let headingCount = 0;        // Cantidad de headings
       let listItemsWithOnlyMentions = 0;  // Lista items que solo tienen mentions
       let listItemsWithRealText = 0;      // Lista items con texto real (no solo mentions)
 
       for (const block of blocks) {
-        // Ignorar child_page y link_to_page (son hijas, no contenido propio)
-        if (block.type === 'child_page' || block.type === 'link_to_page') {
+        // child_page define jerarquía, no contenido propio.
+        if (block.type === 'child_page') {
+          continue;
+        }
+
+        // link_to_page es navegación visible dentro de esta página.
+        if (block.type === 'link_to_page') {
+          hasNavigationContent = true;
+          onlyHasDatabase = false;
           continue;
         }
 
@@ -822,6 +669,9 @@ export class NotionService {
             if (hasRealText) {
               hasTextContent = true;
               onlyHasDatabase = false;
+            } else if (this._hasOnlyMentions(text)) {
+              hasNavigationContent = true;
+              onlyHasDatabase = false;
             }
           }
           continue;
@@ -832,7 +682,9 @@ export class NotionService {
           const headingData = block[block.type];
           const text = headingData?.rich_text;
           if (text && text.length > 0 && text.some(t => t.plain_text?.trim())) {
-            headingCount++;
+            if (this._hasOnlyMentions(text)) {
+              hasNavigationContent = true;
+            }
             onlyHasDatabase = false;
           }
           // Headings con hijos (toggles) también cuentan como contenido real
@@ -854,6 +706,7 @@ export class NotionService {
               onlyHasDatabase = false;
             } else if (this._hasOnlyMentions(text)) {
               listItemsWithOnlyMentions++;
+              hasNavigationContent = true;
               onlyHasDatabase = false;
             }
           }
@@ -878,22 +731,13 @@ export class NotionService {
         }
       }
 
-      // Caso especial: si solo tiene título(s) + lista de mentions, NO es contenido real
-      // Esto es típicamente una página de navegación/índice (ej: "NPCs" con lista de links)
-      const isOnlyNavigationContent = 
-        !hasTextContent && 
-        !hasRichContent && 
-        headingCount <= 1 && 
-        listItemsWithRealText === 0 && 
-        listItemsWithOnlyMentions > 0;
-
-      if (isOnlyNavigationContent) {
-        log(`⏭️ Página detectada como solo navegación: ${headingCount} heading(s), ${listItemsWithOnlyMentions} mention(s) en lista`);
-        return false;
-      }
-
-      // Tiene contenido si tiene texto real, contenido rico, o listas con texto real
-      const hasContent = hasTextContent || hasRichContent || listItemsWithRealText > 0;
+      // La navegación también es contenido visible; no debe generar hijos, pero
+      // sí mantiene la página de índice dentro del vault.
+      const hasContent = hasTextContent
+        || hasRichContent
+        || hasNavigationContent
+        || listItemsWithRealText > 0
+        || listItemsWithOnlyMentions > 0;
       return hasContent && !onlyHasDatabase;
     } catch (e) {
       logWarn('Error verificando contenido de página:', pageId, e);
@@ -945,268 +789,6 @@ export class NotionService {
   }
 
   /**
-   * Extrae el título de la información de página
-   * @private
-   */
-  _extractPageTitleFromInfo(pageInfo) {
-    if (!pageInfo || !pageInfo.properties) return null;
-    
-    // Buscar propiedad "title" o "Name" (unir todos los fragmentos: emoji + texto)
-    const titleProp = pageInfo.properties.title || pageInfo.properties.Title || 
-                      pageInfo.properties.Name || pageInfo.properties.name;
-    if (titleProp && titleProp.title && Array.isArray(titleProp.title)) {
-      const full = (titleProp.title.map(t => t.plain_text || '')).join('').trim();
-      if (full) return full;
-    }
-    
-    // Buscar cualquier propiedad tipo title
-    for (const prop of Object.values(pageInfo.properties)) {
-      if (prop.type === 'title' && prop.title && Array.isArray(prop.title)) {
-        const full = (prop.title.map(t => t.plain_text || '')).join('').trim();
-        if (full) return full;
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * Extrae todos los mentions de tipo página de un array de bloques (recursivo)
-   * @param {Array} blocks - Bloques de Notion
-   * @param {boolean} recursive - Si true, escanea también bloques hijos (default: true)
-   * @returns {Promise<Array>} - Array de {pageId, text} para cada mention encontrado
-   */
-  async _extractMentionsFromBlocks(blocks, recursive = true) {
-    const mentions = [];
-    
-    const extractFromRichText = (richTextArray) => {
-      if (!richTextArray) return;
-      for (const item of richTextArray) {
-        if (item.type === 'mention' && item.mention?.type === 'page') {
-          mentions.push({
-            pageId: item.mention.page.id,
-            text: item.plain_text || 'Untitled'
-          });
-        }
-      }
-    };
-    
-    const processBlock = async (block) => {
-      // Extraer de diferentes tipos de bloques que tienen rich_text
-      const blockData = block[block.type];
-      if (blockData?.rich_text) {
-        extractFromRichText(blockData.rich_text);
-      }
-      if (blockData?.caption) {
-        extractFromRichText(blockData.caption);
-      }
-      // Para callouts
-      if (blockData?.text) {
-        extractFromRichText(blockData.text);
-      }
-      
-      // Escanear celdas de tablas (table_row)
-      if (block.type === 'table_row' && blockData?.cells) {
-        for (const cell of blockData.cells) {
-          // Cada cell es un array de rich_text
-          if (Array.isArray(cell)) {
-            extractFromRichText(cell);
-          }
-        }
-      }
-      
-      // Recursión: escanear bloques hijos (toggles, callouts, etc.)
-      if (recursive && block.has_children) {
-        try {
-          const children = await this.fetchChildBlocks(block.id, true);
-          if (children && children.length > 0) {
-            const childMentions = await this._extractMentionsFromBlocks(children, true);
-            for (const cm of childMentions) {
-              mentions.push(cm);
-            }
-          }
-        } catch (e) {
-          // Si falla, continuar sin los hijos
-        }
-      }
-    };
-    
-    for (const block of blocks) {
-      await processBlock(block);
-    }
-    
-    // Eliminar duplicados por pageId
-    const uniqueMentions = [];
-    const seenIds = new Set();
-    for (const mention of mentions) {
-      if (!seenIds.has(mention.pageId)) {
-        seenIds.add(mention.pageId);
-        uniqueMentions.push(mention);
-      }
-    }
-    
-    return uniqueMentions;
-  }
-
-  /**
-   * Extrae mentions de las propiedades de una página de base de datos
-   * @param {Object} properties - Propiedades de la página de DB
-   * @param {string} pageTitle - Título de la página que contiene estas propiedades (para logging)
-   * @returns {Array} - Array de {pageId, text}
-   * @private
-   */
-  _extractMentionsFromPageProperties(properties, pageTitle = '') {
-    const mentions = [];
-    
-    if (!properties) return mentions;
-    
-    const extractFromRichText = (richTextArray) => {
-      if (!richTextArray) return;
-      for (const item of richTextArray) {
-        if (item.type === 'mention' && item.mention?.type === 'page') {
-          // El plain_text del mention suele contener el título de la página mencionada
-          const mentionText = item.plain_text?.trim() || null;
-          mentions.push({
-            pageId: item.mention.page.id,
-            text: mentionText
-          });
-          if (pageTitle) {
-            log(`  🔗 Mention detectado en "${pageTitle}": ${mentionText || item.mention.page.id}`);
-          }
-        }
-      }
-    };
-    
-    // Iterar sobre todas las propiedades
-    for (const [propName, property] of Object.entries(properties)) {
-      // Propiedades con rich_text (text, title)
-      if (property.type === 'rich_text' && property.rich_text) {
-        extractFromRichText(property.rich_text);
-      }
-      if (property.type === 'title' && property.title) {
-        extractFromRichText(property.title);
-      }
-      // Propiedades de relación pueden tener IDs de páginas
-      if (property.type === 'relation' && property.relation) {
-        for (const rel of property.relation) {
-          if (rel.id) {
-            mentions.push({
-              pageId: rel.id,
-              text: 'Related page'
-            });
-            if (pageTitle) {
-              log(`  🔗 Relación detectada en "${pageTitle}": ${rel.id}`);
-            }
-          }
-        }
-      }
-    }
-    
-    // Eliminar duplicados
-    const uniqueMentions = [];
-    const seenIds = new Set();
-    for (const mention of mentions) {
-      if (!seenIds.has(mention.pageId)) {
-        seenIds.add(mention.pageId);
-        uniqueMentions.push(mention);
-      }
-    }
-    
-    return uniqueMentions;
-  }
-
-  /**
-   * Obtiene información completa de una página mencionada
-   * @param {string} pageId - ID de la página
-   * @returns {Promise<Object|null>} - {id, title, url, parentDbId, parentDbTitle} o null
-   */
-  async _getMentionedPageInfo(pageId) {
-    try {
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) return null;
-
-      // Obtener info de la página
-      const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(tokenToUse)}&type=page`;
-      
-      const response = await this._fetchWithRetry(apiUrl);
-      if (!response.ok) {
-        // 404 significa que la página no está compartida con la integración o no existe
-        // No logear como error ya que es un caso esperado para mentions a páginas externas
-        return null;
-      }
-
-      const pageData = await response.json();
-      
-      // Extraer título
-      const title = this._extractPageTitle(pageData) || 'Untitled';
-      
-      // Debug: mostrar si se obtuvo título correctamente
-      if (title === 'Untitled') {
-        logWarn(`⚠️ No se pudo extraer título de página ${pageId}. properties:`, !!pageData.properties, 'url:', pageData.url);
-      } else {
-        log(`✅ Título obtenido para mention: "${title}"`);
-      }
-      
-      // Verificar si el parent es una base de datos
-      let parentDbId = null;
-      let parentDbTitle = null;
-      
-      if (pageData.parent?.type === 'database_id') {
-        parentDbId = pageData.parent.database_id;
-        
-        // Obtener nombre de la base de datos
-        const dbInfo = await this._fetchDatabaseTitle(parentDbId, tokenToUse);
-        parentDbTitle = dbInfo || 'Database';
-      }
-      
-      return {
-        id: pageId,
-        title,
-        url: this._buildNotionUrl(title, pageId),
-        parentDbId,
-        parentDbTitle
-      };
-    } catch (e) {
-      logWarn('Error obteniendo info de página mencionada:', pageId, e);
-      return null;
-    }
-  }
-
-  /**
-   * Obtiene el título de una base de datos
-   * @private
-   */
-  async _fetchDatabaseTitle(databaseId, token) {
-    try {
-      const params = new URLSearchParams({
-        action: 'database-info',
-        databaseId: databaseId,
-        token: token
-      });
-      
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
-      
-      if (!response.ok) {
-        logWarn('Error obteniendo info de DB:', response.status);
-        return null;
-      }
-      
-      const data = await response.json();
-      if (data.title && Array.isArray(data.title)) {
-        return data.title.map(t => t.plain_text || '').join('') || null;
-      }
-      return null;
-    } catch (e) {
-      logWarn('Error obteniendo título de DB:', databaseId, e);
-      return null;
-    }
-  }
-
-  /**
    * Genera la estructura de vault recursivamente desde una página
    * Usa el nuevo formato items[] para simplicidad y orden implícito
    * 
@@ -1224,6 +806,7 @@ export class NotionService {
       dbPagesFiltered: 0,   // Páginas de DB filtradas intencionalmente (no es error)
       unsupportedTypes: new Set()
     };
+    const visitedPageIds = new Set();
 
     /**
      * Procesa una página y devuelve un item (page o category con items[])
@@ -1233,6 +816,13 @@ export class NotionService {
         stats.pagesSkipped++;
         return null;
       }
+
+      const normalizedId = this._normalizeId(id);
+      if (visitedPageIds.has(normalizedId)) {
+        log(`↪️ Saltando página ya recorrida: ${title}`);
+        return null;
+      }
+      visitedPageIds.add(normalizedId);
 
       try {
         // Reportar progreso
@@ -1269,9 +859,6 @@ export class NotionService {
         // Si hay hijas, crear una categoría con items[]
         const items = [];
         
-        // Mapa de categorías por nombre para agrupar por labels
-        const categoryMap = new Map(); // categoryName -> { type: 'category', name, items: [] }
-
         // Verificar si la página principal tiene contenido real
         const mainPageHasContent = await this.hasRealContent(id);
         if (mainPageHasContent) {
@@ -1283,339 +870,31 @@ export class NotionService {
           stats.pagesImported++;
         }
 
-        // PASO 1: Procesar páginas normales primero para obtener categorías existentes
-        const dbPagesForLater = [];
+        // Procesar cada contenedor en el mismo orden en que aparece en Notion.
         for (const child of childPages) {
-          if (child.type === 'database_page' && child.databaseId) {
-            // Guardar páginas de DB para procesarlas después
-            dbPagesForLater.push(child);
-          } else {
-            // Página normal - procesar recursivamente
-            const result = await processPage(child.id, child.title, depth + 1);
-            if (result) {
-              items.push(result);
-              // Si es una categoría, registrarla para matching por labels
-              if (result.type === 'category') {
-                categoryMap.set(result.name, result);
-              }
-            }
-          }
-        }
-        
-        // PASO 2: Procesar páginas de DB
-        // 
-        // COMPORTAMIENTO ACTUAL: Los items de una tabla (database) se crean en una carpeta con el nombre de la tabla
-        // 
-        // Lógica de asignación:
-        // 1. Si una página de DB tiene un label que coincide con una categoría existente → se añade a esa categoría
-        // 2. Si el nombre de la DB coincide con el título de la página que la contiene → se añaden directamente (sin carpeta)
-        // 3. Si no hay coincidencia por label ni por nombre → se crea una carpeta nueva con el nombre de la base de datos (databaseTitle)
-        // 
-        // Ejemplo:
-        //   - Página "NPCs" contiene una base de datos "NPCs" con items: "Indithir", "Thava", "Gareth"
-        //   - Resultado: Los items se añaden directamente a la página "NPCs" (sin crear carpeta "NPCs")
-        // 
-        //   - Página "Personajes" contiene una base de datos "NPCs" con items: "Indithir", "Thava", "Gareth"
-        //   - Resultado: Carpeta "NPCs" con páginas "Indithir", "Thava", "Gareth"
-        // 
-        // NOTA: Si en el futuro se quiere cambiar este comportamiento (ej: añadir items directamente sin carpeta),
-        // modificar la lógica en las líneas 1208-1240 y 1243-1253
-        //
-        const existingCategoryNames = Array.from(categoryMap.keys());
-        const databaseFolders = new Map(); // databaseTitle -> pages[]
-        let dbAssignedToCategory = 0;
-        let dbInFolders = 0;
-        let dbAddedDirectly = 0; // Items añadidos directamente porque DB tiene mismo nombre que página
-        
-        for (const child of dbPagesForLater) {
-          const pageData = {
-            type: 'page',
-            name: child.title,
-            url: child.url
-          };
-          
-          let assignedToCategory = false;
-          let addedDirectly = false;
-          
-          // Buscar si algún label coincide con una categoría existente
-          if (child.labels && child.labels.length > 0) {
-            for (const label of child.labels) {
-              const matchingCategoryName = this._findMatchingCategory(label, existingCategoryNames);
-              
-              if (matchingCategoryName) {
-                // Añadir a la categoría existente
-                const category = categoryMap.get(matchingCategoryName);
-                if (category && category.items) {
-                  category.items.push(pageData);
-                  assignedToCategory = true;
-                  dbAssignedToCategory++;
-                  log(`  ✅ "${child.title}" asignado a "${matchingCategoryName}" por label "${label}"`);
-                  break;
-                }
-              }
-            }
-          }
-          
-          // Si no se asignó por label, verificar si la DB tiene el mismo nombre que la página actual
-          if (!assignedToCategory) {
-            const dbTitle = child.databaseTitle || '';
-            const invalidTitles = ['Untitled', 'Database', ''];
-            
-            // Comparar nombre de DB con título de página (case-insensitive)
-            const dbTitleNormalized = dbTitle.trim().toLowerCase();
-            const pageTitleNormalized = title.trim().toLowerCase();
-            
-            if (dbTitleNormalized === pageTitleNormalized && dbTitle && !invalidTitles.includes(dbTitle)) {
-              // La DB tiene el mismo nombre que la página → añadir directamente sin carpeta
-              items.push(pageData);
-              addedDirectly = true;
-              dbAddedDirectly++;
-              stats.pagesImported++;
-              log(`  📄 "${child.title}" añadido directamente (DB "${dbTitle}" coincide con página "${title}")`);
-            } else if (dbTitle && !invalidTitles.includes(dbTitle)) {
-              // Crear carpeta con el título de la DB
-              if (!databaseFolders.has(dbTitle)) {
-                databaseFolders.set(dbTitle, []);
-              }
-              databaseFolders.get(dbTitle).push(pageData);
-              dbInFolders++;
-              stats.pagesImported++;
-            } else {
-              // DB sin título válido: no crear carpeta, mostrar warning
-              stats.dbPagesFiltered++;
-              log(`⚠️ "${child.title}" omitido: la DB "${dbTitle || 'sin título'}" no tiene un nombre válido para crear carpeta`);
-            }
-          } else {
-            stats.pagesImported++;
-          }
-        }
-        
-        // Crear carpetas para páginas de DB que no coincidieron con categorías ni con el nombre de la página
-        // AQUÍ SE CREAN LAS CARPETAS CON EL NOMBRE DE LA TABLA (databaseTitle)
-        for (const [folderName, pages] of databaseFolders) {
-          if (pages.length > 0) {
-            items.push({
-              type: 'category',
-              name: folderName,
-              items: pages
-            });
-            log(`📁 Carpeta de DB creada: "${folderName}" con ${pages.length} páginas`);
-          }
-        }
-        
-        // Log resumen de procesamiento de DB
-        if (dbPagesForLater.length > 0) {
-          const dbFiltered = stats.dbPagesFiltered;
-          const parts = [];
-          if (dbAssignedToCategory > 0) parts.push(`${dbAssignedToCategory} asignados por label`);
-          if (dbAddedDirectly > 0) parts.push(`${dbAddedDirectly} añadidos directamente (mismo nombre)`);
-          if (dbInFolders > 0) parts.push(`${dbInFolders} en carpetas de DB`);
-          if (dbFiltered > 0) parts.push(`${dbFiltered} omitidos (DB sin nombre válido)`);
-          log(`📊 DB: ${parts.join(', ')}`);
-        }
+          if (child.type === 'child_database') {
+            const databaseItems = (child.pages || []).map(page => ({
+              type: 'page',
+              name: page.title,
+              url: page.url
+            }));
 
-        // ============================================
-        // ESCANEAR MENTIONS EN EL CONTENIDO Y EN PROPIEDADES DE DB
-        // ============================================
-        if (onProgress) {
-          onProgress({ 
-            message: `Scanning mentions in: ${title}...`, 
-            depth,
-            pagesImported: stats.pagesImported 
-          });
-        }
+            if (databaseItems.length > 0) {
+              items.push({
+                type: 'category',
+                name: child.title?.trim() || 'Database',
+                items: databaseItems
+              });
+              stats.pagesImported += databaseItems.length;
+              log(`📁 Base de datos conservada: "${child.title}" con ${databaseItems.length} páginas`);
+            }
+            continue;
+          }
 
-        try {
-          // Obtener bloques de la página para buscar mentions
-          const blocks = await this.fetchBlocks(id, true);
-          
-          // Mentions de bloques de contenido
-          let mentions = [];
-          if (blocks && blocks.length > 0) {
-            mentions = await this._extractMentionsFromBlocks(blocks);
+          const result = await processPage(child.id, child.title, depth + 1);
+          if (result) {
+            items.push(result);
           }
-          
-          // También escanear mentions en las propiedades de las páginas de DB
-          // (wiki links dentro de celdas de tablas inline)
-          const scannedDbIds = new Set();
-          for (const child of childPages) {
-            if (child.type === 'database_page' || child.type === 'child_database') {
-              const dbId = child.databaseId || child.id;
-              if (dbId && !scannedDbIds.has(dbId)) {
-                scannedDbIds.add(dbId);
-                try {
-                  const dbPages = await this.fetchDatabasePages(dbId);
-                  for (const dbPage of dbPages) {
-                    if (dbPage.properties) {
-                      const propMentions = this._extractMentionsFromPageProperties(dbPage.properties, dbPage.title);
-                      for (const pm of propMentions) {
-                        // Evitar duplicados con mentions ya encontrados
-                        const exists = mentions.some(m => this._normalizeId(m.pageId) === this._normalizeId(pm.pageId));
-                        if (!exists) {
-                          mentions.push(pm);
-                        }
-                      }
-                    }
-                  }
-                  log(`🔍 Escaneadas properties de DB "${child.databaseTitle || dbId}": ${mentions.length} mentions totales`);
-                } catch (e) {
-                  log(`⚠️ Error escaneando properties de DB ${dbId}:`, e.message);
-                }
-              }
-            }
-          }
-          
-          if (mentions.length > 0) {
-              log(`🔗 Mentions encontrados en "${title}":`, mentions.length);
-              
-              // Recopilar todos los IDs ya importados
-              const importedIds = new Set();
-              
-              // IDs de childPages
-              for (const child of childPages) {
-                importedIds.add(child.id);
-              }
-              
-              // IDs de páginas ya en items (incluyendo las de DB ya procesadas)
-              for (const item of items) {
-                if (item.url) {
-                  const urlMatch = item.url.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
-                  if (urlMatch) {
-                    importedIds.add(this._normalizeId(urlMatch[1]));
-                  }
-                }
-                // También buscar en sub-items (carpetas de DB)
-                if (item.items) {
-                  for (const subItem of item.items) {
-                    if (subItem.url) {
-                      const subMatch = subItem.url.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
-                      if (subMatch) {
-                        importedIds.add(this._normalizeId(subMatch[1]));
-                      }
-                    }
-                  }
-                }
-              }
-              
-              // IDs de páginas ya en categorías
-              for (const [catName, category] of categoryMap) {
-                if (category.items) {
-                  for (const page of category.items) {
-                    // Extraer ID de la URL
-                    const urlMatch = page.url?.match(/-([a-f0-9]{32})(?:[^a-f0-9]|$)/i);
-                    if (urlMatch) {
-                      const extractedId = urlMatch[1];
-                      const formattedId = this._normalizeId(extractedId);
-                      importedIds.add(formattedId);
-                    }
-                  }
-                }
-              }
-              
-              // Agrupar mentions con parent DB para crear carpetas si estamos en root
-              const mentionsByDb = new Map(); // parentDbTitle -> pages[]
-              const mentionsWithoutDb = []; // Páginas sin parent DB
-              
-              // Procesar mentions que no estén ya importados
-              for (const mention of mentions) {
-                const mentionId = mention.pageId;
-                
-                // Normalizar ID para comparación
-                let normalizedId = mentionId;
-                if (!mentionId.includes('-') && mentionId.length === 32) {
-                  normalizedId = `${mentionId.substring(0, 8)}-${mentionId.substring(8, 12)}-${mentionId.substring(12, 16)}-${mentionId.substring(16, 20)}-${mentionId.substring(20, 32)}`;
-                }
-                
-                if (importedIds.has(normalizedId) || importedIds.has(mentionId)) {
-                  log(`  ✅ Mention "${mention.text}" ya está importado`);
-                  continue;
-                }
-                
-                log(`  🔍 Procesando mention: "${mention.text}" (${mentionId})`);
-                
-                // Obtener info de la página mencionada
-                const pageInfo = await this._getMentionedPageInfo(mentionId);
-                
-                if (!pageInfo) {
-                  log(`  ⚠️ Mention "${mention.text}" omitido (la página no está compartida con tu integración de Notion)`);
-                  continue;
-                }
-                
-                // Usar el título del mention si está disponible y pageInfo.title es "Untitled"
-                // El mention.text ya contiene el título correcto desde la API de Notion
-                const finalTitle = (pageInfo.title === 'Untitled' && mention.text && mention.text !== 'Untitled') 
-                  ? mention.text 
-                  : pageInfo.title;
-                
-                // Crear la página
-                const newPage = {
-                  type: 'page',
-                  name: finalTitle,
-                  url: pageInfo.url
-                };
-                
-                // Intentar asignar a una categoría existente por título de la DB padre
-                let assignedToCategory = false;
-                
-                if (pageInfo.parentDbTitle) {
-                  // Buscar si hay una categoría que coincida con el título de la DB
-                  const matchingCategoryName = this._findMatchingCategory(pageInfo.parentDbTitle, existingCategoryNames);
-                  
-                  if (matchingCategoryName) {
-                    const category = categoryMap.get(matchingCategoryName);
-                    if (category && category.items) {
-                      // Verificar que no esté ya
-                      const exists = category.items.some(p => p.url === newPage.url || p.name === newPage.name);
-                      if (!exists) {
-                        category.items.push(newPage);
-                        stats.pagesImported++;
-                        assignedToCategory = true;
-                        log(`  ✅ Mention "${pageInfo.title}" asignado a "${matchingCategoryName}"`);
-                      }
-                    }
-                  }
-                  
-                  // Si no se asignó a categoría, agrupar por DB para crear carpeta
-                  if (!assignedToCategory) {
-                    if (!mentionsByDb.has(pageInfo.parentDbTitle)) {
-                      mentionsByDb.set(pageInfo.parentDbTitle, []);
-                    }
-                    mentionsByDb.get(pageInfo.parentDbTitle).push(newPage);
-                  }
-                } else {
-                  // Sin parent DB: añadir directamente a items
-                  mentionsWithoutDb.push(newPage);
-                }
-                
-                // Marcar como importado
-                importedIds.add(normalizedId);
-              }
-              
-              // Crear carpetas para mentions agrupados por DB
-              if (mentionsByDb.size > 0) {
-                for (const [dbTitle, dbPages] of mentionsByDb) {
-                  if (dbPages.length > 0) {
-                    items.push({
-                      type: 'category',
-                      name: dbTitle,
-                      items: dbPages
-                    });
-                    stats.pagesImported += dbPages.length;
-                    log(`📁 Carpeta creada para mentions de DB "${dbTitle}": ${dbPages.length} páginas`);
-                  }
-                }
-              }
-              
-              // Añadir mentions sin parent DB directamente a items
-              for (const page of mentionsWithoutDb) {
-                items.push(page);
-                stats.pagesImported++;
-                log(`  ✅ Mention "${page.name}" añadido a items`);
-              }
-            }
-        } catch (mentionError) {
-          logWarn(`Error escaneando mentions en "${title}":`, mentionError);
-          // Continuar sin fallar - los mentions son opcionales
         }
 
         // Solo devolver la categoría si tiene items
@@ -1718,7 +997,7 @@ export class NotionService {
     }
     
     // Fallback: extraer título desde page.url (la API a veces devuelve propiedades solo con ID)
-    if (page.url && (page.url.includes('notion.so') || page.url.includes('notion.site'))) {
+    if (page.url && isNotionUrl(page.url)) {
       const titleFromUrl = this._extractTitleFromNotionUrl(page.url);
       if (titleFromUrl) return titleFromUrl;
     }
@@ -1755,40 +1034,15 @@ export class NotionService {
   }
 
   /**
-   * Intenta obtener del caché compartido
-   * @private
-   */
-  async _getFromSharedCache(pageId) {
-    if (!this.OBR) return null;
-
-    try {
-      const metadata = await this.OBR.room.getMetadata();
-      const sharedCache = metadata && metadata[ROOM_CONTENT_CACHE_KEY];
-      
-      if (sharedCache && sharedCache[pageId] && sharedCache[pageId].blocks) {
-        log('✅ Usando caché compartido (room metadata) para:', pageId);
-        return sharedCache[pageId].blocks;
-      }
-    } catch (e) {
-      logWarn('No se pudo obtener caché compartido:', e);
-    }
-    return null;
-  }
-
-  /**
    * Consulta las páginas de una base de datos de Notion
    * @param {string} databaseId - ID de la base de datos
    * @returns {Promise<Array>} - Lista de páginas con sus IDs y títulos
    */
   async fetchDatabasePages(databaseId) {
     try {
-      // Obtener token del usuario o usar el de default
-      let tokenToUse = this.storageService?.getUserToken();
-      if (!tokenToUse) {
-        tokenToUse = await this._getDefaultToken();
-      }
-      
-      if (!tokenToUse) {
+      const authHeaders = await this._getNotionAuthHeaders();
+
+      if (!authHeaders) {
         logWarn('No hay token para consultar base de datos');
         return [];
       }
@@ -1797,11 +1051,13 @@ export class NotionService {
       
       const params = new URLSearchParams({
         action: 'database',
-        databaseId: databaseId,
-        token: tokenToUse
+        databaseId: databaseId
       });
       
-      const response = await this._fetchWithRetry(`/.netlify/functions/notion-api?${params.toString()}`);
+      const response = await this._fetchWithRetry(
+        `/.netlify/functions/notion-api?${params.toString()}`,
+        { method: 'GET', headers: authHeaders }
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1826,7 +1082,7 @@ export class NotionService {
         const title = this._extractPageTitle(page);
         const labels = this._extractLabelsFromPage(page);
         // Usar page.url de la API cuando exista y sea de Notion (formato correcto con slug)
-        const url = (page.url && (page.url.includes('notion.so') || page.url.includes('notion.site')))
+        const url = (page.url && isNotionUrl(page.url))
           ? page.url
           : this._buildNotionUrl(title, page.id);
         
@@ -1846,4 +1102,3 @@ export class NotionService {
 }
 
 export default NotionService;
-

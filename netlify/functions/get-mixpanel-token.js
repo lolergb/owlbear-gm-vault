@@ -3,6 +3,13 @@
  * The token is stored in Netlify environment variable MIXPANEL_TOKEN
  */
 
+const RESPONSE_HEADERS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Cache-Control': 'no-store'
+};
 const PRODUCTION_HOSTNAME = 'owlbear-gm-vault.netlify.app';
 
 function getDeployMetadata(event) {
@@ -10,6 +17,8 @@ function getDeployMetadata(event) {
   const rawContext = String(process.env.CONTEXT || '').toLowerCase();
   let deployContext = knownContexts.has(rawContext) ? rawContext : 'unknown';
 
+  // CONTEXT is canonical. The hostname fallback keeps deployment analytics
+  // usable if Netlify does not expose it in a particular function runtime.
   if (deployContext === 'unknown') {
     const hostname = String(
       event?.headers?.['x-forwarded-host'] || event?.headers?.host || ''
@@ -27,12 +36,9 @@ function getDeployMetadata(event) {
   const environment = deployContext === 'production'
     ? 'production'
     : deployContext === 'unknown' ? 'unknown' : 'beta';
+  const isBeta = environment === 'unknown' ? null : environment === 'beta';
 
-  return {
-    environment,
-    deployContext,
-    isBeta: environment === 'beta'
-  };
+  return { environment, deployContext, isBeta };
 }
 
 export const handler = async (event, context) => {
@@ -40,11 +46,7 @@ export const handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS'
-      },
+      headers: RESPONSE_HEADERS,
       body: ''
     };
   }
@@ -53,9 +55,7 @@ export const handler = async (event, context) => {
   if (event.httpMethod !== 'GET') {
     return {
       statusCode: 405,
-      headers: {
-        'Access-Control-Allow-Origin': '*'
-      },
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify({ error: 'Method not allowed' })
     };
   }
@@ -67,31 +67,21 @@ export const handler = async (event, context) => {
     if (!token) {
       return {
         statusCode: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        },
+        headers: RESPONSE_HEADERS,
         body: JSON.stringify({ token: null, enabled: false, ...deployMetadata })
       };
     }
     
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS'
-      },
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify({ token, enabled: true, ...deployMetadata })
     };
   } catch (error) {
     console.error('Error getting Mixpanel token:', error);
     return {
       statusCode: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*'
-      },
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify({ error: error.message || 'Internal server error', token: null, enabled: false })
     };
   }

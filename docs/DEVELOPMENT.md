@@ -54,21 +54,23 @@ owlbear-gm-vault/
    - Share this URL with users
    - **Each user will configure their own token** from the interface (🔑 button)
 
-### Optional server token
+### Optional demo integration
 
-If you want it to work without users configuring anything (shared pages):
+The built-in demo pages can work without a user token through a dedicated,
+read-only Notion integration:
 
 1. **In Netlify Dashboard:**
    - Settings → Environment variables
-   - Add: `NOTION_API_TOKEN` = `your_notion_token`
-   - Get the token: https://www.notion.so/my-integrations
+   - Add: `GM_VAULT_DEFAULT_CONFIG_V2` = `your_dedicated_demo_integration_token`
+   - Scope the variable to the deploy contexts that should expose the demos
 
 2. **In Notion:**
-   - Share your pages with the integration
-   - Users will see these pages without configuring anything
+   - Give the integration read-only access only to the four roots listed in
+     `public/default-config.json`
+   - Do not share any personal or private workspace pages with it
 
 3. **Users can:**
-   - Use shared pages (without token)
+   - Use the built-in demo pages without configuring a token
    - Or configure their own token (🔑) for their pages
 
 ## 🔧 Local Development
@@ -83,12 +85,10 @@ If you want it to work without users configuring anything (shared pages):
 1. **Local server:**
    ```bash
    npm run serve
-   # or
-   npx http-server -p 8000
    ```
 
 2. **Use in Owlbear:**
-   - `http://localhost:8000/manifest.json`
+   - `http://127.0.0.1:8000/manifest.local.json`
 
 3. **Configure your token:**
    - Open the extension in Owlbear
@@ -117,17 +117,17 @@ To test that the extension works:
 
 **For Developers:**
 
-- ✅ Token is stored in Netlify (environment variables) - optional
-- ✅ Token is NEVER exposed to the client (uses Netlify Functions as proxy)
+- ✅ The dedicated demo credential is stored in Netlify and never returned to the client
+- ✅ Demo access is restricted server-side to the roots in `public/default-config.json`
 - ✅ End users configure their own token from the interface (🔑 button)
 - ✅ User tokens are stored locally in the browser (localStorage)
-- ✅ Server token is optional and only used if user token is not configured
+- ✅ User tokens reach the same-origin proxy in a request header, never in a URL
 
 **For Users:**
 
 - ✅ You don't need to know anything about tokens
 - ✅ Just use the extension normally
-- ✅ Your token is stored locally and never sent to the server (except through secure Netlify Functions)
+- ✅ Your token is stored locally and sent only to the same-origin Netlify proxy when Notion is requested
 
 ## 📚 Documentation
 

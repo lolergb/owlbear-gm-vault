@@ -1,0 +1,159 @@
+/* UI roles only. Shared font/color tokens, navigation and authored documents
+   keep their existing values and styles. */
+:root {
+  --ui-font-body: 400 var(--font-size-base)/var(--font-line-base) var(--font-family-base);
+  --ui-font-help: 400 var(--font-size-sm)/var(--font-line-sm) var(--font-family-base);
+  --ui-font-title: 700 var(--font-size-md)/var(--font-line-md) var(--font-family-base);
+  --ui-color-link: color-mix(in srgb, var(--color-accent-primary-light) 70%, white);
+  --ui-color-warning: #ffb74d;
+}
+
+body[data-obr-theme="light"] {
+  --ui-color-link: var(--color-accent-primary-hover);
+  --ui-color-warning: #854d0e;
+}
+
+/* Titles: the same hierarchy in both modal systems and Settings. */
+.form__title,
+.modal__title,
+.modal-title,
+.mention-modal__title,
+.empty-state-text,
+.notion-blocked__title,
+.notion-blocked-title,
+.notion-waiting--gm-offline .notion-waiting-text {
+  font: var(--ui-font-title);
+  color: var(--color-text-primary);
+}
+
+/* Body text, values, labels and menu options. */
+.settings,
+.modal__content,
+.modal-container,
+.context-menu,
+#context-menu,
+.input,
+.textarea,
+.select,
+.form-input,
+.select--searchable__option,
+.form__label,
+.form-label,
+.form__checkbox-label,
+.page-name,
+.page-name-text,
+.notion-page-item,
+.notion-page-item__title,
+.context-menu__item,
+.context-menu-item,
+.import-error__message,
+.import-progress__status {
+  font: var(--ui-font-body);
+  color: var(--color-text-primary);
+}
+
+.input--mono { font-family: var(--font-family-mono); }
+
+/* Descriptions stay readable without competing with titles and values. */
+.settings__description,
+.modal__text,
+.modal__list,
+.modal-message,
+.notion-blocked__text,
+.notion-blocked-text,
+.empty-state-hint,
+.notion-waiting--gm-offline .notion-waiting-hint,
+.notion-pages-empty,
+.notion-pages-loading,
+.loading-state,
+.import-warning-step__intro,
+.cogm-toast-text,
+.gm-toast__message {
+  font: var(--ui-font-body);
+  color: var(--color-text-muted);
+}
+
+.category-title,
+.category__title,
+.gm-toast__title,
+.import-options__question,
+.import-option__title {
+  font: var(--ui-font-body);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+/* Help and metadata are active information, never disabled text. */
+.form__help,
+.form-hint,
+.empty-state-subhint,
+.notion-waiting--gm-offline .notion-waiting-subhint,
+.cogm-toast-hint,
+.notion-pages-hint,
+.notion-page-item__meta,
+.notion-selection-count,
+.import-progress,
+.import-option__hint,
+.import-source-label,
+.page__url,
+.page-url,
+.announcement-banner__message,
+.import-preview__stats dt {
+  font: var(--ui-font-help);
+  color: var(--color-text-muted);
+}
+
+.cookie-consent-text,
+.import-preview__warning-message,
+.share-feedback {
+  font: var(--ui-font-help);
+  color: var(--color-text-primary);
+}
+
+.announcement-banner__title {
+  font: var(--ui-font-help);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.page-visibility-badge {
+  font: 400 var(--font-size-xs)/var(--font-line-xs) var(--font-family-base);
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.form__error,
+.error-text,
+.import-error__details {
+  font: var(--ui-font-help);
+  color: var(--color-error-text);
+}
+
+.import-option__hint--warning { color: var(--color-error-text); }
+
+.import-preview__warnings-title {
+  font: var(--ui-font-help);
+  font-weight: var(--font-weight-bold);
+  color: var(--ui-color-warning);
+}
+
+.import-preview__stats dd { line-height: var(--font-line-lg); }
+
+.input::placeholder,
+.textarea::placeholder,
+.form-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.input:disabled,
+.textarea:disabled,
+.select:disabled,
+.form-input:disabled { color: var(--color-text-disabled); }
+
+.link,
+.vault-empty-state__guide {
+  color: var(--ui-color-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -7,8 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Permanent+Marker&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css">
-  <link rel="stylesheet" href="css/notion-markdown.css">
+  <link rel="stylesheet" href="css/app.css?v=20260906-9">
+  <link rel="stylesheet" href="css/ui-typography.css?v=20260906-9">
+  <link rel="stylesheet" href="css/notion-markdown.css?v=20260906-9">
+  <link rel="stylesheet" href="css/vault-empty-state.css?v=20260906-9">
+  <link rel="stylesheet" href="css/folder-select.css?v=20260906-9">
   <!-- Preload iconos críticos -->
   <link rel="preload" href="img/icon-add.svg" as="image" type="image/svg+xml">
   <link rel="preload" href="img/icon-arrow.svg" as="image" type="image/svg+xml">
@@ -58,8 +61,8 @@
   <div class="container">
     <!-- Global header -->
     <header id="header" class="header">
-      <button id="back-button" class="btn btn--sm hidden">
-        <img src="img/icon-arrow.svg" alt="Back" class="btn__icon">
+      <button id="back-button" class="back-button hidden">
+        <svg class="btn__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>
         Back
       </button>
       <h1 id="page-title" class="header__title">GM vault</h1>
@@ -82,9 +85,9 @@
           <div class="form__field">
             <label class="form__label" for="token-input"><h3 class="form__title">Notion</h3></label>
             <p class="settings__description">
-              Configure your Notion token <a href="https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion" class="link">following this tutorial</a> to use your own pages. This token is global for the entire extension (all rooms). 
+              Configure your Notion token <a href="https://developers.notion.com/docs/create-a-notion-integration#create-your-integration-in-notion" class="link">following this tutorial</a> to use your own pages. This token is global for the entire extension (all rooms).
             </p>
-            <input type="password" id="token-input" placeholder="ntn_... or secret_..." class="input input--mono" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" spellcheck="false">
+            <input type="text" id="token-input" name="notion-access-token" placeholder="Enter a new token" class="input token-secret" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" spellcheck="false">
             <p id="token-masked" class="form__help"></p>
           </div>
           
@@ -94,9 +97,6 @@
             <button id="clear-token" class="btn btn--ghost btn--flex">Delete Token</button>
             <button id="save-token" class="btn btn--primary btn--flex">Save Token</button>
           </div>
-          <div class="form__actions form__actions--double">
-            <button id="import-notion-btn" class="btn btn--primary btn--flex">📥 Import from Notion</button>
-          </div>
         </div>
 
         <div class="form form--separated">
@@ -104,21 +104,14 @@
           <p class="settings__description">
             Save and reuse your vault. Import a setup shared by another GM or export yours as a backup.
           </p>
-          <div class="form__field">
-            <label class="form__label" for="vault-url-input">Load from URL</label>
-            <input type="url" id="vault-url-input" placeholder="https://example.com/gm-vault" class="input input--mono" autocomplete="off" spellcheck="false">
-            <div class="form__actions form__actions--single" style="margin-top: 8px;">
-              <button id="load-url-btn" class="btn btn--primary btn--flex">Load from URL</button>
-            </div>
-          </div>
-          <label class="form__label" style="margin-top: var(--spacing-lg);">Load from file</label>
           <div class="form__actions form__actions--single">
-            <button id="view-json-btn" class="btn btn--ghost btn--flex hidden">View JSON</button>
+            <button id="download-json-btn" class="btn btn--ghost btn--flex">Backup GM Vault</button>
           </div>
-          <div class="form__actions form__actions--double">
-            <button id="load-json-btn" class="btn btn--primary btn--flex">Load vault</button>
-            <button id="download-json-btn" class="btn btn--ghost btn--flex">Download vault</button>
-          </div>
+          <!-- Import controls are opened from the + menu. -->
+          <input type="url" id="vault-url-input" hidden>
+          <button id="load-url-btn" hidden type="button"></button>
+          <button id="load-json-btn" hidden type="button"></button>
+          <button id="view-json-btn" hidden type="button"></button>
         </div>
 
         <div class="form form--separated">
@@ -127,8 +120,8 @@
             GM Vault is built and maintained in my spare time. If you find it useful, consider supporting the project on Patreon to help fund ongoing maintenance, bug fixes, and improvements. You can also share your ideas through our roadmap page. Special thanks to the Patreon supporters!
           </p>
           <div class="form__actions form__actions--double">
-            <button id="patreon-btn" class="btn btn--primary btn--flex">Support on Patreon</button>
             <button id="feedback-btn" class="btn btn--ghost btn--flex">Give Feedback</button>
+            <button id="patreon-btn" class="btn btn--primary btn--flex">Support on Patreon</button>
           </div>
         </div>
 
@@ -145,9 +138,8 @@
       </div>
     </div>
   </div>
-  <!-- Usar js/index.js (original) o js/main.js (modular) -->
-  <!-- Para probar la versión modular, cambiar a: src="js/main.js" -->
-  <script type="module" src="js/main.js"></script>
+  <!-- La aplicación activa usa la arquitectura modular de js/main.js. -->
+  <!-- One-time cache bust for clients that received the former 7-day JS cache policy. -->
+  <script type="module" src="js/main.js?v=20260906-10"></script>
 </body>
 </html>
-

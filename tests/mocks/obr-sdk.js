@@ -14,8 +14,13 @@ export const mockOBR = {
   },
   player: {
     getId: jest.fn(() => Promise.resolve('test-player-id')),
+    getConnectionId: jest.fn(() => Promise.resolve('test-connection-id')),
     getName: jest.fn(() => Promise.resolve('Test Player')),
     getRole: jest.fn(() => Promise.resolve('GM'))
+  },
+  party: {
+    getPlayers: jest.fn(() => Promise.resolve([])),
+    onChange: jest.fn(() => ({ unsubscribe: jest.fn() }))
   },
   broadcast: {
     sendMessage: jest.fn(() => Promise.resolve()),
@@ -35,4 +40,3 @@ export const mockOBR = {
 };
 
 export default mockOBR;
-

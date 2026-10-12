@@ -8,6 +8,7 @@
 [[headers]]
   for = "/manifest.json"
   [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
@@ -15,6 +16,7 @@
 [[headers]]
   for = "/index.html"
   [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
     Access-Control-Allow-Methods = "GET, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type"
@@ -56,13 +58,19 @@
 [[headers]]
   for = "/css/*.css"
   [headers.values]
-    Cache-Control = "public, max-age=604800"
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
 
 [[headers]]
   for = "/js/*.js"
   [headers.values]
-    Cache-Control = "public, max-age=604800"
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
+[[headers]]
+  for = "/html/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
 
 # Configuración de build
@@ -76,15 +84,8 @@
   skip_processing = false
 
 # Variables de entorno (configúralas en Netlify Dashboard)
-# OWNER_TOKEN: (Recomendado) Tu token de Notion personal
-#   - Si está configurado, DEBUG_MODE solo funcionará para tu cuenta
-#   - Esto garantiza que solo tú veas el botón "Ver JSON" y los logs de debug
-#   - Es la forma más segura de activar el modo debug solo para ti
-# DEBUG_MODE: Configura en Site settings → Environment variables
-#   - Valor: "true" o "1" para activar logs de debug
-#   - Valor: "false" o "0" para desactivar logs
-#   - Si OWNER_TOKEN está configurado, DEBUG_MODE solo funciona para tu token
-#   - Si OWNER_TOKEN NO está configurado, DEBUG_MODE funciona para todos (menos seguro)
-# GM_VAULT_DEFAULT_CONFIG: Token de Notion para default-config
-#   - Se usa para cargar páginas de Notion en la configuración por defecto
-
+# DEBUG_MODE: "true" o "1" activa logs solo en deploy previews/branch deploys.
+#   - La función lo mantiene desactivado en el contexto production.
+# GM_VAULT_DEFAULT_CONFIG_V2: credencial de una integración de Notion dedicada.
+#   - Debe tener acceso de solo lectura exclusivamente a las páginas demo.
+#   - Se usa únicamente dentro de las Netlify Functions y nunca se devuelve al cliente.

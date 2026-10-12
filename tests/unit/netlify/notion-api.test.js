@@ -42,9 +42,9 @@ describe('notion-api Netlify function', () => {
     });
 
     const response = await handler(event({
+      headers: { 'X-Notion-Token': 'test-notion-token' },
       queryStringParameters: {
         action: 'search',
-        token: 'test-notion-token',
         filter: 'page'
       }
     }));

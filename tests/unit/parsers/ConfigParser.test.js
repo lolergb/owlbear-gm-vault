@@ -100,13 +100,13 @@ describe('ConfigParser', () => {
     it('debe detectar configuración nula', () => {
       const result = parser.validate(null);
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('Configuración vacía');
+      expect(result.errors).toContain('This backup is empty.');
     });
 
     it('debe detectar categories faltante', () => {
       const result = parser.validate({});
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain('Falta el campo "categories"');
+      expect(result.errors).toContain('This file is missing its folder list.');
     });
 
     it('debe detectar página sin nombre', () => {
@@ -118,7 +118,7 @@ describe('ConfigParser', () => {
 
       const result = parser.validate(json);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('falta nombre'))).toBe(true);
+      expect(result.errors.some(e => e.includes('missing a name'))).toBe(true);
     });
 
     it('debe detectar página sin URL', () => {
@@ -130,8 +130,113 @@ describe('ConfigParser', () => {
 
       const result = parser.validate(json);
       expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('falta URL'))).toBe(true);
+      expect(result.errors.some(e => e.includes('needs a URL'))).toBe(true);
     });
+
+    it('debe validar también las páginas del nivel raíz', () => {
+      const valid = parser.validate({
+        categories: [],
+        pages: [{ name: 'Root page', url: 'https://example.com/root' }]
+      });
+      const invalid = parser.validate({
+        categories: [],
+        pages: [{ name: 'Broken root page' }]
+      });
+
+      expect(valid.valid).toBe(true);
+      expect(invalid.valid).toBe(false);
+      expect(invalid.errors).toContain('Page “Broken root page” needs a URL or saved page content.');
+    });
+
+    it('debe rechazar arrays y colecciones raíz con tipos incompatibles', () => {
+      expect(parser.validate([]).errors).toContain('The backup must contain a JSON object.');
+      expect(parser.validate({ categories: [], pages: {} }).errors)
+        .toContain('The root page list in this backup has an invalid format.');
+    });
+
+    it('debe rechazar propiedades de página con tipos que se descartarían', () => {
+      const result = parser.validate({
+        categories: [{
+          name: 'Test',
+          pages: [{
+            name: 'Page',
+            url: 'https://example.com',
+            visibleToPlayers: 'yes',
+            blockTypes: ['paragraph', 3]
+          }]
+        }]
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('Page “Page” must use true or false for player visibility.');
+      expect(result.errors).toContain('Page “Page” has invalid block type information.');
+    });
+  });
+
+  describe('preflight', () => {
+    it('resume carpetas y páginas sin modificar la configuración', () => {
+      const json = {
+        categories: [{
+          name: 'World',
+          pages: [{ name: 'Map', url: 'https://example.com/map' }],
+          categories: [{
+            name: 'NPCs',
+            pages: [{ name: 'Innkeeper', htmlContent: '<p>Hello</p>' }]
+          }]
+        }],
+        pages: [{ name: 'Home', url: 'https://example.com' }]
+      };
+      const original = JSON.parse(JSON.stringify(json));
+
+      const result = parser.preflight(json);
+
+      expect(result.valid).toBe(true);
+      expect(result.format).toBe('legacy');
+      expect(result.summary).toEqual({ categoryCount: 2, pageCount: 3 });
+      expect(result.warnings).toEqual([]);
+      expect(json).toEqual(original);
+    });
+
+    it('avisa exactamente de los campos que se descartarán', () => {
+      const result = parser.preflight({
+        categories: [{
+          name: 'World',
+          customFolderData: true,
+          pages: [{
+            name: 'Map',
+            url: 'https://example.com/map',
+            customPageData: 'ignored'
+          }]
+        }],
+        schemaVersion: 99
+      });
+
+      expect(result.valid).toBe(true);
+      expect(result.ignoredFields).toEqual([
+        'schemaVersion',
+        'categories[0].customFolderData',
+        'categories[0].pages[0].customPageData'
+      ]);
+      expect(result.warnings).toContain(
+        'GM Vault will import the folders and pages, but it does not recognize 3 extra details in this backup. Those details will be left out.'
+      );
+    });
+
+    it('detecta items[] anidados aunque la categoría superior use categories[]', () => {
+      const json = {
+        categories: [{
+          name: 'World',
+          categories: [{
+            name: 'Scenes',
+            items: [{ type: 'page', name: 'Intro', url: 'https://example.com/intro' }]
+          }]
+        }]
+      };
+
+      expect(parser.detectFormat(json)).toBe('items');
+      expect(parser.preflight(json).summary).toEqual({ categoryCount: 2, pageCount: 1 });
+    });
+
   });
 
   // ============================================
@@ -469,4 +574,3 @@ describe('ConfigParser', () => {
     });
   });
 });
-

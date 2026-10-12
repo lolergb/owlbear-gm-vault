@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 99,
+  "categories": [
+    {
+      "name": "Import with notices",
+      "customFolderData": true,
+      "pages": [
+        {
+          "name": "Supported page",
+          "url": "https://example.com/supported",
+          "customPageData": "This field will be ignored"
+        }
+      ]
+    }
+  ]
+}
