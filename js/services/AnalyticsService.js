@@ -444,6 +444,18 @@ export class AnalyticsService {
     });
   }
 
+  trackBetaBannerViewed() {
+    return this.trackEvent('beta_banner_viewed');
+  }
+
+  trackBetaBannerClicked() {
+    return this.trackEvent('beta_banner_clicked');
+  }
+
+  trackBetaBannerDismissed() {
+    return this.trackEvent('beta_banner_dismissed');
+  }
+
   /**
    * Track page view
    * @param {string} pageName - Nombre de la página

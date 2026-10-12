@@ -8,7 +8,8 @@
     "serve": "node scripts/dev-server.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "smoke:functions": "node scripts/smoke-netlify-functions.mjs"
   },
   "keywords": [
     "owlbear",

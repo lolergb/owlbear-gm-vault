@@ -66,6 +66,7 @@ import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-9';
 import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
+import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
 
 /**
  * Controlador principal de la extensión
@@ -112,6 +113,12 @@ export class ExtensionController {
     this.vaultEmptyState = new VaultEmptyState({ analyticsService: this.analyticsService });
     this.exampleLoadPending = false;
     this.announcementCancelled = false;
+    this.betaPromotionBanner = new BetaPromotionBanner({
+      analyticsService: this.analyticsService
+    });
+    this.analyticsInitPromise = null;
+    this.betaPromotionTask = null;
+    this.betaPromotionCancelled = false;
 
     // Elementos DOM
     this.pagesContainer = null;
@@ -132,6 +139,7 @@ export class ExtensionController {
     
     this.OBR = OBR;
     this.announcementCancelled = false;
+    this.betaPromotionCancelled = false;
     
     // Debug: verificar estructura de OBR
     console.log('📦 OBR disponible:', !!OBR);
@@ -164,7 +172,8 @@ export class ExtensionController {
       roomId: this.roomId,
       vaultState: getVaultState(this.config)
     });
-    await this.analyticsService.init();
+    this.analyticsInitPromise = this.analyticsService.init();
+    await this.analyticsInitPromise;
     
     // Configurar UI
     this._setupUI(options);
@@ -226,6 +235,7 @@ export class ExtensionController {
       // Modo normal: renderizar lista de páginas
       await this.render();
       if (!this._canShowVaultEmptyState()) this._scheduleAnnouncement();
+      this._scheduleBetaPromotion();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -2140,6 +2150,13 @@ export class ExtensionController {
   cleanup() {
     log('🧹 Limpiando recursos...');
     this.announcementCancelled = true;
+    this.betaPromotionCancelled = true;
+
+    // Detener intervals
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
     
     if (this.roleChangeUnsubscribe) {
       this.roleChangeUnsubscribe();
@@ -2151,6 +2168,7 @@ export class ExtensionController {
     this.announcementBanner.remove();
     this.vaultEmptyState?.remove();
     this.stopResponsiveButtonGroups?.();
+    this.betaPromotionBanner.remove();
     
     log('✅ Recursos limpiados');
   }
@@ -2244,6 +2262,36 @@ export class ExtensionController {
       });
     } catch (error) {
       logWarn('No se pudo verificar el rol para mostrar el aviso:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Programa la promoción sin bloquear el flujo principal de inicialización.
+   * @private
+   */
+  _scheduleBetaPromotion() {
+    this.betaPromotionTask = this._showBetaPromotion();
+  }
+
+  /**
+   * Confirma el rol directamente con Owlbear y falla de forma segura.
+   * @private
+   */
+  async _showBetaPromotion() {
+    try {
+      const role = await this.OBR?.player?.getRole?.();
+      if (role !== 'GM' || this.betaPromotionCancelled) return false;
+
+      await this.analyticsInitPromise;
+      if (this.betaPromotionCancelled) return false;
+
+      return this.betaPromotionBanner.show({
+        isGM: true,
+        userId: this.playerId
+      });
+    } catch (error) {
+      logWarn('No se pudo verificar el rol para mostrar la promoción beta:', error);
       return false;
     }
   }

@@ -1,0 +1,39 @@
+name: Netlify Smoke Tests
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Netlify deployment URL to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+      contains(github.event.deployment_status.environment_url, 'netlify.app'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out deployed revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify deployed application and functions
+        env:
+          MANUAL_BASE_URL: ${{ inputs.base_url }}
+          DEPLOYMENT_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+        run: node scripts/smoke-netlify-functions.mjs "${MANUAL_BASE_URL:-$DEPLOYMENT_BASE_URL}"
