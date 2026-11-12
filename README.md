@@ -418,6 +418,7 @@ When reporting a bug, please include:
 - **Console errors:** Any errors visible in the browser console (F12)
 - **Extension version:** Check the version in manifest.json
 
+
 ### MIT License
 
 Copyright (c) 2026 Lole Roman
