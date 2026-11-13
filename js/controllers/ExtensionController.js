@@ -4247,7 +4247,7 @@ export class ExtensionController {
     if (tokenInput) {
       tokenInput.value = '';
       tokenInput.placeholder = currentToken
-        ? '•••••••••••••••• (replace token)'
+        ? '(replace token)'
         : 'ntn_... or secret_...';
     }
     
@@ -4290,7 +4290,7 @@ export class ExtensionController {
         }
         if (tokenInput) {
           tokenInput.value = '';
-          tokenInput.placeholder = '•••••••••••••••• (replace token)';
+          tokenInput.placeholder = '(replace token)';
         }
         
         // Mostrar toast de éxito (quedarse en settings)
