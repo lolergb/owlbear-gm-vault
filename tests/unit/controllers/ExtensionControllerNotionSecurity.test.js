@@ -15,7 +15,6 @@ function bareController() {
   controller.isGM = true;
   controller.isCoGM = false;
   controller.config = {};
-  controller._getVisibilityIndicator = () => '';
   controller._updateMentionsInContent = jest.fn();
   controller._attachImageHandlers = jest.fn();
   return controller;

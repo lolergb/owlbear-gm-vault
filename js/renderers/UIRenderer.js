@@ -10,6 +10,13 @@ import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260816-1';
+import {
+  PLAYER_ACCESS_MODE,
+  getPlayerAudienceMode,
+  isPlayerAccessEnabled,
+  normalizePlayerIds,
+  setPlayerAccessEnabled
+} from '../utils/playerAccess.js';
 
 /**
  * Renderizador de interfaz de usuario
@@ -27,6 +34,7 @@ export class UIRenderer {
     this.onPageDelete = null;
     this.onPageMove = null;
     this.onPageDuplicate = null;
+    this.onPageAccessManage = null;
     // Callbacks para categorías
     this.onCategoryEdit = null;
     this.onCategoryDelete = null;
@@ -64,7 +72,7 @@ export class UIRenderer {
   setCallbacks(callbacks) {
     const keys = [
       'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageOpenModal', 'onPageEdit', 'onPageDelete', 
-      'onPageMove', 'onPageDuplicate', 'onCategoryEdit', 'onCategoryDelete',
+      'onPageMove', 'onPageDuplicate', 'onPageAccessManage', 'onCategoryEdit', 'onCategoryDelete',
       'onCategoryMove', 'onCategoryDuplicate', 'onAddPage', 'onAddCategory', 'onShowModal'
     ];
     keys.forEach(key => {
@@ -98,7 +106,9 @@ export class UIRenderer {
       (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'));
     const hasHtmlContent = !!page.htmlContent;
     if (!hasValidUrl && !hasHtmlContent) return false;
-    return isGM || page.visibleToPlayers === true;
+    return isGM || (
+      page.visibleToPlayers === true && page.playerAccessEnabled !== false
+    );
   }
 
   /**
@@ -138,7 +148,7 @@ export class UIRenderer {
           <div class="empty-state">
             <div class="empty-state-icon">👁️</div>
             <p class="empty-state-text">No content visible to players</p>
-            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
+            <p class="empty-state-hint">The GM can make pages visible using the eye control</p>
           </div>
         `;
       return;
@@ -158,7 +168,7 @@ export class UIRenderer {
           <div class="empty-state">
             <div class="empty-state-icon">👁️</div>
             <p class="empty-state-text">No content visible to players</p>
-            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
+            <p class="empty-state-hint">The GM can make pages visible using the eye control</p>
           </div>
         `;
         return;
@@ -351,9 +361,24 @@ export class UIRenderer {
    * Actualiza el estado visual y accesible del control de visibilidad.
    * @private
    */
-  _setVisibilityButtonState(button, visible) {
-    const title = visible ? 'Visible to players' : 'Hidden from players';
-    const iconPath = `img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
+  _setVisibilityButtonState(button, target, enabled = isPlayerAccessEnabled(target)) {
+    const selectedCount = normalizePlayerIds(target?.sharedWithPlayerIds).length;
+    const configuredMode = getPlayerAudienceMode(target);
+    const audienceMode = enabled && configuredMode === PLAYER_ACCESS_MODE.GM_ONLY
+      ? PLAYER_ACCESS_MODE.EVERYONE
+      : configuredMode;
+    const hasConfiguredAudience = audienceMode !== PLAYER_ACCESS_MODE.GM_ONLY;
+    const hasPlayerAccess = enabled && audienceMode !== PLAYER_ACCESS_MODE.GM_ONLY;
+    const hasSelectedAudience = audienceMode === PLAYER_ACCESS_MODE.SELECTED;
+    const audienceLabel = audienceMode === PLAYER_ACCESS_MODE.EVERYONE
+      ? 'everyone'
+      : `${selectedCount} selected ${selectedCount === 1 ? 'player' : 'players'}`;
+    const title = enabled
+      ? `Visible to ${audienceLabel}`
+      : hasConfiguredAudience
+        ? `Show to ${audienceLabel}`
+        : 'Make visible to everyone';
+    const iconPath = `img/${enabled ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
     let icon = button.querySelector('.icon');
     if (!icon) {
       button.innerHTML = iconHtml(iconPath, { alt: 'Visibility' });
@@ -365,10 +390,34 @@ export class UIRenderer {
       icon.style.webkitMaskImage = `url('${iconPath}')`;
       icon.style.maskImage = `url('${iconPath}')`;
     }
-    button.classList.toggle('page-visibility-button--visible', visible);
+
+    let label = button.querySelector('.page-visibility-button__label');
+    if (!label) {
+      label = document.createElement('span');
+      label.className = 'page-visibility-button__label';
+      button.appendChild(label);
+    }
+    label.textContent = hasSelectedAudience ? String(selectedCount) : '';
+    label.hidden = !hasSelectedAudience;
+
+    button.classList.toggle('page-visibility-button--has-access', hasPlayerAccess);
+    button.classList.toggle('page-visibility-button--enabled', enabled);
+    button.classList.toggle('page-visibility-button--visible', enabled);
+    button.classList.toggle('page-visibility-button--selected', hasSelectedAudience);
+    button.classList.toggle(
+      'page-visibility-button--no-access',
+      !hasPlayerAccess && !hasSelectedAudience
+    );
+    button.classList.toggle(
+      'hidden',
+      button.id === 'page-visibility-button-header' &&
+        !hasPlayerAccess &&
+        !hasSelectedAudience
+    );
+    button.dataset.accessMode = audienceMode;
     button.title = title;
     button.setAttribute('aria-label', title);
-    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-pressed', String(enabled));
   }
 
   /**
@@ -386,7 +435,11 @@ export class UIRenderer {
 
       const visibilityButton = pageButton.querySelector('.page-visibility-button');
       if (visibilityButton) {
-        this._setVisibilityButtonState(visibilityButton, visible);
+        this._setVisibilityButtonState(
+          visibilityButton,
+          page,
+          visible
+        );
       }
     });
   }
@@ -452,16 +505,11 @@ export class UIRenderer {
     }
 
     // Indicador de visible para players
-    const visibleIndicator = page.visibleToPlayers 
-      ? '<span class="page-visibility-badge">👁️</span>' 
-      : '';
-
     // HTML del botón
     button.innerHTML = `
       <div class="page-button-inner">
         <div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>
         <div class="page-name-text">${escapeHtml(page.name)}</div>
-        ${visibleIndicator}
         ${linkIconHtml}
       </div>
     `;
@@ -476,7 +524,7 @@ export class UIRenderer {
       shareButton = document.createElement('button');
       shareButton.className = 'page-share-button';
       shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
-      shareButton.title = 'Share with players';
+      shareButton.title = 'Present to everyone now';
       shareButton.setAttribute('aria-label', shareButton.title);
 
       shareButton.addEventListener('click', async (e) => {
@@ -520,20 +568,24 @@ export class UIRenderer {
 
     // Botones adicionales solo para GM completo (no coGM ni Player)
     if (isGM && !this.isCoGM) {
+        actionsContainer.classList.add('page-button-actions--has-visibility');
         // Botón de visibilidad
         const visibilityButton = document.createElement('button');
         visibilityButton.className = 'page-visibility-button';
-        this._setVisibilityButtonState(visibilityButton, page.visibleToPlayers === true);
+        this._setVisibilityButtonState(
+          visibilityButton,
+          page
+        );
         
         visibilityButton.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (!this.onVisibilityChange || visibilityButton.disabled) return;
 
-          const previousVisibility = visibilityButton.getAttribute('aria-pressed') === 'true';
+          const previousVisibility = isPlayerAccessEnabled(page);
           const newVisibility = !previousVisibility;
           visibilityButton.disabled = true;
           visibilityButton.setAttribute('aria-busy', 'true');
-          this._setVisibilityButtonState(visibilityButton, newVisibility);
+          this._setVisibilityButtonState(visibilityButton, page, newVisibility);
 
           try {
             const updated = await this.onVisibilityChange(
@@ -544,14 +596,20 @@ export class UIRenderer {
             );
 
             if (updated === false) {
-              page.visibleToPlayers = previousVisibility;
-              this._setVisibilityButtonState(visibilityButton, previousVisibility);
+              this._setVisibilityButtonState(
+                visibilityButton,
+                page,
+                previousVisibility
+              );
             } else {
-              page.visibleToPlayers = newVisibility;
+              setPlayerAccessEnabled(page, newVisibility);
             }
           } catch (error) {
-            page.visibleToPlayers = previousVisibility;
-            this._setVisibilityButtonState(visibilityButton, previousVisibility);
+            this._setVisibilityButtonState(
+              visibilityButton,
+              page,
+              previousVisibility
+            );
             console.error('Error updating page visibility:', error);
           } finally {
             visibilityButton.disabled = false;
@@ -835,6 +893,11 @@ export class UIRenderer {
         icon: 'img/icon-edit.svg', 
         text: 'Edit', 
         action: () => this._showEditPageModal(page, categoryPath, pageIndex)
+      },
+      {
+        icon: 'img/icon-eye-open.svg',
+        text: 'Manage visibility…',
+        action: () => this.onPageAccessManage?.(page, categoryPath, pageIndex)
       },
       { 
         icon: 'img/icon-clone.svg', 

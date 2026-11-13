@@ -14,6 +14,9 @@ import {
   BROADCAST_CHANNEL_RESPONSE_FULL_VAULT,
   BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
   BROADCAST_CHANNEL_INVALIDATE_PAGE,
+  BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT,
+  BROADCAST_CHANNEL_RESPONSE_PLAYER_VAULT,
+  BROADCAST_CHANNEL_PLAYER_VAULT_UPDATED,
   BROADCAST_MESSAGE_SIZE_LIMIT,
   BROADCAST_CONTENT_CHUNK_SIZE
 } from '../utils/constants.js?v=20260815-1';
@@ -478,6 +481,200 @@ export class BroadcastService {
       if (!result.success) return result;
     }
     return { success: true, chunks: chunks.length };
+  }
+
+  /**
+   * Request the caller's player-scoped vault. Owlbear broadcasts cannot target
+   * one connection, so the GM response is encrypted for this ephemeral key.
+   */
+  async requestEncryptedPlayerVault({
+    requesterId,
+    requesterName = '',
+    expectedSenderConnectionId = null,
+    timeoutMs = 10000
+  } = {}) {
+    if (!this.OBR || !requesterId) return null;
+
+    let transfer;
+    try {
+      transfer = await createVaultTransferRequest(requesterId, requesterName);
+    } catch (error) {
+      logWarn('No se pudo crear la solicitud cifrada del vault del player:', error);
+      return null;
+    }
+
+    const { privateKey, request } = transfer;
+    request.kind = 'player-vault-request';
+    if (expectedSenderConnectionId) request.targetConnectionId = expectedSenderConnectionId;
+
+    return new Promise((resolve) => {
+      const chunks = [];
+      let receivedChunks = 0;
+      let expectedTotal = null;
+      let senderConnectionId = null;
+      let senderPublicKey = null;
+      let iv = null;
+      let settled = false;
+
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(value);
+      };
+
+      const timeout = setTimeout(() => finish(null), timeoutMs);
+      const unsubscribe = this.OBR.broadcast.onMessage(
+        BROADCAST_CHANNEL_RESPONSE_PLAYER_VAULT,
+        async (event) => {
+          const data = event?.data;
+          if (
+            !data ||
+            data.kind !== 'encrypted-player-vault-chunk' ||
+            data.protocol !== SECURE_VAULT_PROTOCOL ||
+            data.requesterId !== requesterId ||
+            data.requestId !== request.requestId ||
+            !Number.isInteger(data.index) ||
+            !Number.isInteger(data.total) ||
+            data.index < 0 ||
+            data.index >= data.total ||
+            data.total > 4096 ||
+            typeof data.chunk !== 'string'
+          ) return;
+
+          if (expectedSenderConnectionId && event.connectionId !== expectedSenderConnectionId) return;
+          if (!await this.isEventFromGM(event)) return;
+          if (senderConnectionId === null) senderConnectionId = event.connectionId;
+          if (event.connectionId !== senderConnectionId) return;
+
+          if (expectedTotal === null) {
+            expectedTotal = data.total;
+            senderPublicKey = data.senderPublicKey;
+            iv = data.iv;
+          }
+          if (
+            data.total !== expectedTotal ||
+            JSON.stringify(data.senderPublicKey) !== JSON.stringify(senderPublicKey) ||
+            data.iv !== iv
+          ) return;
+
+          if (chunks[data.index] === undefined) receivedChunks++;
+          chunks[data.index] = data.chunk;
+          if (receivedChunks !== expectedTotal) return;
+
+          try {
+            finish(await decryptVaultFromGM({
+              protocol: data.protocol,
+              senderPublicKey,
+              iv,
+              ciphertext: chunks.join('')
+            }, privateKey));
+          } catch (error) {
+            logWarn('⛔ No se pudo descifrar el vault del player:', error);
+            finish(null);
+          }
+        }
+      );
+
+      this.sendMessage(BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT, request).then((result) => {
+        if (!result.success) finish(null);
+      });
+    });
+  }
+
+  async sendEncryptedPlayerVaultResponse(request, config) {
+    if (
+      request?.kind !== 'player-vault-request' ||
+      request.protocol !== SECURE_VAULT_PROTOCOL ||
+      !request.requestId ||
+      !request.requesterId ||
+      !request.publicKey
+    ) return { success: false, error: 'invalid_secure_request' };
+
+    let envelope;
+    try {
+      envelope = await encryptVaultForRequester(config, request.publicKey);
+    } catch (error) {
+      logWarn('No se pudo cifrar el vault del player:', error);
+      return { success: false, error: 'encryption_failed' };
+    }
+
+    const chunks = splitUtf8String(envelope.ciphertext);
+    for (let index = 0; index < chunks.length; index++) {
+      const result = await this.sendMessage(BROADCAST_CHANNEL_RESPONSE_PLAYER_VAULT, {
+        kind: 'encrypted-player-vault-chunk',
+        protocol: envelope.protocol,
+        requesterId: request.requesterId,
+        requestId: request.requestId,
+        index,
+        total: chunks.length,
+        senderPublicKey: envelope.senderPublicKey,
+        iv: envelope.iv,
+        chunk: chunks[index]
+      });
+      if (!result.success) return result;
+    }
+    return { success: true, chunks: chunks.length };
+  }
+
+  /** Authenticate a player request before producing its filtered vault. */
+  setupGMPlayerVaultResponder(getPlayerConfig) {
+    if (!this.OBR) return () => {};
+
+    const unsubscribe = this.OBR.broadcast.onMessage(
+      BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT,
+      async (event) => {
+        try {
+          if (!await getUserRole()) return;
+          const request = event?.data;
+          if (request?.kind !== 'player-vault-request' || !request.requesterId) return;
+
+          const ownConnectionId = this.OBR.player?.getConnectionId
+            ? await this.OBR.player.getConnectionId()
+            : null;
+          if (request.targetConnectionId && request.targetConnectionId !== ownConnectionId) return;
+
+          const players = await this.OBR.party.getPlayers();
+          const requester = (players || []).find(
+            player => player?.connectionId === event.connectionId
+          );
+          if (
+            !requester ||
+            requester.role !== 'PLAYER' ||
+            requester.id !== request.requesterId
+          ) {
+            logWarn('⛔ Solicitud de vault de player rechazada:', request.requesterId);
+            return;
+          }
+
+          const config = await getPlayerConfig?.({
+            playerId: requester.id,
+            connectionId: requester.connectionId
+          });
+          if (!config) return;
+          await this.sendEncryptedPlayerVaultResponse(request, config);
+        } catch (error) {
+          logWarn('No se pudo responder al vault cifrado del player:', error);
+        }
+      }
+    );
+    this.subscriptions.push(unsubscribe);
+    return unsubscribe;
+  }
+
+  async notifyPlayerVaultUpdated() {
+    const result = await this.sendMessage(BROADCAST_CHANNEL_PLAYER_VAULT_UPDATED, {
+      revision: Date.now()
+    });
+    return result.success;
+  }
+
+  listenForPlayerVaultUpdates(callback) {
+    return this.listenForTrustedGMMessage(
+      BROADCAST_CHANNEL_PLAYER_VAULT_UPDATED,
+      async (data, event) => callback?.(data, event)
+    );
   }
 
   async notifyFullVaultUpdated() {

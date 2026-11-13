@@ -342,8 +342,18 @@ export function filterVisiblePages(config) {
   }
   
   function filterCategory(category) {
+    // Folder-level access is no longer supported. Keep any legacy values in the
+    // GM's saved config, but never expose them in the player-facing payload.
+    const {
+      visibleToPlayers: _legacyFolderVisibility,
+      sharedWithPlayerIds: _legacyFolderPlayerIds,
+      playerAccessEnabled: _legacyFolderAccessEnabled,
+      ...categoryWithoutPlayerAccess
+    } = category;
     const originalPages = category.pages || [];
-    const filteredPages = originalPages.filter(p => p.visibleToPlayers === true);
+    const filteredPages = originalPages.filter(p =>
+      p.visibleToPlayers === true && p.playerAccessEnabled !== false
+    );
     
     const originalCategories = category.categories || [];
     const filteredCategories = originalCategories
@@ -373,7 +383,7 @@ export function filterVisiblePages(config) {
     }
     
     return {
-      ...category,
+      ...categoryWithoutPlayerAccess,
       pages: filteredPages,
       categories: filteredCategories.length > 0 ? filteredCategories : undefined,
       ...(recalculatedOrder && recalculatedOrder.length > 0 ? { order: recalculatedOrder } : {})
@@ -385,7 +395,9 @@ export function filterVisiblePages(config) {
   const filtered = originalCategories
     .map(filterCategory)
     .filter(c => (c.pages && c.pages.length > 0) || (c.categories && c.categories.length > 0));
-  const filteredPages = originalPages.filter(page => page.visibleToPlayers === true);
+  const filteredPages = originalPages.filter(page =>
+    page.visibleToPlayers === true && page.playerAccessEnabled !== false
+  );
   
   // Recalcular el orden del nivel raíz
   let rootOrder = null;

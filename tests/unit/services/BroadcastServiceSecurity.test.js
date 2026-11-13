@@ -2,8 +2,10 @@ import { describe, expect, it, jest } from '@jest/globals';
 import { BroadcastService } from '../../../js/services/BroadcastService.js';
 import {
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
+  BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT,
   BROADCAST_CHANNEL_RESPONSE,
   BROADCAST_CHANNEL_RESPONSE_FULL_VAULT,
+  BROADCAST_CHANNEL_RESPONSE_PLAYER_VAULT,
   BROADCAST_CHANNEL_VISIBLE_PAGES
 } from '../../../js/utils/constants.js';
 
@@ -64,6 +66,50 @@ function createSecureBus() {
   return {
     masterOBR: makeOBR(players[0]),
     coGmOBR: makeOBR(players[1]),
+    players,
+    sent
+  };
+}
+
+function createPlayerSecureBus() {
+  const listeners = new Map();
+  const sent = [];
+  const players = [
+    { id: 'master', name: 'Master', connectionId: 'conn-master', role: 'GM' },
+    { id: 'player-1', name: 'Lyra', connectionId: 'conn-player', role: 'PLAYER' }
+  ];
+
+  const makeOBR = (localPlayer) => ({
+    player: {
+      getConnectionId: jest.fn().mockResolvedValue(localPlayer.connectionId),
+      getRole: jest.fn().mockResolvedValue(localPlayer.role)
+    },
+    party: { getPlayers: jest.fn().mockResolvedValue(players) },
+    broadcast: {
+      onMessage: jest.fn((channel, handler) => {
+        const entries = listeners.get(channel) || [];
+        const entry = { connectionId: localPlayer.connectionId, handler };
+        entries.push(entry);
+        listeners.set(channel, entries);
+        return () => listeners.set(
+          channel,
+          (listeners.get(channel) || []).filter(candidate => candidate !== entry)
+        );
+      }),
+      sendMessage: jest.fn(async (channel, data) => {
+        const bytes = Buffer.byteLength(JSON.stringify(data), 'utf8');
+        if (bytes > 16 * 1024) throw new Error('size limit');
+        sent.push({ channel, data, bytes, sender: localPlayer.connectionId });
+        await Promise.all((listeners.get(channel) || [])
+          .filter(entry => entry.connectionId !== localPlayer.connectionId)
+          .map(entry => entry.handler({ data, connectionId: localPlayer.connectionId })));
+      })
+    }
+  });
+
+  return {
+    masterOBR: makeOBR(players[0]),
+    playerOBR: makeOBR(players[1]),
     players,
     sent
   };
@@ -130,5 +176,41 @@ describe('BroadcastService encrypted full-vault protocol', () => {
     expect(responseChunks.length).toBeGreaterThan(1);
     expect(responseChunks.every(message => message.bytes <= 16 * 1024)).toBe(true);
     expect(JSON.stringify(responseChunks)).not.toContain('TOP-SECRET-DRAGON');
+  });
+});
+
+describe('BroadcastService encrypted player-vault protocol', () => {
+  it('transfers a player-scoped vault without exposing its content on the room broadcast', async () => {
+    const { masterOBR, playerOBR, players, sent } = createPlayerSecureBus();
+    const master = new BroadcastService();
+    const player = new BroadcastService();
+    master.setDependencies({ OBR: masterOBR });
+    player.setDependencies({ OBR: playerOBR });
+    const config = {
+      categories: [{ name: 'For Lyra', pages: [{ id: 'secret', name: 'Moon map' }] }],
+      privatePayload: 'LYRA-ONLY '.repeat(5000)
+    };
+
+    masterOBR.broadcast.onMessage(BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT, async (event) => {
+      const requester = players.find(candidate => candidate.connectionId === event.connectionId);
+      if (requester?.role === 'PLAYER' && requester.id === event.data.requesterId) {
+        await master.sendEncryptedPlayerVaultResponse(event.data, config);
+      }
+    });
+
+    await expect(player.requestEncryptedPlayerVault({
+      requesterId: 'player-1',
+      requesterName: 'Lyra',
+      expectedSenderConnectionId: 'conn-master',
+      timeoutMs: 1000
+    })).resolves.toEqual(config);
+
+    const request = sent.find(message => message.channel === BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT);
+    expect(request.data.targetConnectionId).toBe('conn-master');
+    const responseChunks = sent.filter(message => message.channel === BROADCAST_CHANNEL_RESPONSE_PLAYER_VAULT);
+    expect(responseChunks.length).toBeGreaterThan(1);
+    expect(responseChunks.every(message => message.bytes <= 16 * 1024)).toBe(true);
+    expect(JSON.stringify(responseChunks)).not.toContain('LYRA-ONLY');
+    expect(JSON.stringify(responseChunks)).not.toContain('Moon map');
   });
 });

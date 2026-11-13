@@ -22,8 +22,8 @@ function setButtonLabel(button, label) {
  */
 export async function runShareButtonAction(button, action, {
   keepVisibleElement = null,
-  busyLabel = 'Sharing…',
-  successLabel = 'Shared with players',
+  busyLabel = 'Presenting…',
+  successLabel = 'Presented to everyone',
   minBusyMs = SHARE_BUSY_MIN_MS,
   successMs = SHARE_SUCCESS_MS
 } = {}) {
@@ -42,7 +42,7 @@ export async function runShareButtonAction(button, action, {
     successTimers.delete(button);
   }
 
-  const idleLabel = button.dataset.shareIdleLabel || button.title || 'Share with players';
+  const idleLabel = button.dataset.shareIdleLabel || button.title || 'Present to everyone now';
   button.dataset.shareIdleLabel = idleLabel;
   button.classList.remove('shared');
   button.disabled = true;

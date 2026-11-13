@@ -16,7 +16,10 @@ export const mockOBR = {
     getId: jest.fn(() => Promise.resolve('test-player-id')),
     getConnectionId: jest.fn(() => Promise.resolve('test-connection-id')),
     getName: jest.fn(() => Promise.resolve('Test Player')),
-    getRole: jest.fn(() => Promise.resolve('GM'))
+    getRole: jest.fn(() => Promise.resolve('GM')),
+    getMetadata: jest.fn(() => Promise.resolve({})),
+    setMetadata: jest.fn(() => Promise.resolve()),
+    onChange: jest.fn(() => jest.fn())
   },
   party: {
     getPlayers: jest.fn(() => Promise.resolve([])),
