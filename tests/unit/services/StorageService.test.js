@@ -129,7 +129,7 @@ describe('StorageService', () => {
   });
 
   describe('Room metadata budget', () => {
-    it('migra datos legacy y conserva solo la identidad y conexión del Master GM', async () => {
+    it('actualiza la identidad y conexión sin borrar datos legacy', async () => {
       const setMetadata = jest.fn().mockResolvedValue(undefined);
       storageService.setOBR({ room: { setMetadata } });
 
@@ -139,11 +139,7 @@ describe('StorageService', () => {
         [VAULT_OWNER_KEY]: {
           id: 'master-gm-id',
           connectionId: 'master-connection'
-        },
-        [ROOM_METADATA_KEY]: null,
-        [FULL_CONFIG_KEY]: null,
-        [ROOM_CONTENT_CACHE_KEY]: null,
-        [ROOM_HTML_CACHE_KEY]: null
+        }
       });
       const persistedMetadata = {
         [VAULT_OWNER_KEY]: {
@@ -152,6 +148,22 @@ describe('StorageService', () => {
         }
       };
       expect(Buffer.byteLength(JSON.stringify(persistedMetadata), 'utf8')).toBeLessThan(256);
+    });
+
+    it('conserva todos los datos existentes si Owlbear rechaza la actualización', async () => {
+      const metadata = {
+        [ROOM_METADATA_KEY]: { categories: [] },
+        [FULL_CONFIG_KEY]: { categories: [{ name: 'Private' }] },
+        [ROOM_CONTENT_CACHE_KEY]: { page: 'blocks' },
+        [ROOM_HTML_CACHE_KEY]: { page: 'html' }
+      };
+      const original = JSON.stringify(metadata);
+      const setMetadata = jest.fn().mockRejectedValue(new Error('Room quota exceeded'));
+      storageService.setOBR({ room: { setMetadata } });
+      expect(await storageService.setVaultOwner('gm', 'connection')).toBe(false);
+      expect(setMetadata).toHaveBeenCalledTimes(1);
+      expect(setMetadata).toHaveBeenCalledWith({ [VAULT_OWNER_KEY]: { id: 'gm', connectionId: 'connection' } });
+      expect(JSON.stringify(metadata)).toBe(original);
     });
 
     it('no expone operaciones para persistir config o contenido en la sala', () => {

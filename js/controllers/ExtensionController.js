@@ -38,7 +38,7 @@ import { Category } from '../models/Category.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js?v=20260812-1';
-import { StorageService } from '../services/StorageService.js?v=20260812-1';
+import { StorageService } from '../services/StorageService.js?v=2.1.1';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
@@ -183,7 +183,7 @@ export class ExtensionController {
     
     // Configurar broadcast según rol
     if (this.isGM && !this.isCoGM) {
-      // Master GM: establecer ownership y limpiar metadata legado.
+      // Master GM: establecer ownership conservando los datos anteriores.
       await this._establishVaultOwnership();
       this._setupGMBroadcast();
     } else if (this.isCoGM) {
@@ -6064,22 +6064,22 @@ export class ExtensionController {
 
     // Para el Master GM: SOLO localStorage (según arquitectura, todo está en localStorage)
     // Para Co-GM: solicitar vault COMPLETO del Master GM (ve todo, pero no puede editar)
-    // Para Players: room metadata (estructura visible) + broadcast para contenido
+    // Para Players: broadcast del GM conectado para estructura visible y contenido
     if (this.isGM && !this.isCoGM) {
       // Master GM: cargar de localStorage
       // 1. Intentar cargar de localStorage (configuración completa del GM)
-      const localConfig = this.storageService.getLocalConfig();
+      const localConfig = this.storageService.getLocalConfig({ strict: true });
       // `null` means first run. An explicit empty config is still a valid
       // persisted vault and must not resurrect the bundled demo after reload.
       if (localConfig && Array.isArray(localConfig.categories)) {
         config = localConfig;
         configSource = 'localStorage';
-        log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
+        log('📦 Vault de la sala cargado desde localStorage');
       } else {
         // v1 showed its saved "default" vault in rooms without a room-specific
         // entry. Keep that behavior for existing users without changing either
         // stored copy; the next edit saves to the current room as usual.
-        const legacyDefault = this.storageService.getLegacyDefaultConfig?.();
+        const legacyDefault = this.storageService.getLegacyDefaultConfig?.({ strict: true });
         if (legacyDefault) {
           config = legacyDefault;
           configSource = 'legacy_default_localStorage';
@@ -6129,6 +6129,11 @@ export class ExtensionController {
     if (config) {
       const validation = this.configParser.validate(config);
       if (!validation.valid) {
+        if (configSource === 'localStorage' || configSource === 'legacy_default_localStorage') {
+          // Never turn an unreadable v1 vault into an editable partial/empty
+          // config that could overwrite the original on the next save.
+          throw new Error('Your saved vault has an invalid format. Its original data has been preserved. Recover your JSON backup before continuing.');
+        }
         log('⚠️ Configuración inválida, migrando...');
         config = this.configParser.migrate(config);
       }

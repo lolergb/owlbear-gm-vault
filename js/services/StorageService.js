@@ -115,15 +115,18 @@ export class StorageService {
    * Obtiene la configuración desde localStorage
    * @returns {Object|null}
    */
-  getLocalConfig() {
+  getLocalConfig({ strict = false } = {}) {
     try {
       const storageKey = this.getStorageKey();
       log('🔍 Buscando en localStorage con clave:', storageKey);
       
       const stored = localStorage.getItem(storageKey);
       
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored);
+        if (strict && !Array.isArray(parsed?.categories)) {
+          throw new Error('Invalid saved vault');
+        }
         const catCount = parsed?.categories?.length || 0;
         log('✅ Encontrado en localStorage:', catCount, 'categorías');
         return parsed;
@@ -144,6 +147,9 @@ export class StorageService {
       }
     } catch (e) {
       logError('Error al leer configuración local:', e);
+      if (strict) {
+        throw new Error('Your saved vault could not be read. Its original data has been preserved. Recover your JSON backup before continuing.');
+      }
     }
     return null;
   }
@@ -152,16 +158,22 @@ export class StorageService {
    * v1 used the shared "default" vault when a room had no saved vault yet.
    * Read it without changing the active room or modifying the original data.
    */
-  getLegacyDefaultConfig() {
+  getLegacyDefaultConfig({ strict = false } = {}) {
     if (this.roomId === 'default') return null;
 
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}default`);
-      if (!stored) return null;
+      if (stored === null) return null;
       const parsed = JSON.parse(stored);
+      if (strict && !Array.isArray(parsed?.categories)) {
+        throw new Error('Invalid legacy vault');
+      }
       return Array.isArray(parsed?.categories) ? parsed : null;
     } catch (e) {
       logError('Error al leer configuración default de v1:', e);
+      if (strict) {
+        throw new Error('Your saved v1 vault could not be read. Its original data has been preserved. Recover your JSON backup before continuing.');
+      }
       return null;
     }
   }
@@ -253,15 +265,11 @@ export class StorageService {
     try {
       const owner = connectionId ? { id: playerId, connectionId } : { id: playerId };
       await this.OBR.room.setMetadata({
-        [VAULT_OWNER_KEY]: owner,
-        // v2.1.0-beta.2 migration: content/configuration never belongs in
-        // the room-wide 16 kB budget. Null removes legacy values.
-        [ROOM_METADATA_KEY]: null,
-        [FULL_CONFIG_KEY]: null,
-        [ROOM_CONTENT_CACHE_KEY]: null,
-        [ROOM_HTML_CACHE_KEY]: null
+        // Startup must not delete a v1 room's configuration or caches. 2.1
+        // serves the local vault via broadcast without rewriting those copies.
+        [VAULT_OWNER_KEY]: owner
       });
-      log('🧹 Room metadata migrado a ownership mínimo');
+      log('👑 Vault owner actualizado sin modificar los datos de la sala');
       return true;
     } catch (e) {
       logError('Error al establecer vault owner:', e);

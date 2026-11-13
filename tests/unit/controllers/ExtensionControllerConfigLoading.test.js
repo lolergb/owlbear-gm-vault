@@ -124,4 +124,39 @@ describe('ExtensionController config loading', () => {
     expect(controller.config.categories).toHaveLength(0);
     expect(controller._fetchDefaultConfig).not.toHaveBeenCalled();
   });
+
+  it.each(['{broken', '', 'null', '{}', '{"categories":"invalid"}',
+    '{"categories":[],"pages":[{"name":"Missing URL"}]}'])
+  ('preserves an invalid room vault instead of falling back to a different default: %s', async raw => {
+    localStorage.setItem('notion-pages-json-room-1', raw);
+    localStorage.setItem('notion-pages-json-default', JSON.stringify({ categories: [{ name: 'Unrelated' }] }));
+    localStorage.setItem('notion-global-token', 'keep-token');
+    const original = { ...localStorage.store };
+    const controller = createController({ isGM: true, isCoGM: false, localConfig: null });
+    controller.storageService = new StorageService();
+    controller.storageService.setRoomId('room-1');
+    await expect(controller._loadConfig()).rejects.toThrow('original data has been preserved');
+    expect(localStorage.store).toEqual(original);
+    expect(controller.config).toBeUndefined();
+    expect(controller._fetchDefaultConfig).not.toHaveBeenCalled();
+  });
+
+  it('preserves a malformed legacy default instead of opening an editable empty vault', async () => {
+    localStorage.setItem('notion-pages-json-default', '{broken');
+    const controller = createController({ isGM: true, isCoGM: false, localConfig: null });
+    controller.storageService = new StorageService();
+    controller.storageService.setRoomId('room-1');
+    await expect(controller._loadConfig()).rejects.toThrow('original data has been preserved');
+    expect(localStorage.getItem('notion-pages-json-default')).toBe('{broken');
+    expect(localStorage.getItem('notion-pages-json-room-1')).toBeNull();
+  });
+
+  it('does not treat inaccessible browser storage as an empty vault', async () => {
+    const controller = createController({ isGM: true, isCoGM: false, localConfig: null });
+    controller.storageService = new StorageService();
+    controller.storageService.setRoomId('room-1');
+    localStorage.getItem.mockImplementationOnce(() => { throw new Error('Storage denied'); });
+    await expect(controller._loadConfig()).rejects.toThrow('could not be read');
+    expect(controller.config).toBeUndefined();
+  });
 });
