@@ -247,9 +247,11 @@ export class UIRenderer {
     // Botón de colapsar
     const collapseButton = document.createElement('button');
     collapseButton.className = 'category-collapse-button';
+    collapseButton.type = 'button';
     
     const collapseStateKey = `category-collapsed-${category.name}-level-${level}`;
     const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
+    collapseButton.setAttribute('aria-expanded', String(!isCollapsed));
     const folderSrc = isCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
     collapseButton.innerHTML = iconHtml(folderSrc, { className: 'category-collapse-icon', alt: isCollapsed ? 'Expand' : 'Collapse' });
     const collapseIcon = collapseButton.querySelector('.icon');
@@ -343,16 +345,21 @@ export class UIRenderer {
     categoryDiv.appendChild(contentContainer);
 
     // === EVENT LISTENERS ===
-    // Click para colapsar/expandir
-    titleContainer.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      
+    // The folder button and title perform the same toggle, exactly once.
+    const toggleCollapsed = () => {
       const newIsCollapsed = contentContainer.style.display !== 'none';
       contentContainer.style.display = newIsCollapsed ? 'none' : 'block';
       const newFolderSrc = newIsCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
       collapseIcon.style.maskImage = `url('${newFolderSrc}')`;
       collapseIcon.style.webkitMaskImage = `url('${newFolderSrc}')`;
+      collapseIcon.setAttribute('aria-label', newIsCollapsed ? 'Expand' : 'Collapse');
+      collapseButton.setAttribute('aria-expanded', String(!newIsCollapsed));
       localStorage.setItem(collapseStateKey, newIsCollapsed);
+    };
+    collapseButton.addEventListener('click', toggleCollapsed);
+    titleContainer.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      toggleCollapsed();
     });
 
     parentElement.appendChild(categoryDiv);

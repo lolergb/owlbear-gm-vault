@@ -5711,6 +5711,7 @@ export class ExtensionController {
         collapseBtn.style.maskImage = `url('${folderSrc}')`;
         collapseBtn.style.webkitMaskImage = `url('${folderSrc}')`;
         collapseBtn.setAttribute('aria-label', newState ? 'Expand' : 'Collapse');
+        collapseBtn.closest('button').setAttribute('aria-expanded', String(!newState));
 
         if (categoryName) {
           const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
