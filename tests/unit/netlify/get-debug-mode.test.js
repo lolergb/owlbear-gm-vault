@@ -4,9 +4,10 @@ import { handler } from '../../../netlify/functions/get-debug-mode.js';
 const originalDebugMode = process.env.DEBUG_MODE;
 const originalContext = process.env.CONTEXT;
 
-const event = ({ httpMethod = 'GET', token } = {}) => ({
+const event = ({ httpMethod = 'GET', token, host } = {}) => ({
   httpMethod,
-  queryStringParameters: token ? { token } : {}
+  queryStringParameters: token ? { token } : {},
+  headers: host ? { host } : {}
 });
 
 afterEach(() => {
@@ -45,6 +46,26 @@ describe('get-debug-mode Netlify function', () => {
 
     expect(JSON.parse(beta.body)).toEqual({ debug: true });
     expect(JSON.parse(production.body)).toEqual({ debug: false });
+  });
+
+  it('keeps production debug disabled when Netlify omits CONTEXT', async () => {
+    process.env.DEBUG_MODE = 'true';
+    delete process.env.CONTEXT;
+
+    const production = await handler(event({ host: 'owlbear-gm-vault.netlify.app' }));
+    const unknown = await handler(event());
+    const beta = await handler(event({ host: 'deploy-preview-10--owlbear-gm-vault.netlify.app' }));
+
+    expect(JSON.parse(production.body)).toEqual({ debug: false });
+    expect(JSON.parse(unknown.body)).toEqual({ debug: false });
+    expect(JSON.parse(beta.body)).toEqual({ debug: true });
+  });
+
+  it('rejects a production hostname even if CONTEXT says preview', async () => {
+    process.env.DEBUG_MODE = 'true';
+    process.env.CONTEXT = 'deploy-preview';
+    const response = await handler(event({ host: 'owlbear-gm-vault.netlify.app' }));
+    expect(JSON.parse(response.body)).toEqual({ debug: false });
   });
 
   it('rejects unsupported methods', async () => {
