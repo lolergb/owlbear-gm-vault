@@ -23,6 +23,7 @@ import {
   normalizePlayerIds
 } from '../utils/playerAccess.js';
 import { iconHtml } from '../utils/iconHelper.js';
+import { getVisibilityStatusLabel } from '../utils/playerVisibilityCopy.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import {
   escapeHtml,
@@ -854,27 +855,22 @@ export class ExtensionController {
    * @private
    */
   async _handleVisibilityChange(page, categoryPath, pageIndex, visible) {
+    const failureMessage = visible
+      ? 'Could not show this page. Try again.'
+      : 'Could not hide this page. Try again.';
     try {
       const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
       if (updated) {
         this.uiRenderer?.updatePageVisibility?.(page, visible);
         this._updateCurrentPageVisibility(page, visible);
         this.analyticsService.trackVisibilityToggle(page.name, visible);
-        if (visible) {
-          const audienceMode = getPlayerAudienceMode(page);
-          const count = normalizePlayerIds(page.sharedWithPlayerIds).length;
-          this._showFeedback(audienceMode === PLAYER_ACCESS_MODE.SELECTED
-            ? `Page is visible to ${count} selected ${count === 1 ? 'player' : 'players'}`
-            : 'Page is visible to everyone');
-        } else {
-          this._showFeedback('Page is hidden from players');
-        }
+        this._showFeedback(getVisibilityStatusLabel(page));
       } else {
-        this._showFeedback('❌ Could not update page visibility');
+        this._showFeedback(failureMessage);
       }
       return updated;
     } catch (error) {
-      this._showFeedback('❌ Could not update page visibility');
+      this._showFeedback(failureMessage);
       throw error;
     }
   }
@@ -954,14 +950,7 @@ export class ExtensionController {
       }
     }
 
-    if (mode === PLAYER_ACCESS_MODE.EVERYONE) {
-      this._showFeedback('Everyone can see this page');
-    } else if (mode === PLAYER_ACCESS_MODE.SELECTED) {
-      const count = normalizedIds.length;
-      this._showFeedback(`${count} selected ${count === 1 ? 'player can' : 'players can'} see this page`);
-    } else {
-      this._showFeedback('Only GMs can see this page');
-    }
+    this._showFeedback(getVisibilityStatusLabel(savedTarget || target));
     return true;
   }
 
@@ -998,14 +987,14 @@ export class ExtensionController {
     const title = document.createElement('h2');
     title.id = 'player-access-modal-title';
     title.className = 'modal__title';
-    title.textContent = 'Manage visibility';
+    title.textContent = 'Choose players';
 
     const form = document.createElement('form');
     form.className = 'form player-access-form';
 
     const description = document.createElement('p');
     description.className = 'import-source-label player-access-description';
-    description.textContent = `Choose who can see and open “${target.name}”.`;
+    description.textContent = `Choose who can see “${target.name}” in their vault.`;
     form.appendChild(description);
 
     const audience = document.createElement('fieldset');
@@ -1014,7 +1003,7 @@ export class ExtensionController {
     legend.className = 'player-access-players__heading';
     const playerLabel = document.createElement('span');
     playerLabel.className = 'form__label';
-    playerLabel.textContent = 'Who can see this?';
+    playerLabel.textContent = 'Players';
     const playerCount = document.createElement('span');
     playerCount.className = 'player-access-players__count';
     playerCount.setAttribute('aria-live', 'polite');
@@ -1038,7 +1027,7 @@ export class ExtensionController {
     everyoneCopy.className = 'player-access-everyone__copy';
     const everyoneName = document.createElement('span');
     everyoneName.className = 'player-access-player__name';
-    everyoneName.textContent = 'Everyone';
+    everyoneName.textContent = 'All players';
     const everyoneHint = document.createElement('span');
     everyoneHint.className = 'player-access-everyone__hint';
     everyoneHint.textContent = 'Includes players who join later';
@@ -1097,7 +1086,9 @@ export class ExtensionController {
     const save = document.createElement('button');
     save.type = 'submit';
     save.className = 'btn btn--primary btn--flex';
-    save.textContent = 'Save visibility';
+    const showPage = !isPlayerAccessEnabled(target);
+    const saveLabel = showPage ? 'Show page' : 'Save changes';
+    save.textContent = saveLabel;
     buttons.append(cancel, save);
     form.appendChild(buttons);
 
@@ -1107,9 +1098,9 @@ export class ExtensionController {
     const updateState = () => {
       const selectedMode = getMode();
       const ids = getCheckedIds();
-      playerCount.textContent = everyone.checked ? 'Everyone' : `${ids.length} selected`;
+      playerCount.textContent = everyone.checked ? 'All players' : `${ids.length} selected`;
       const invalid = selectedMode === PLAYER_ACCESS_MODE.SELECTED && ids.length === 0;
-      validation.textContent = invalid ? 'Choose Everyone or at least one player.' : '';
+      validation.textContent = invalid ? 'Choose All players or at least one player.' : '';
       save.disabled = invalid;
       if (!invalid) {
         formError.textContent = '';
@@ -1137,7 +1128,7 @@ export class ExtensionController {
       if (save.disabled) return;
       save.disabled = true;
       save.setAttribute('aria-busy', 'true');
-      save.textContent = 'Saving…';
+      save.textContent = showPage ? 'Showing…' : 'Saving…';
       const saved = await this._handlePlayerAccessChange(
         target,
         targetType,
@@ -1147,11 +1138,13 @@ export class ExtensionController {
       );
       if (saved) close();
       else {
-        formError.textContent = 'Visibility could not be saved. Try again.';
+        formError.textContent = showPage
+          ? 'Could not show this page. Try again.'
+          : 'Could not save changes. Try again.';
         formError.classList.add('form__error--visible');
         save.disabled = false;
         save.removeAttribute('aria-busy');
-        save.textContent = 'Save visibility';
+        save.textContent = saveLabel;
       }
     });
 
@@ -2883,7 +2876,7 @@ export class ExtensionController {
         shareBtn.id = 'page-share-button-header';
         shareBtn.className = 'icon-button';
         shareBtn.innerHTML = iconHtml('img/icon-players.svg', { className: 'icon-button-icon', alt: 'Share' });
-        shareBtn.title = 'Present to everyone now';
+        shareBtn.title = 'Present to all players now';
         header.appendChild(shareBtn);
       }
       shareBtn.classList.remove('hidden');
@@ -3045,7 +3038,7 @@ export class ExtensionController {
         name: page.name,
         senderId: this.playerId
       });
-      if (result?.success) this._showFeedback('📄 Document shared!');
+      if (result?.success) this._showFeedback('Presented to all players');
       else if (result?.error !== 'size_limit') this._showFeedback('❌ Error sharing document');
       return result?.success === true;
     } else if (page.hasEmbeddedHtml() && page.htmlContent) {
@@ -3092,7 +3085,7 @@ export class ExtensionController {
         
         // El callback onSizeLimitExceeded ya muestra feedback si hay error de tamaño
         if (result?.success) {
-          this._showFeedback('📄 Page shared!');
+          this._showFeedback('Presented to all players');
         } else if (result?.error !== 'size_limit') {
           this._showFeedback('❌ Error sharing page');
         }
@@ -3150,7 +3143,7 @@ export class ExtensionController {
           
           // El callback onSizeLimitExceeded ya muestra feedback si hay error de tamaño
           if (result?.success) {
-            this._showFeedback('📄 Page shared!');
+            this._showFeedback('Presented to all players');
           } else if (result?.error !== 'size_limit') {
             this._showFeedback('❌ Error sharing page');
           }
@@ -3172,7 +3165,7 @@ export class ExtensionController {
       });
       
       if (result?.success) {
-        this._showFeedback('🔗 Content shared!');
+        this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing content');
       }
@@ -3271,7 +3264,7 @@ export class ExtensionController {
         },
         {
           icon: 'img/icon-eye-open.svg',
-          text: 'Manage visibility…',
+          text: 'Choose players…',
           action: () => this._showPlayerAccessModal(page, 'page', this.currentCategoryPath)
         }
       );
@@ -7212,7 +7205,7 @@ export class ExtensionController {
               <button class="notion-image-share-button share-button"
                       data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
-                      title="Present to everyone now">
+                      title="Present to all players now" aria-label="Present to all players now">
                 <img src="img/icon-players.svg" alt="Share" />
               </button>
             </div>
@@ -7364,7 +7357,7 @@ export class ExtensionController {
               <button class="notion-image-share-button share-button"
                       data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
-                      title="Present to everyone now">
+                      title="Present to all players now" aria-label="Present to all players now">
                 <img src="img/icon-players.svg" alt="Share" />
               </button>` : '';
           
@@ -7578,7 +7571,7 @@ export class ExtensionController {
           <button class="notion-image-share-button share-button" 
                   data-image-url="${escapedImageUrl}"
                   data-image-caption="${escapedCaption}"
-                  title="Present to everyone now">
+                  title="Present to all players now" aria-label="Present to all players now">
             ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
           </button>
         </div>
@@ -7777,7 +7770,7 @@ export class ExtensionController {
       
       if (result?.success) {
         log('📤 Video compartido');
-        this._showFeedback('🎬 Video shared!');
+        this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing video');
       }
@@ -7962,7 +7955,7 @@ export class ExtensionController {
       
       if (result?.success) {
         log('📤 Google Doc compartido');
-        this._showFeedback('📄 Document shared!');
+        this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing document');
       }

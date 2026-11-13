@@ -32,7 +32,7 @@ describe('UIRenderer player access actions', () => {
 
     button.click();
     const item = [...document.querySelectorAll('.context-menu__item')]
-      .find(candidate => candidate.textContent.includes('Manage visibility'));
+      .find(candidate => candidate.textContent.includes('Choose players'));
     expect(item).toBeDefined();
     item.click();
     expect(renderer.onPageAccessManage).toHaveBeenCalledWith(page, [], 0);
@@ -51,7 +51,7 @@ describe('UIRenderer player access actions', () => {
 
     button.click();
     const item = [...document.querySelectorAll('.context-menu__item')]
-      .find(candidate => candidate.textContent.includes('Manage visibility'));
+      .find(candidate => candidate.textContent.includes('Choose players'));
     expect(item).toBeUndefined();
     expect(container.querySelector('.player-access-badge')).toBeNull();
   });
@@ -70,7 +70,7 @@ describe('UIRenderer player access actions', () => {
     expect(visibility.classList.contains('page-visibility-button--selected')).toBe(true);
     expect(visibility.querySelector('.icon').style.maskImage).toContain('icon-eye-open.svg');
     expect(visibility.querySelector('.page-visibility-button__label').textContent).toBe('2');
-    expect(visibility.title).toBe('Visible to 2 selected players');
+    expect(visibility.title).toBe('Hide from 2 players');
   });
 
   it('keeps the private eye available for row hover and keyboard focus', () => {
@@ -86,7 +86,7 @@ describe('UIRenderer player access actions', () => {
     const visibility = row.querySelector('.page-visibility-button');
     expect(visibility.classList.contains('hidden')).toBe(false);
     expect(visibility.classList.contains('page-visibility-button--no-access')).toBe(true);
-    expect(visibility.title).toBe('Make visible to everyone');
+    expect(visibility.title).toBe('Show to all players');
   });
 
   it('keeps a disabled selected audience visible with its count', () => {
@@ -102,7 +102,7 @@ describe('UIRenderer player access actions', () => {
     expect(visibility.classList.contains('page-visibility-button--no-access')).toBe(false);
     expect(visibility.querySelector('.icon').style.maskImage).toContain('icon-eye-close.svg');
     expect(visibility.querySelector('.page-visibility-button__label').textContent).toBe('1');
-    expect(visibility.title).toBe('Show to 1 selected player');
+    expect(visibility.title).toBe('Show to 1 player');
 
     visibility.id = 'page-visibility-button-header';
     renderer._setVisibilityButtonState(visibility, page);
@@ -126,6 +126,6 @@ describe('UIRenderer player access actions', () => {
     expect(visibility.querySelector('.icon').style.maskImage).toContain('icon-eye-open.svg');
     expect(label.textContent).toBe('');
     expect(label.hidden).toBe(true);
-    expect(visibility.title).toBe('Visible to everyone');
+    expect(visibility.title).toBe('Hide from all players');
   });
 });

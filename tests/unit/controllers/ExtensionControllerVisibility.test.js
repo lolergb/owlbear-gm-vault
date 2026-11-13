@@ -76,7 +76,7 @@ describe('page visibility updates', () => {
     expect(controller.uiRenderer.updatePageVisibility).toHaveBeenCalledWith(page, true);
     expect(controller.render).not.toHaveBeenCalled();
     expect(controller.analyticsService.trackVisibilityToggle).toHaveBeenCalledWith('Goblin', true);
-    expect(controller._showFeedback).toHaveBeenCalledWith('Page is visible to everyone');
+    expect(controller._showFeedback).toHaveBeenCalledWith('Visible to all players');
 
     controller._showFeedback.mockClear();
     const hidden = await controller._handleVisibilityChange(
@@ -89,7 +89,7 @@ describe('page visibility updates', () => {
     expect(page.visibleToPlayers).toBe(true);
     expect(page.playerAccessEnabled).toBe(false);
     expect(controller.broadcastService.invalidatePage).toHaveBeenCalledWith(page.id);
-    expect(controller._showFeedback).toHaveBeenCalledWith('Page is hidden from players');
+    expect(controller._showFeedback).toHaveBeenCalledWith('Hidden from players');
     const hiddenBroadcast = controller.broadcastService.broadcastVisiblePages.mock.calls.at(-1)[0];
     expect(JSON.stringify(hiddenBroadcast)).not.toContain('Goblin');
   });
@@ -138,7 +138,7 @@ describe('page visibility updates', () => {
     expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(2);
     expect(controller.uiRenderer.updatePageVisibility).not.toHaveBeenCalled();
     expect(controller.analyticsService.trackVisibilityToggle).not.toHaveBeenCalled();
-    expect(controller._showFeedback).toHaveBeenCalledWith('❌ Could not update page visibility');
+    expect(controller._showFeedback).toHaveBeenCalledWith('Could not show this page. Try again.');
     expect(controller.render).not.toHaveBeenCalled();
   });
 
@@ -191,7 +191,7 @@ describe('page visibility updates', () => {
     expect(page.playerAccessEnabled).toBe(true);
     expect(page.visibleToPlayers).toBe(false);
     expect(page.sharedWithPlayerIds).toEqual(['player-1']);
-    expect(controller._showFeedback).toHaveBeenLastCalledWith('Page is visible to 1 selected player');
+    expect(controller._showFeedback).toHaveBeenLastCalledWith('Visible to 1 player');
   });
 
   it('actualiza solo el botón y bloquea clics mientras sincroniza', async () => {
@@ -215,7 +215,7 @@ describe('page visibility updates', () => {
     expect(visibilityButton.disabled).toBe(true);
     expect(visibilityButton.getAttribute('aria-busy')).toBe('true');
     expect(visibilityButton.getAttribute('aria-pressed')).toBe('true');
-    expect(visibilityButton.title).toBe('Visible to everyone');
+    expect(visibilityButton.title).toBe('Hide from all players');
     expect(visibilityButton.querySelector('.icon').style.maskImage).toContain('icon-eye-open.svg');
     expect(visibilityButton.querySelector('.icon')).toBe(visibilityIcon);
     expect(visibilityButton.classList.contains('page-visibility-button--visible')).toBe(true);
@@ -247,7 +247,7 @@ describe('page visibility updates', () => {
 
     expect(page.visibleToPlayers).toBe(false);
     expect(visibilityButton.getAttribute('aria-pressed')).toBe('false');
-    expect(visibilityButton.title).toBe('Make visible to everyone');
+    expect(visibilityButton.title).toBe('Show to all players');
     expect(visibilityButton.classList.contains('hidden')).toBe(false);
     expect(visibilityButton.classList.contains('page-visibility-button--no-access')).toBe(true);
     expect(visibilityButton.disabled).toBe(false);

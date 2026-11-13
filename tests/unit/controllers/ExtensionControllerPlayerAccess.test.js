@@ -87,10 +87,10 @@ describe('ExtensionController player access', () => {
     await controller._showPlayerAccessModal(page, 'page');
 
     expect(document.querySelector('.player-access-modal.modal__content')).not.toBeNull();
-    expect(document.querySelector('#player-access-modal-title').textContent).toBe('Manage visibility');
+    expect(document.querySelector('#player-access-modal-title').textContent).toBe('Choose players');
     expect(document.querySelector(`input[value="${PLAYER_ACCESS_MODE.GM_ONLY}"]`)).toBeNull();
     expect([...document.querySelectorAll('.player-access-player__name')].map(node => node.textContent))
-      .toEqual(['Everyone', 'Lyra', 'Milo']);
+      .toEqual(['All players', 'Lyra', 'Milo']);
     expect([...document.querySelectorAll('.player-access-player__status')].map(node => node.textContent))
       .toEqual(['Connected', 'Offline']);
 
@@ -101,6 +101,7 @@ describe('ExtensionController player access', () => {
     expect(online.disabled).toBe(false);
     expect(online.closest('[hidden]')).toBeNull();
     const save = document.querySelector('.player-access-actions .btn--primary');
+    expect(save.textContent).toBe('Save changes');
     online.click();
     expect(everyone.checked).toBe(false);
     expect(save.disabled).toBe(false);
@@ -109,7 +110,7 @@ describe('ExtensionController player access', () => {
     online.click();
     expect(save.disabled).toBe(true);
     expect(document.querySelector('.player-access-validation').textContent)
-      .toBe('Choose Everyone or at least one player.');
+      .toBe('Choose All players or at least one player.');
 
     document.querySelector('input[value="offline"]').click();
     save.click();
@@ -133,6 +134,7 @@ describe('ExtensionController player access', () => {
     const offline = document.querySelector('input[value="offline"]');
     expect(everyone.checked).toBe(false);
     expect(offline.checked).toBe(true);
+    expect(document.querySelector('.player-access-actions .btn--primary').textContent).toBe('Show page');
     everyone.click();
     expect(offline.checked).toBe(false);
     expect(offline.disabled).toBe(false);
@@ -150,6 +152,7 @@ describe('ExtensionController player access', () => {
 
     const save = document.querySelector('.player-access-actions .btn--primary');
     expect(save.disabled).toBe(true);
+    expect(save.textContent).toBe('Show page');
     expect(document.querySelector('.player-access-empty')).not.toBeNull();
     document.querySelector('input[name="player-access-everyone"]').click();
     expect(save.disabled).toBe(false);
@@ -173,9 +176,9 @@ describe('ExtensionController player access', () => {
 
     expect(document.querySelector('.player-access-inherited')).toBeNull();
     expect(document.querySelector('.player-access-audience legend .form__label').textContent)
-      .toBe('Who can see this?');
+      .toBe('Players');
     expect(document.querySelector('.player-access-player__name').textContent)
-      .toBe('Everyone');
+      .toBe('All players');
   });
 
   it('rejects folder access changes', async () => {

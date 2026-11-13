@@ -10,6 +10,7 @@ import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260816-1';
+import { getVisibilityActionLabel } from '../utils/playerVisibilityCopy.js';
 import {
   PLAYER_ACCESS_MODE,
   getPlayerAudienceMode,
@@ -380,17 +381,9 @@ export class UIRenderer {
     const audienceMode = enabled && configuredMode === PLAYER_ACCESS_MODE.GM_ONLY
       ? PLAYER_ACCESS_MODE.EVERYONE
       : configuredMode;
-    const hasConfiguredAudience = audienceMode !== PLAYER_ACCESS_MODE.GM_ONLY;
     const hasPlayerAccess = enabled && audienceMode !== PLAYER_ACCESS_MODE.GM_ONLY;
     const hasSelectedAudience = audienceMode === PLAYER_ACCESS_MODE.SELECTED;
-    const audienceLabel = audienceMode === PLAYER_ACCESS_MODE.EVERYONE
-      ? 'everyone'
-      : `${selectedCount} selected ${selectedCount === 1 ? 'player' : 'players'}`;
-    const title = enabled
-      ? `Visible to ${audienceLabel}`
-      : hasConfiguredAudience
-        ? `Show to ${audienceLabel}`
-        : 'Make visible to everyone';
+    const title = getVisibilityActionLabel(target, enabled);
     const iconPath = `img/${enabled ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
     let icon = button.querySelector('.icon');
     if (!icon) {
@@ -537,7 +530,7 @@ export class UIRenderer {
       shareButton = document.createElement('button');
       shareButton.className = 'page-share-button';
       shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
-      shareButton.title = 'Present to everyone now';
+      shareButton.title = 'Present to all players now';
       shareButton.setAttribute('aria-label', shareButton.title);
 
       shareButton.addEventListener('click', async (e) => {
@@ -910,7 +903,7 @@ export class UIRenderer {
       },
       {
         icon: 'img/icon-eye-open.svg',
-        text: 'Manage visibility…',
+        text: 'Choose players…',
         action: () => this.onPageAccessManage?.(page, categoryPath, pageIndex)
       },
       { 
