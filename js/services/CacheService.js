@@ -1,12 +1,36 @@
 /**
  * @fileoverview Servicio de caché para bloques y páginas de Notion
  * 
- * Gestiona el caché local (localStorage) y el caché compartido (room metadata).
+ * Gestiona caché local en localStorage y memoria.
  */
 
-import { CACHE_PREFIX, PAGE_INFO_CACHE_PREFIX, ROOM_CONTENT_CACHE_KEY } from '../utils/constants.js';
-import { log, logError, logWarn, getUserRole } from '../utils/logger.js';
-import { compressJson, validateTotalMetadataSize } from '../utils/helpers.js';
+import { CACHE_PREFIX, PAGE_INFO_CACHE_PREFIX } from '../utils/constants.js?v=20260812-1';
+import { log, logError, logWarn } from '../utils/logger.js?v=20260722-4';
+
+const HTML_CACHE_TTL_MS = 5 * 60 * 1000;
+const NOTION_FILE_EXPIRY_SAFETY_MS = HTML_CACHE_TTL_MS + (5 * 60 * 1000);
+
+/**
+ * Notion-hosted file URLs are signed and temporary. Do not reuse cached API
+ * objects when any embedded file URL is expired or close to expiring.
+ * @param {*} value
+ * @param {number} now
+ * @param {Set<Object>} seen
+ * @returns {boolean}
+ */
+function hasStaleNotionFile(value, now = Date.now(), seen = new Set()) {
+  if (!value || typeof value !== 'object') return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+
+  if (value.type === 'file' && value.file?.url) {
+    const expiryTime = Date.parse(value.file.expiry_time || '');
+    return !Number.isFinite(expiryTime) || expiryTime <= now + NOTION_FILE_EXPIRY_SAFETY_MS;
+  }
+
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return children.some(child => hasStaleNotionFile(child, now, seen));
+}
 
 /**
  * Servicio para gestionar el caché de contenido
@@ -54,6 +78,11 @@ export class CacheService {
       if (cached) {
         const data = JSON.parse(cached);
         if (data.blocks) {
+          if (hasStaleNotionFile(data.blocks)) {
+            localStorage.removeItem(cacheKey);
+            log('🔄 Caché de bloques invalidada por URLs de Notion caducadas:', pageId);
+            return null;
+          }
           log('✅ Bloques obtenidos del caché para:', pageId);
           return data.blocks;
         }
@@ -74,9 +103,8 @@ export class CacheService {
    * Guardar bloques en el caché local
    * @param {string} pageId - ID de la página
    * @param {Array} blocks - Bloques a guardar
-   * @param {boolean} saveToShared - Si también guardar en caché compartido
    */
-  async setCachedBlocks(pageId, blocks, saveToShared = true) {
+  async setCachedBlocks(pageId, blocks) {
     try {
       const cacheKey = CACHE_PREFIX + pageId;
       const data = {
@@ -86,10 +114,6 @@ export class CacheService {
       localStorage.setItem(cacheKey, JSON.stringify(data));
       log('💾 Bloques guardados en caché para:', pageId);
       
-      // Si es GM, también guardar en caché compartido para jugadores
-      if (saveToShared) {
-        await this.saveToSharedCache(pageId, blocks);
-      }
     } catch (e) {
       logError('Error al guardar en caché:', e);
       if (e.name === 'QuotaExceededError') {
@@ -153,7 +177,16 @@ export class CacheService {
         
         // Compatibilidad con formato antiguo: { pageInfo: {...}, savedAt }
         if (data.pageInfo) {
+          if (hasStaleNotionFile(data.pageInfo)) {
+            localStorage.removeItem(cacheKey);
+            return null;
+          }
           return data.pageInfo;
+        }
+
+        if (hasStaleNotionFile(data)) {
+          localStorage.removeItem(cacheKey);
+          return null;
         }
         
         // Formato nuevo: { cover, icon, ..., cachedAt }
@@ -183,97 +216,6 @@ export class CacheService {
     } catch (e) {
       logError('Error al guardar page info en caché:', e);
     }
-  }
-
-  // ============================================
-  // CACHÉ COMPARTIDO (Room Metadata)
-  // ============================================
-
-  /**
-   * Guardar en caché compartido (room metadata)
-   * @param {string} pageId - ID de la página
-   * @param {Array} blocks - Bloques a guardar
-   */
-  async saveToSharedCache(pageId, blocks) {
-    if (!this.OBR) return;
-
-    try {
-      // Solo guardar si es GM
-      const isGM = await getUserRole();
-      if (!isGM) return;
-      
-      // Obtener todos los metadatos actuales
-      const metadata = await this.OBR.room.getMetadata() || {};
-      let sharedCache = (metadata[ROOM_CONTENT_CACHE_KEY]) || {};
-      
-      // Crear la nueva entrada
-      const newEntry = {
-        blocks: blocks,
-        savedAt: new Date().toISOString()
-      };
-      
-      // Probar si cabe
-      const testCache = { ...sharedCache, [pageId]: newEntry };
-      const validation = validateTotalMetadataSize(ROOM_CONTENT_CACHE_KEY, testCache, metadata);
-      
-      // Si no cabe, limpiar entradas antiguas
-      if (!validation.fits) {
-        sharedCache = this._evictOldEntries(sharedCache, pageId, newEntry, metadata);
-        
-        // Verificar si ahora cabe
-        const finalTestCache = { ...sharedCache, [pageId]: newEntry };
-        const finalValidation = validateTotalMetadataSize(ROOM_CONTENT_CACHE_KEY, finalTestCache, metadata);
-        if (!finalValidation.fits) {
-          log('ℹ️ No hay espacio en room metadata. El contenido se compartirá vía broadcast.');
-          return;
-        }
-      }
-      
-      // Limitar número de entradas (máximo 10)
-      const cacheKeys = Object.keys(sharedCache);
-      if (cacheKeys.length >= 10 && !sharedCache[pageId]) {
-        sharedCache = this._removeOldestEntries(sharedCache, 3);
-      }
-      
-      // Guardar
-      sharedCache[pageId] = newEntry;
-      
-      const finalValidation = validateTotalMetadataSize(ROOM_CONTENT_CACHE_KEY, sharedCache, metadata);
-      if (finalValidation.fits) {
-        await this.OBR.room.setMetadata({
-          [ROOM_CONTENT_CACHE_KEY]: compressJson(sharedCache)
-        });
-        log(`💾 Contenido guardado en caché compartido para: ${pageId} (${finalValidation.percentage}% del límite)`);
-      }
-    } catch (e) {
-      if (e.message && (e.message.includes('size') || e.message.includes('limit'))) {
-        log('ℹ️ El caché compartido está lleno. El contenido se compartirá vía broadcast.');
-      } else {
-        console.debug('No se pudo guardar en caché compartido:', e);
-      }
-    }
-  }
-
-  /**
-   * Obtener del caché compartido
-   * @param {string} pageId - ID de la página
-   * @returns {Promise<Array|null>}
-   */
-  async getFromSharedCache(pageId) {
-    if (!this.OBR) return null;
-
-    try {
-      const metadata = await this.OBR.room.getMetadata() || {};
-      const sharedCache = metadata[ROOM_CONTENT_CACHE_KEY] || {};
-      
-      if (sharedCache[pageId] && sharedCache[pageId].blocks) {
-        log('✅ Bloques obtenidos del caché compartido para:', pageId);
-        return sharedCache[pageId].blocks;
-      }
-    } catch (e) {
-      console.debug('Error al leer caché compartido:', e);
-    }
-    return null;
   }
 
   // ============================================
@@ -315,65 +257,16 @@ export class CacheService {
    * @returns {string|null}
    */
   getHtmlFromLocalCache(pageId) {
-    if (this.localHtmlCache[pageId]) {
-      return this.localHtmlCache[pageId].html;
-    }
-    return null;
-  }
+    const cached = this.localHtmlCache[pageId];
+    if (!cached) return null;
 
-  // ============================================
-  // UTILIDADES PRIVADAS
-  // ============================================
-
-  /**
-   * Elimina entradas antiguas hasta que el nuevo contenido quepa
-   * @private
-   */
-  _evictOldEntries(sharedCache, pageId, newEntry, metadata) {
-    const cacheKeys = Object.keys(sharedCache);
-    if (cacheKeys.length === 0) return sharedCache;
-    
-    // Ordenar por fecha (más antiguas primero)
-    const sortedKeys = cacheKeys.sort((a, b) => {
-      const dateA = sharedCache[a]?.savedAt ? new Date(sharedCache[a].savedAt) : new Date(0);
-      const dateB = sharedCache[b]?.savedAt ? new Date(sharedCache[b].savedAt) : new Date(0);
-      return dateA - dateB;
-    });
-    
-    let reducedCache = { ...sharedCache };
-    let entriesRemoved = 0;
-    
-    for (const key of sortedKeys) {
-      delete reducedCache[key];
-      entriesRemoved++;
-      const testReduced = { ...reducedCache, [pageId]: newEntry };
-      const reducedValidation = validateTotalMetadataSize(ROOM_CONTENT_CACHE_KEY, testReduced, metadata);
-      if (reducedValidation.fits) {
-        log(`🗑️ Eliminadas ${entriesRemoved} entradas antiguas del caché`);
-        return reducedCache;
-      }
+    if (Date.now() - cached.savedAt >= HTML_CACHE_TTL_MS) {
+      delete this.localHtmlCache[pageId];
+      log('🔄 Caché HTML invalidada para renovar recursos de Notion:', pageId);
+      return null;
     }
-    
-    return reducedCache;
-  }
 
-  /**
-   * Elimina las N entradas más antiguas
-   * @private
-   */
-  _removeOldestEntries(cache, count) {
-    const keys = Object.keys(cache);
-    const sortedKeys = keys.sort((a, b) => {
-      const dateA = cache[a]?.savedAt ? new Date(cache[a].savedAt) : new Date(0);
-      const dateB = cache[b]?.savedAt ? new Date(cache[b].savedAt) : new Date(0);
-      return dateA - dateB;
-    });
-    
-    const result = { ...cache };
-    for (let i = 0; i < count && i < sortedKeys.length; i++) {
-      delete result[sortedKeys[i]];
-    }
-    return result;
+    return cached.html;
   }
 
   /**
@@ -394,4 +287,3 @@ export class CacheService {
 }
 
 export default CacheService;
-

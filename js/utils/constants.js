@@ -39,6 +39,8 @@ export const BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES = 'com.dmscreen/requestVisi
 export const BROADCAST_CHANNEL_SHOW_IMAGE = 'com.dmscreen/showImage';
 export const BROADCAST_CHANNEL_REQUEST_FULL_VAULT = 'com.dmscreen/requestFullVault';
 export const BROADCAST_CHANNEL_RESPONSE_FULL_VAULT = 'com.dmscreen/responseFullVault';
+export const BROADCAST_CHANNEL_FULL_VAULT_UPDATED = 'com.dmscreen/fullVaultUpdated';
+export const BROADCAST_CHANNEL_INVALIDATE_PAGE = 'com.dmscreen/invalidatePage';
 
 // ============================================
 // TIMEOUTS Y LÍMITES
@@ -48,6 +50,9 @@ export const OWNER_TIMEOUT = 900000; // 15 minutos
 export const ROOM_METADATA_SIZE_LIMIT = 16 * 1024; // 16384 bytes
 export const ROOM_METADATA_SAFE_LIMIT = ROOM_METADATA_SIZE_LIMIT - 1024; // Dejar 1KB de margen
 export const MAX_METADATA_SIZE = ROOM_METADATA_SIZE_LIMIT; // Alias
+export const BROADCAST_MESSAGE_SIZE_LIMIT = 16 * 1024;
+// Leave enough headroom for channel envelopes, IDs and UTF-8 expansion.
+export const BROADCAST_CONTENT_CHUNK_SIZE = 12 * 1024;
 
 // ============================================
 // CSS VARIABLES
@@ -123,6 +128,7 @@ export const BROADCAST = {
   VISIBLE_PAGES: BROADCAST_CHANNEL_VISIBLE_PAGES,
   REQUEST_VISIBLE_PAGES: BROADCAST_CHANNEL_REQUEST_VISIBLE_PAGES,
   SHOW_IMAGE: BROADCAST_CHANNEL_SHOW_IMAGE,
+  INVALIDATE_PAGE: BROADCAST_CHANNEL_INVALIDATE_PAGE,
 };
 
 export const LIMITS = {
@@ -132,4 +138,3 @@ export const LIMITS = {
   OWNER_HEARTBEAT: OWNER_HEARTBEAT_INTERVAL,
   OWNER_TIMEOUT,
 };
-

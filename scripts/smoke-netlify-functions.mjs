@@ -37,7 +37,7 @@ const checks = [
     name: 'get-default-token',
     path: '/.netlify/functions/get-default-token',
     expectedStatus: 200,
-    validate: body => Object.hasOwn(body, 'token')
+    validate: body => typeof body.available === 'boolean' && !Object.hasOwn(body, 'token')
   },
   {
     name: 'get-debug-mode',

@@ -3,7 +3,25 @@
  */
 
 import { jest, beforeEach } from '@jest/globals';
+import { webcrypto } from 'node:crypto';
+import { TextDecoder, TextEncoder } from 'node:util';
 import { mockOBR } from './obr-sdk.js';
+
+Object.defineProperty(globalThis, 'crypto', {
+  value: webcrypto,
+  configurable: true,
+  writable: true
+});
+Object.defineProperty(globalThis, 'TextEncoder', {
+  value: TextEncoder,
+  configurable: true,
+  writable: true
+});
+Object.defineProperty(globalThis, 'TextDecoder', {
+  value: TextDecoder,
+  configurable: true,
+  writable: true
+});
 
 // Mock global de OBR
 global.OBR = mockOBR;
@@ -53,4 +71,3 @@ beforeEach(() => {
   jest.clearAllMocks();
   localStorageMock.clear();
 });
-

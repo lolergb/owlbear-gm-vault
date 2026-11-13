@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
 import { handler } from '../../../netlify/functions/get-default-token.js';
 
-const originalDefaultToken = process.env.GM_VAULT_DEFAULT_CONFIG;
+const originalDefaultToken = process.env.GM_VAULT_DEFAULT_CONFIG_V2;
 
 const event = (httpMethod = 'GET') => ({ httpMethod });
 
 afterEach(() => {
-  if (originalDefaultToken === undefined) delete process.env.GM_VAULT_DEFAULT_CONFIG;
-  else process.env.GM_VAULT_DEFAULT_CONFIG = originalDefaultToken;
+  if (originalDefaultToken === undefined) delete process.env.GM_VAULT_DEFAULT_CONFIG_V2;
+  else process.env.GM_VAULT_DEFAULT_CONFIG_V2 = originalDefaultToken;
 });
 
 describe('get-default-token Netlify function', () => {
@@ -18,22 +18,23 @@ describe('get-default-token Netlify function', () => {
     expect(response.body).toBe('');
   });
 
-  it('returns a null token when no default is configured', async () => {
-    delete process.env.GM_VAULT_DEFAULT_CONFIG;
+  it('reports unavailable when no default is configured', async () => {
+    delete process.env.GM_VAULT_DEFAULT_CONFIG_V2;
 
     const response = await handler(event());
 
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ token: null });
+    expect(JSON.parse(response.body)).toEqual({ available: false });
   });
 
-  it('returns the configured default token', async () => {
-    process.env.GM_VAULT_DEFAULT_CONFIG = 'default-token';
+  it('reports availability without exposing the configured credential', async () => {
+    process.env.GM_VAULT_DEFAULT_CONFIG_V2 = 'default-token';
 
     const response = await handler(event());
 
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ token: 'default-token' });
+    expect(JSON.parse(response.body)).toEqual({ available: true });
+    expect(JSON.stringify(response)).not.toContain('default-token');
   });
 
   it('rejects unsupported methods', async () => {

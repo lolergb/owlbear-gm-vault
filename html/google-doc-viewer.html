@@ -157,6 +157,7 @@
   
   <script type="module">
     import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+    import { sanitizeGoogleEmbedUrl } from "../js/utils/htmlSecurity.js?v=20260722-4";
     
     // Obtener parámetros de la URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -169,18 +170,15 @@
     }
     
     if (docUrl) {
-      // Decodificar la URL
-      docUrl = decodeURIComponent(docUrl);
-      
-      // Asegurarse de que sea una URL absoluta
-      if (!docUrl.match(/^https?:\/\//i)) {
-        try {
-          docUrl = new URL(docUrl, window.location.origin).toString();
-        } catch (e) {
-          console.error('Error construyendo URL absoluta:', e);
-        }
+      try {
+        docUrl = sanitizeGoogleEmbedUrl(decodeURIComponent(docUrl));
+      } catch (error) {
+        console.error('Could not decode the document URL:', error);
+        docUrl = '';
       }
-      
+    }
+
+    if (docUrl) {
       document.getElementById('viewer-doc').src = docUrl;
       
       if (name) {
@@ -189,7 +187,7 @@
         captionDiv.style.display = 'block';
       }
     } else {
-      document.body.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">Error: No document URL provided</div>';
+      document.body.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">Error: Invalid document URL</div>';
     }
     
     // Cerrar con ESC
@@ -245,4 +243,3 @@
   </script>
 </body>
 </html>
-

@@ -45,6 +45,7 @@ describe('Config Model', () => {
   describe('getTotalPageCount', () => {
     it('debe contar todas las páginas', () => {
       const config = new Config();
+      config.addPage(new Page('Root', 'https://example.com/root'));
       
       const cat1 = new Category('Cat1');
       cat1.addPage(new Page('P1', 'https://example.com'));
@@ -60,7 +61,7 @@ describe('Config Model', () => {
       config.addCategory(cat1);
       config.addCategory(cat2);
       
-      expect(config.getTotalPageCount()).toBe(4);
+      expect(config.getTotalPageCount()).toBe(5);
     });
   });
 
@@ -83,6 +84,7 @@ describe('Config Model', () => {
   describe('getAllPages', () => {
     it('debe obtener todas las páginas', () => {
       const config = new Config();
+      config.addPage(new Page('Root', 'https://example.com/root'));
       
       const cat1 = new Category('Cat1');
       cat1.addPage(new Page('P1', 'https://example.com'));
@@ -93,7 +95,8 @@ describe('Config Model', () => {
       config.addCategory(cat1);
       config.addCategory(cat2);
       
-      expect(config.getAllPages()).toHaveLength(2);
+      expect(config.getAllPages()).toHaveLength(3);
+      expect(config.getAllPages()[0].name).toBe('Root');
     });
   });
 
@@ -129,6 +132,27 @@ describe('Config Model', () => {
       const found = config.findPageByName('Target');
       expect(found).not.toBeNull();
       expect(found.name).toBe('Target');
+    });
+
+    it('debe encontrar una página raíz', () => {
+      const config = new Config({
+        pages: [new Page('Root target', 'https://example.com/root')]
+      });
+
+      expect(config.findPageByName('Root target')?.name).toBe('Root target');
+    });
+  });
+
+  describe('findPageByNotionId', () => {
+    it('debe encontrar una página de Notion a nivel raíz', () => {
+      const notionId = '12345678-1234-1234-1234-1234567890ab';
+      const page = new Page(
+        'Root Notion',
+        `https://app.notion.com/p/Root-${notionId.replace(/-/g, '')}`
+      );
+      const config = new Config({ pages: [page] });
+
+      expect(config.findPageByNotionId(notionId)).toBe(page);
     });
   });
 
@@ -174,11 +198,24 @@ describe('Config Model', () => {
       
       expect(config.isEmpty()).toBe(false);
     });
+
+    it('debe retornar false si solo tiene páginas raíz', () => {
+      const config = new Config({
+        pages: [new Page('Root', 'https://example.com/root')]
+      });
+
+      expect(config.isEmpty()).toBe(false);
+    });
   });
 
   describe('filterVisible', () => {
     it('debe retornar solo contenido visible', () => {
-      const config = new Config();
+      const config = new Config({
+        pages: [
+          new Page('RootVisible', 'https://example.com/root-visible', { visibleToPlayers: true }),
+          new Page('RootHidden', 'https://example.com/root-hidden')
+        ]
+      });
       
       const cat = new Category('Cat');
       cat.addPage(new Page('Visible', 'https://example.com', { visibleToPlayers: true }));
@@ -196,6 +233,7 @@ describe('Config Model', () => {
       expect(filtered.categories[0].pages).toHaveLength(1);
       expect(filtered.categories[0].pages[0].name).toBe('Visible');
       expect(filtered.categories[0].categories).toHaveLength(1);
+      expect(filtered.pages.map(page => page.name)).toEqual(['RootVisible']);
     });
   });
 
@@ -232,4 +270,3 @@ describe('Config Model', () => {
     });
   });
 });
-

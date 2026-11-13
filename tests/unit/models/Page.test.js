@@ -93,6 +93,24 @@ describe('Page Model', () => {
     });
   });
 
+  describe('isOneDrive', () => {
+    it('debe detectar enlaces de OneDrive Personal', () => {
+      const shortLink = new Page(
+        'Test',
+        'https://1drv.ms/w/c/8480b8199298dc6a/IQSJYPNDDhaHR6l68QswlHANAfzkMRJ6-BOy2ZMGhr-_BsM?em=2'
+      );
+      const legacyEmbed = new Page('Test', 'https://onedrive.live.com/embed?resid=ABC123');
+
+      expect(shortLink.isOneDrive()).toBe(true);
+      expect(legacyEmbed.isOneDrive()).toBe(true);
+    });
+
+    it('debe rechazar dominios que solo imitan OneDrive', () => {
+      const page = new Page('Test', 'https://1drv.ms.evil.example/file?em=2');
+      expect(page.isOneDrive()).toBe(false);
+    });
+  });
+
   describe('isImage', () => {
     it('debe detectar imágenes JPG', () => {
       const page = new Page('Test', 'https://example.com/image.jpg');
@@ -182,6 +200,14 @@ describe('Page Model', () => {
     it('debe retornar "google-doc" para Google Docs', () => {
       const page = new Page('Test', 'https://docs.google.com/document/d/123');
       expect(page.getContentType()).toBe('google-doc');
+    });
+
+    it('debe retornar "onedrive" para OneDrive Personal', () => {
+      const page = new Page(
+        'Test',
+        'https://1drv.ms/w/c/8480b8199298dc6a/IQSJYPNDDhaHR6l68QswlHANAfzkMRJ6-BOy2ZMGhr-_BsM?em=2'
+      );
+      expect(page.getContentType()).toBe('onedrive');
     });
 
     it('debe retornar "image" para imágenes', () => {
@@ -331,4 +357,3 @@ describe('Page Model', () => {
     });
   });
 });
-

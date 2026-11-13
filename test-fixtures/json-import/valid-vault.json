@@ -1,0 +1,30 @@
+{
+  "categories": [
+    {
+      "name": "Import test",
+      "pages": [
+        {
+          "name": "Reference map",
+          "url": "https://example.com/map"
+        }
+      ],
+      "categories": [
+        {
+          "name": "NPCs",
+          "pages": [
+            {
+              "name": "Innkeeper",
+              "htmlContent": "<p>A controlled local import test.</p>"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "Campaign home",
+      "url": "https://example.com/campaign"
+    }
+  ]
+}

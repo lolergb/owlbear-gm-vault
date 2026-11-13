@@ -12,9 +12,6 @@ let DEBUG_MODE = false;
 let cachedUserRole = null;
 let roleCheckPromise = null;
 
-// Referencia a la función para obtener token (se inyecta)
-let getTokenFn = null;
-
 // Referencia a OBR (se inyecta para evitar dependencia circular)
 let OBRRef = null;
 
@@ -24,14 +21,6 @@ let OBRRef = null;
  */
 export function setOBRReference(obr) {
   OBRRef = obr;
-}
-
-/**
- * Inyecta la función para obtener el token del usuario
- * @param {Function} fn - Función que retorna el token
- */
-export function setGetTokenFunction(fn) {
-  getTokenFn = fn;
 }
 
 /**
@@ -74,16 +63,9 @@ export async function initDebugMode() {
   try {
     // Solo intentar si estamos en Netlify
     if (window.location.origin.includes('netlify.app') || window.location.origin.includes('netlify.com')) {
-      // Obtener el token del usuario para verificar si es tu cuenta
-      const userToken = getTokenFn ? getTokenFn() : null;
-      
-      // Construir URL con el token si existe
-      let url = '/.netlify/functions/get-debug-mode';
-      if (userToken) {
-        url += `?token=${encodeURIComponent(userToken)}`;
-      }
-      
-      const response = await fetch(url);
+      const response = await fetch('/.netlify/functions/get-debug-mode', {
+        cache: 'no-store'
+      });
       if (response.ok) {
         const data = await response.json();
         DEBUG_MODE = data.debug === true;
@@ -163,4 +145,3 @@ export function resetRoleCache() {
   cachedUserRole = null;
   roleCheckPromise = null;
 }
-

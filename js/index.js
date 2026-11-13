@@ -1,6 +1,7 @@
 // Los logs iniciales se ejecutan después de definir la función log()
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+import { buildPageAddedMetadata } from './utils/pageAnalytics.js?v=20260816-1';
 
 // Sistema de logs controlado por variable de entorno de Netlify
 let DEBUG_MODE = false;
@@ -10,15 +11,9 @@ async function initDebugMode() {
   try {
     // Intentar obtener la variable de entorno desde Netlify Function
     if (window.location.origin.includes('netlify.app') || window.location.origin.includes('netlify.com')) {
-      // Obtener el token del usuario para verificar si es tu cuenta
-      const userToken = getUserToken();
-      // Construir URL con el token si existe
-      let url = '/.netlify/functions/get-debug-mode';
-      if (userToken) {
-        url += `?token=${encodeURIComponent(userToken)}`;
-      }
-      
-      const response = await fetch(url);
+      const response = await fetch('/.netlify/functions/get-debug-mode', {
+        cache: 'no-store'
+      });
       if (response.ok) {
         const data = await response.json();
         DEBUG_MODE = data.debug === true;
@@ -445,10 +440,16 @@ function trackFolderAdded(folderName) {
 /**
  * Track page added event
  */
-function trackPageAdded(pageName, pageType = 'unknown') {
+function trackPageAdded(pageName, pageType = 'unknown', metadata = {}) {
   trackEvent('page_added', {
     page_name: pageName,
-    page_type: pageType
+    page_type: pageType,
+    ...buildPageAddedMetadata({
+      url: metadata.url,
+      pageType,
+      creationMethod: metadata.creationMethod,
+      isEmbedCode: metadata.isEmbedCode
+    })
   });
 }
 
@@ -1966,7 +1967,8 @@ async function fetchPageInfo(pageId) {
     
     if (userToken) {
       // Usar proxy de Netlify Function para evitar CORS
-      apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page&token=${encodeURIComponent(userToken)}`;
+      apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page`;
+      headers['X-Notion-Token'] = userToken;
     } else {
       throw new Error('No token configured. Configure your Notion token in the extension (🔑 button).');
     }
@@ -2113,12 +2115,13 @@ async function fetchNotionPageInfo(pageId, useCache = true) {
       return null;
     }
     
-    const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page&token=${encodeURIComponent(userToken)}`;
+    const apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&type=page`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Notion-Token': userToken
       }
     });
     
@@ -2245,8 +2248,8 @@ async function fetchNotionBlocks(pageId, useCache = true) {
     if (userToken) {
       // Usuario tiene su propio token → usar proxy de Netlify Function para evitar CORS
       log('✅ Usando token del usuario para:', pageId);
-      // Usar el proxy de Netlify Function y pasar el token como parámetro
-      apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}&token=${encodeURIComponent(userToken)}`;
+      apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(pageId)}`;
+      headers['X-Notion-Token'] = userToken;
     } else {
       // No hay token del usuario → intentar obtener del caché compartido (room metadata)
       try {
@@ -2549,7 +2552,8 @@ async function fetchBlockChildren(blockId, useCache = true) {
     
     if (userToken) {
       // Usar proxy de Netlify Function para evitar CORS
-      apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}&token=${encodeURIComponent(userToken)}`;
+      apiUrl = `/.netlify/functions/notion-api?pageId=${encodeURIComponent(blockId)}`;
+      headers['X-Notion-Token'] = userToken;
     } else {
       // No hay token del usuario → intentar obtener del caché compartido (room metadata)
       try {
@@ -2910,11 +2914,14 @@ async function renderBlocks(blocks, blockTypes = null, headingLevelOffset = 0, u
           // Intentar obtener páginas de la base de datos
           const params = new URLSearchParams({
             action: 'database',
-            databaseId: databaseId,
-            token: userToken
+            databaseId: databaseId
           });
           
-          const response = await fetch(`/.netlify/functions/notion-api?${params.toString()}`);
+          const response = await fetch(`/.netlify/functions/notion-api?${params.toString()}`, {
+            headers: {
+              'X-Notion-Token': userToken
+            }
+          });
           
           if (response.ok) {
             // Si se puede obtener información, la base de datos se procesó correctamente
@@ -6891,7 +6898,11 @@ async function addPageToPageListSimple(categoryPath, roomId) {
           pageType = linkType.type;
         }
       }
-      trackPageAdded(data.name, pageType);
+      trackPageAdded(data.name, pageType, {
+        url: data.url,
+        creationMethod: 'manual',
+        isEmbedCode: /^<iframe\b/i.test(String(data.url).trim())
+      });
       
       // Recargar la vista
       const pageList = document.getElementById("page-list");
@@ -10495,4 +10506,3 @@ async function showVisualEditor(pagesConfig, roomId = null) {
 
 // Log adicional para verificar que el script se ejecutó completamente
 log('✅ index.js cargado completamente');
-

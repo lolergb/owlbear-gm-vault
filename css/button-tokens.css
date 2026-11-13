@@ -1,0 +1,30 @@
+/* Action buttons only; navigation toolbars keep their independent styles.
+   S: compact controls; M: forms, settings and banners; L: empty-state actions.
+   Text buttons may grow for wrapped labels instead of clipping their content. */
+:root {
+  --button-height-sm: 32px;
+  --button-height-md: 40px;
+  --button-height-lg: 48px;
+  --button-padding-inline-sm: 12px;
+  --button-padding-inline-md: 16px;
+  --button-padding-inline-lg: 16px;
+  /* Group spacing follows the largest button, in rows and columns alike. */
+  --button-group-gap-sm: 8px;
+  --button-group-gap-md: 12px;
+  --button-group-gap-lg: 16px;
+  --button-icon-gap-sm: 4px;
+  --button-icon-gap-md: 8px;
+  --button-icon-gap-lg: 8px;
+  --button-transition-duration: 150ms;
+  --button-transition-easing: ease-out;
+  --button-transition: background-color var(--button-transition-duration) var(--button-transition-easing), border-color var(--button-transition-duration) var(--button-transition-easing), color var(--button-transition-duration) var(--button-transition-easing), opacity var(--button-transition-duration) var(--button-transition-easing);
+  --button-secondary-hover-bg: rgba(255, 255, 255, 0.1);
+}
+
+body[data-obr-theme="light"] {
+  --button-secondary-hover-bg: rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --button-transition-duration: 0ms; }
+}

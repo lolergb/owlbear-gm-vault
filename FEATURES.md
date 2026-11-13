@@ -124,7 +124,7 @@
 ## Features ya implementadas (para referencia)
 
 ✅ Autenticación y roles (GM, Co-GM, Player)  
-✅ Vault ownership y heartbeat  
+✅ Vault ownership con presencia en tiempo real
 ✅ Broadcast de contenido entre roles  
 ✅ Caché completo de Notion (bloques, pageInfo, HTML)  
 ✅ Menús contextuales para tokens  
@@ -137,11 +137,10 @@
 ✅ Videos (YouTube, Vimeo)  
 ✅ Google Docs/Sheets/Slides  
 ✅ Bookmarks y embeds  
-✅ Compartir contenido (con manejo de límite 64KB)  
+✅ Compartir contenido con fragmentación bajo el límite de 16 kB
 ✅ Recargar página forzando caché  
 ✅ Content-demo (HTML estático)  
 ✅ Manejo de errores de imágenes con retry  
 ✅ Indicador de visibilidad para players  
 ✅ Export/Import de vault  
 ✅ Modo solo lectura para Co-GM  
-

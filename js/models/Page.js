@@ -6,6 +6,7 @@
  */
 
 import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js';
+import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
 
 /**
  * Genera un ID único para páginas
@@ -34,6 +35,7 @@ export class Page {
    * @param {Object} [options.icon] - Icono de la página
    * @param {string} [options.linkedTokenId] - ID del token vinculado
    * @param {string} [options.htmlContent] - HTML pre-renderizado (local-first, sin URL)
+   * @param {'demo'|'user'|'import'} [options.origin] - Origen controlado para analytics
    */
   constructor(name, url, options = {}) {
     this.id = options.id || generatePageId();
@@ -44,6 +46,7 @@ export class Page {
     this.icon = options.icon || null;
     this.linkedTokenId = options.linkedTokenId || null;
     this.htmlContent = options.htmlContent || null;
+    this.origin = normalizeContentOrigin(options.origin, url);
   }
 
   /**
@@ -96,6 +99,20 @@ export class Page {
   }
 
   /**
+   * Verifica si esta página pertenece a OneDrive Personal
+   * @returns {boolean}
+   */
+  isOneDrive() {
+    if (!this.url) return false;
+    try {
+      const hostname = new URL(this.url).hostname.toLowerCase();
+      return hostname === '1drv.ms' || hostname === 'onedrive.live.com';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Verifica si esta página es una imagen
    * @returns {boolean}
    */
@@ -128,12 +145,13 @@ export class Page {
 
   /**
    * Obtiene el tipo de contenido de la página
-   * @returns {'embedded-html'|'notion'|'google-doc'|'image'|'video'|'external'}
+   * @returns {'embedded-html'|'notion'|'google-doc'|'onedrive'|'image'|'video'|'external'}
    */
   getContentType() {
     if (this.hasEmbeddedHtml()) return 'embedded-html';
     if (this.isNotionPage()) return 'notion';
     if (this.isGoogleDoc()) return 'google-doc';
+    if (this.isOneDrive()) return 'onedrive';
     if (this.isImage()) return 'image';
     if (this.isVideo()) return 'video';
     return 'external';
@@ -151,7 +169,8 @@ export class Page {
       blockTypes: this.blockTypes ? [...this.blockTypes] : null,
       icon: this.icon ? { ...this.icon } : null,
       linkedTokenId: this.linkedTokenId,
-      htmlContent: this.htmlContent
+      htmlContent: this.htmlContent,
+      origin: this.origin
     });
   }
 
@@ -191,6 +210,10 @@ export class Page {
       json.htmlContent = this.htmlContent;
     }
 
+    if (this.origin) {
+      json.origin = this.origin;
+    }
+
     return json;
   }
 
@@ -207,10 +230,10 @@ export class Page {
       blockTypes: json.blockTypes,
       icon: json.icon,
       linkedTokenId: json.linkedTokenId,
-      htmlContent: json.htmlContent
+      htmlContent: json.htmlContent,
+      origin: json.origin
     });
   }
 }
 
 export default Page;
-

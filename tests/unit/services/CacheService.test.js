@@ -2,7 +2,7 @@
  * @fileoverview Tests unitarios para CacheService
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { CacheService } from '../../../js/services/CacheService.js';
 
 describe('CacheService', () => {
@@ -37,6 +37,51 @@ describe('CacheService', () => {
       expect(cacheService.getCachedBlocks('page-1')).toEqual(blocks1);
       expect(cacheService.getCachedBlocks('page-2')).toEqual(blocks2);
     });
+
+    it('no escribe bloques en Room metadata', async () => {
+      const setMetadata = jest.fn();
+      cacheService.setOBR({ room: { setMetadata } });
+
+      await cacheService.setCachedBlocks('local-only', [{ id: 'block-1' }]);
+
+      expect(setMetadata).not.toHaveBeenCalled();
+    });
+
+    it('invalida bloques con URLs temporales de Notion caducadas', async () => {
+      const pageId = 'expired-image-page';
+      await cacheService.setCachedBlocks(pageId, [{
+        id: 'image-1',
+        type: 'image',
+        image: {
+          type: 'file',
+          file: {
+            url: 'https://secure.notion-static.com/expired.png',
+            expiry_time: new Date(Date.now() - 60_000).toISOString()
+          }
+        }
+      }]);
+
+      expect(cacheService.getCachedBlocks(pageId)).toBeNull();
+      expect(localStorage.getItem(`notion-blocks-cache-${pageId}`)).toBeNull();
+    });
+
+    it('mantiene bloques mientras sus URLs de Notion siguen vigentes', async () => {
+      const pageId = 'fresh-image-page';
+      const blocks = [{
+        id: 'image-1',
+        type: 'image',
+        image: {
+          type: 'file',
+          file: {
+            url: 'https://secure.notion-static.com/fresh.png',
+            expiry_time: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+          }
+        }
+      }];
+      await cacheService.setCachedBlocks(pageId, blocks);
+
+      expect(cacheService.getCachedBlocks(pageId)).toEqual(blocks);
+    });
   });
 
   describe('removeCachedBlocks', () => {
@@ -66,6 +111,21 @@ describe('CacheService', () => {
       expect(result.icon).toEqual(pageInfo.icon);
       expect(result.cachedAt).toBeDefined();
     });
+
+    it('invalida portadas de Notion con URL caducada', () => {
+      const pageId = 'expired-cover-page';
+      cacheService.setCachedPageInfo(pageId, {
+        cover: {
+          type: 'file',
+          file: {
+            url: 'https://secure.notion-static.com/cover.png',
+            expiry_time: new Date(Date.now() - 60_000).toISOString()
+          }
+        }
+      });
+
+      expect(cacheService.getCachedPageInfo(pageId)).toBeNull();
+    });
   });
 
   describe('HTML Cache (memoria)', () => {
@@ -79,6 +139,16 @@ describe('CacheService', () => {
 
     it('debe retornar null si no hay HTML', () => {
       expect(cacheService.getHtmlFromLocalCache('not-exists')).toBeNull();
+    });
+
+    it('caduca el HTML antes de que expiren las URLs firmadas de Notion', () => {
+      cacheService.localHtmlCache['expired-page'] = {
+        html: '<img src="https://secure.notion-static.com/expired.png">',
+        savedAt: Date.now() - (6 * 60 * 1000)
+      };
+
+      expect(cacheService.getHtmlFromLocalCache('expired-page')).toBeNull();
+      expect(cacheService.localHtmlCache['expired-page']).toBeUndefined();
     });
 
     it('debe limitar a 20 entradas', () => {
@@ -182,4 +252,3 @@ describe('CacheService', () => {
     });
   });
 });
-

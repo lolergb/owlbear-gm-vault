@@ -66,7 +66,7 @@ export class Config {
    * @returns {number}
    */
   getTotalPageCount() {
-    let count = 0;
+    let count = this.pages.length;
     for (const cat of this.categories) {
       count += cat.getTotalPageCount();
     }
@@ -98,7 +98,7 @@ export class Config {
    * @returns {Page[]}
    */
   getAllPages() {
-    const allPages = [];
+    const allPages = [...this.pages];
     for (const cat of this.categories) {
       allPages.push(...cat.getAllPages());
     }
@@ -119,11 +119,7 @@ export class Config {
    * @returns {Page|null}
    */
   findPageByName(name) {
-    for (const cat of this.categories) {
-      const found = cat.findPageByName(name);
-      if (found) return found;
-    }
-    return null;
+    return this.getAllPages().find(page => page.name === name) || null;
   }
 
   /**
@@ -210,7 +206,8 @@ export class Config {
    * @returns {boolean}
    */
   isEmpty() {
-    return this.categories.length === 0 || this.categories.every(c => c.isEmpty());
+    return this.pages.length === 0
+      && (this.categories.length === 0 || this.categories.every(c => c.isEmpty()));
   }
 
   /**
@@ -259,7 +256,12 @@ export class Config {
       .map(filterCategory)
       .filter(c => c.pages.length > 0 || c.categories.length > 0);
 
-    return new Config({ categories: filteredCategories });
+    const filteredPages = this.pages.filter(page => page.visibleToPlayers);
+
+    return new Config({
+      categories: filteredCategories,
+      pages: filteredPages
+    });
   }
 
   /**
@@ -321,4 +323,3 @@ export class Config {
 }
 
 export default Config;
-
