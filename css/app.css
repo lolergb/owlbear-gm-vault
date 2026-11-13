@@ -1544,6 +1544,7 @@
   
   /* Alias: icon-button → btn--icon (para compatibilidad) */
   .icon-button { background: transparent; border: none; border-radius: var(--radius-full); width: var(--button-height-sm); height: var(--button-height-sm); padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--button-transition); color: var(--color-text-secondary); flex-shrink: 0; }
+  .category-context-menu-button { border-radius: var(--radius-lg); }
   .category-context-menu-button.context-menu-active,
   .page-context-menu-button.context-menu-active,
   .category-title-container.context-menu-open .category-context-menu-button,
