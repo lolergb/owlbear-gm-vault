@@ -437,6 +437,7 @@ describe('Netlify static asset cache policy', () => {
     const welcomeBuildTag = '20260906-9';
     const rendererBuildTag = '20260906-10';
     const storageBuildTag = '20260812-1';
+    const appBuildTag = '2.1.1';
     const indexHtml = readProjectFile('index.html');
     const mainJs = readProjectFile('js/main.js');
     const controllerJs = readProjectFile('js/controllers/ExtensionController.js');
@@ -448,18 +449,18 @@ describe('Netlify static asset cache policy', () => {
 
     expect(indexHtml).toContain(`href="css/app.css?v=${welcomeBuildTag}"`);
     expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${welcomeBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${rendererBuildTag}"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${rendererBuildTag}`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${appBuildTag}"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${appBuildTag}`);
     expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
     expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
-    expect(mainJs).toContain(`2.1.0`);
+    expect(mainJs).toContain(appBuildTag);
     expect(controllerJs).toContain(`../services/BroadcastService.js?v=${metadataBuildTag}`);
     expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(uiRendererJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(controllerJs).toContain(`../services/NotionService.js?v=${storageBuildTag}`);
-    expect(controllerJs).toContain(`../services/StorageService.js?v=${storageBuildTag}`);
+    expect(controllerJs).toContain(`../services/StorageService.js?v=${appBuildTag}`);
     expect(controllerJs).toContain(`../utils/logger.js?v=${legacyBuildTag}`);
     expect(controllerJs).toContain(`../renderers/NotionRenderer.js?v=${rendererBuildTag}`);
     expect(controllerJs).toContain(`../utils/helpers.js?v=${legacyBuildTag}`);
