@@ -457,10 +457,6 @@
     letter-spacing: var(--spacing-xs);
   }
 
-  #token-input::placeholder {
-    letter-spacing: normal;
-  }
-
   /* ==========================================================================
       Componentes Base - Formularios
       ========================================================================== */
