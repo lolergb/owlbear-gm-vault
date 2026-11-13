@@ -149,6 +149,24 @@ export class StorageService {
   }
 
   /**
+   * v1 used the shared "default" vault when a room had no saved vault yet.
+   * Read it without changing the active room or modifying the original data.
+   */
+  getLegacyDefaultConfig() {
+    if (this.roomId === 'default') return null;
+
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}default`);
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed?.categories) ? parsed : null;
+    } catch (e) {
+      logError('Error al leer configuración default de v1:', e);
+      return null;
+    }
+  }
+
+  /**
    * Guarda la configuración en localStorage
    * @param {Object} config - Configuración a guardar
    * @returns {boolean}

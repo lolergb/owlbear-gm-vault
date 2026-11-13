@@ -80,6 +80,21 @@ describe('StorageService', () => {
       expect(storageService.getLocalConfig().categories[0].name).toBe('New');
     });
 
+    it('lee el vault default de v1 sin cambiar de sala ni modificarlo', () => {
+      const legacyVault = { categories: [{ name: 'Campaign', items: [] }] };
+      localStorage.setItem('notion-pages-json-default', JSON.stringify(legacyVault));
+
+      expect(storageService.getLegacyDefaultConfig()).toEqual(legacyVault);
+      expect(storageService.getStorageKey()).toBe('notion-pages-json-test-room-123');
+      expect(localStorage.getItem('notion-pages-json-default')).toBe(JSON.stringify(legacyVault));
+      expect(localStorage.getItem(storageService.getStorageKey())).toBeNull();
+    });
+
+    it('ignora un default de v1 corrupto', () => {
+      localStorage.setItem('notion-pages-json-default', '{broken');
+      expect(storageService.getLegacyDefaultConfig()).toBeNull();
+    });
+
     it('falla de forma segura ante JSON local corrupto', () => {
       localStorage.setItem(storageService.getStorageKey(), '{not-json');
 

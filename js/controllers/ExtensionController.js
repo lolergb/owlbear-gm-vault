@@ -235,7 +235,6 @@ export class ExtensionController {
       // Modo normal: renderizar lista de páginas
       await this.render();
       if (!this._canShowVaultEmptyState()) this._scheduleAnnouncement();
-      this._scheduleBetaPromotion();
     }
     
     // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
@@ -6076,6 +6075,15 @@ export class ExtensionController {
         config = localConfig;
         configSource = 'localStorage';
         log('📦 Config de localStorage:', JSON.stringify(localConfig).substring(0, 200));
+      } else {
+        // v1 showed its saved "default" vault in rooms without a room-specific
+        // entry. Keep that behavior for existing users without changing either
+        // stored copy; the next edit saves to the current room as usual.
+        const legacyDefault = this.storageService.getLegacyDefaultConfig?.();
+        if (legacyDefault) {
+          config = legacyDefault;
+          configSource = 'legacy_default_localStorage';
+        }
       }
       
       // First use starts empty. The example vault is fetched only on request.
