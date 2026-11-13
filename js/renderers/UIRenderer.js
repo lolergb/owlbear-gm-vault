@@ -903,7 +903,7 @@ export class UIRenderer {
       },
       {
         icon: 'img/icon-eye-open.svg',
-        text: 'Choose players…',
+        text: 'Choose players',
         action: () => this.onPageAccessManage?.(page, categoryPath, pageIndex)
       },
       { 
@@ -1233,7 +1233,7 @@ export class UIRenderer {
     // Ajustar posición si se sale de la pantalla
     const rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
-      menu.style.left = `${position.x - rect.width}px`;
+      menu.style.left = `${Math.max(8, position.x - rect.width)}px`;
     }
     if (rect.bottom > window.innerHeight) {
       menu.style.top = `${position.y - rect.height}px`;

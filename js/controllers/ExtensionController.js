@@ -3264,7 +3264,7 @@ export class ExtensionController {
         },
         {
           icon: 'img/icon-eye-open.svg',
-          text: 'Choose players…',
+          text: 'Choose players',
           action: () => this._showPlayerAccessModal(page, 'page', this.currentCategoryPath)
         }
       );
@@ -3663,7 +3663,7 @@ export class ExtensionController {
     // Ajustar posición si se sale de pantalla
     const rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
-      menu.style.left = `${position.x - rect.width}px`;
+      menu.style.left = `${Math.max(8, position.x - rect.width)}px`;
     }
     if (rect.bottom > window.innerHeight) {
       menu.style.top = `${position.y - rect.height}px`;

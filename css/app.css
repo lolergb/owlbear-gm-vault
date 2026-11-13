@@ -1097,10 +1097,12 @@
   /* ==========================================================================
       Context Menu
       ========================================================================== */
-  .context-menu {
+  .context-menu,
+  #context-menu {
     position: fixed;
     border-radius: var(--radius-lg);
-    min-width: 180px;
+    min-width: min(220px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
     z-index: 10000;
     background-color: var(--color-bg-surface);
     box-shadow: var(--shadow-menu);
@@ -1140,7 +1142,6 @@
   }
   
   /* Alias para compatibilidad */
-  #context-menu {position: fixed;border-radius: var(--radius-lg);min-width: 180px;z-index: 10000;background-color: var(--color-bg-surface);box-shadow: var(--shadow-menu);background-image: linear-gradient(var(--color-surface-tint), var(--color-surface-tint));overflow: hidden;}
   .context-menu-item { display: flex; align-items: center; gap: var(--spacing-lg); padding: var(--spacing-md) var(--spacing-lg); cursor: pointer;  transition: background var(--transition-fast); }
   .context-menu-item:hover { background: var(--color-surface-hover); }
   .context-menu-separator { height: 1px; background: var(--color-surface-separator); }
