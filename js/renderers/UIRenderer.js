@@ -13,6 +13,7 @@ import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurit
 import { getVisibilityActionLabel } from '../utils/playerVisibilityCopy.js';
 import {
   PLAYER_ACCESS_MODE,
+  getPagesInFolder,
   getPlayerAudienceMode,
   isPlayerAccessEnabled,
   normalizePlayerIds,
@@ -42,6 +43,7 @@ export class UIRenderer {
     this.onCategoryDelete = null;
     this.onCategoryMove = null;
     this.onCategoryDuplicate = null;
+    this.onCategoryVisibilityChange = null;
     this.onAddPage = null;
     this.onAddCategory = null;
     this.onShowModal = null;
@@ -77,7 +79,7 @@ export class UIRenderer {
     const keys = [
       'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageOpenModal', 'onPageEdit', 'onPageDelete', 
       'onPageMove', 'onPageDuplicate', 'onPageAccessManage', 'onPageIconLoaded', 'onCategoryEdit', 'onCategoryDelete',
-      'onCategoryMove', 'onCategoryDuplicate', 'onAddPage', 'onAddCategory', 'onShowModal'
+      'onCategoryMove', 'onCategoryDuplicate', 'onCategoryVisibilityChange', 'onAddPage', 'onAddCategory', 'onShowModal'
     ];
     keys.forEach(key => {
       if (callbacks[key]) this[key] = callbacks[key];
@@ -1032,6 +1034,23 @@ export class UIRenderer {
       console.error('Error calculando orden para menú contextual de categoría:', e);
     }
     
+    const folderPages = getPagesInFolder(this._getParentFromPath(categoryPath) || category);
+    const visibilityItems = [];
+    if (folderPages.some(page => !isPlayerAccessEnabled(page))) {
+      visibilityItems.push({
+        icon: 'img/icon-eye-open.svg',
+        text: 'Show all pages',
+        action: () => this.onCategoryVisibilityChange?.(category, categoryPath, true)
+      });
+    }
+    if (folderPages.some(page => isPlayerAccessEnabled(page))) {
+      visibilityItems.push({
+        icon: 'img/icon-eye-close.svg',
+        text: 'Hide all pages',
+        action: () => this.onCategoryVisibilityChange?.(category, categoryPath, false)
+      });
+    }
+
     const menuItems = [
       { 
         icon: 'img/folder-close.svg', 
@@ -1052,6 +1071,8 @@ export class UIRenderer {
         }
       },
       { separator: true },
+      ...visibilityItems,
+      ...(visibilityItems.length ? [{ separator: true }] : []),
       { 
         icon: 'img/icon-edit.svg', 
         text: 'Edit', 

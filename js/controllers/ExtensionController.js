@@ -16,6 +16,7 @@ import {
   applyPlayerAccess,
   canPlayerAccessPage,
   filterConfigForPlayer,
+  getPagesInFolder,
   getPlayerAudienceMode,
   getPlayerAccessMode,
   isPlayerAccessEnabled,
@@ -825,7 +826,14 @@ export class ExtensionController {
    * @private
    */
   async _updateLinkedTokensVisibility(pageId, pageUrl, newVisibility) {
+    return this._updateLinkedPagesVisibility([{ id: pageId, url: pageUrl }], newVisibility);
+  }
+
+  /** Update linked tokens for a page batch with one scene read and write. */
+  async _updateLinkedPagesVisibility(pages, newVisibility) {
     try {
+      const pageIds = new Set(pages.map(page => page.id).filter(Boolean));
+      const pageUrls = new Set(pages.map(page => page.url).filter(Boolean));
       // Obtener todos los items de la escena
       const allItems = await this.OBR.scene.items.getItems();
       
@@ -833,7 +841,7 @@ export class ExtensionController {
       const linkedTokens = allItems.filter(item => {
         const tokenPageId = item.metadata?.[`${METADATA_KEY}/pageId`];
         const tokenPageUrl = item.metadata?.[`${METADATA_KEY}/pageUrl`];
-        return (pageId && tokenPageId === pageId) || (pageUrl && tokenPageUrl === pageUrl);
+        return pageIds.has(tokenPageId) || pageUrls.has(tokenPageUrl);
       });
       
       if (linkedTokens.length > 0) {
@@ -872,6 +880,67 @@ export class ExtensionController {
     } catch (error) {
       this._showFeedback(failureMessage);
       throw error;
+    }
+  }
+
+  /** Toggle existing descendant pages in one save, preserving each audience. */
+  async _handleCategoryVisibilityChange(category, categoryPath, visible) {
+    if (!this.config || !this.isGM || this.isCoGM || this._folderVisibilityUpdating) return false;
+    if (!categoryPath?.length) return false;
+    const folder = this._navigateToCategory(categoryPath);
+    if (!folder || (category?.id && folder.id !== category.id)) return false;
+
+    const changes = getPagesInFolder(folder)
+      .filter(page => isPlayerAccessEnabled(page) !== visible)
+      .map(page => ({
+        page,
+        visibleToPlayers: page.visibleToPlayers,
+        sharedWithPlayerIds: normalizePlayerIds(page.sharedWithPlayerIds),
+        playerAccessEnabled: page.playerAccessEnabled
+      }));
+    if (!changes.length) return true;
+
+    this._folderVisibilityUpdating = true;
+    try {
+      changes.forEach(({ page }) => setPlayerAccessEnabled(page, visible));
+      let saved = false;
+      try {
+        saved = await this.saveConfig(this.config, { render: false });
+      } catch (error) {
+        logError('Error saving folder page visibility:', error);
+      }
+
+      if (!saved) {
+        changes.forEach(({ page, ...previousAccess }) => {
+          Object.assign(page, previousAccess);
+          const storedPage = this.config.findPageById(page.id);
+          if (storedPage) Object.assign(storedPage, previousAccess);
+        });
+        try {
+          await this.saveConfig(this.config, { render: false });
+        } catch (error) {
+          logError('Error restoring folder page visibility:', error);
+        }
+        this._showFeedback(visible
+          ? 'Could not show these pages. Try again.'
+          : 'Could not hide these pages. Try again.');
+        return false;
+      }
+
+      for (const { page } of changes) {
+        if (!visible) {
+          await this.broadcastService.invalidatePage(page.getNotionPageId?.() || page.id);
+        }
+        this._updateCurrentPageVisibility(page, visible);
+      }
+      await this._updateLinkedPagesVisibility(changes.map(({ page }) => page), visible);
+      await this.render();
+      this._showFeedback(visible
+        ? 'All pages in this folder are visible to their players'
+        : 'All pages in this folder are hidden from players');
+      return true;
+    } finally {
+      this._folderVisibilityUpdating = false;
     }
   }
 
@@ -6118,6 +6187,8 @@ export class ExtensionController {
         this._showPlayerAccessModal(page, 'page', categoryPath);
       },
       // Categorías
+      onCategoryVisibilityChange: (category, categoryPath, visible) =>
+        this._handleCategoryVisibilityChange(category, categoryPath, visible),
       onCategoryEdit: async (category, categoryPath) => {
         await this._handleCategoryEdit(category, categoryPath);
       },

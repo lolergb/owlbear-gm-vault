@@ -20,6 +20,35 @@ function visibleRect(element) {
 }
 
 describe('UIRenderer player access actions', () => {
+  it.each([
+    ['mixed', [true, false], ['Show all pages', 'Hide all pages']],
+    ['visible', [true, true], ['Hide all pages']],
+    ['hidden', [false, false], ['Show all pages']],
+    ['empty', [], []]
+  ])('offers bulk actions for %s folders including nested pages', async (_state, visibility, expectedActions) => {
+    const pages = visibility.map((visible, index) => new Page(`Page ${index}`, `https://example.com/${index}`, {
+      sharedWithPlayerIds: ['player-1'], playerAccessEnabled: visible
+    }));
+    const folder = new Category('Folder', { categories: [new Category('Nested', { pages })] });
+    const renderer = new UIRenderer();
+    renderer.setConfig(new Config({ categories: [folder] }));
+    const callback = jest.fn().mockResolvedValue(true);
+    renderer.setCallbacks({ onCategoryVisibilityChange: callback });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderer.renderCategory(folder, container, 0, 'room-1', [], true);
+    const button = container.querySelector('.category-context-menu-button');
+    visibleRect(button);
+    button.click();
+    const actions = [...document.querySelectorAll('.context-menu__item')]
+      .filter(item => /^(Show|Hide) all pages$/.test(item.textContent));
+    expect(actions.map(item => item.textContent)).toEqual(expectedActions);
+    for (const action of actions) {
+      action.click();
+      expect(callback).toHaveBeenLastCalledWith(folder, [{ id: folder.id, name: folder.name }], action.textContent.startsWith('Show'));
+    }
+  });
+
   it('adds the selected-player action to a page context menu', () => {
     const page = new Page('Secret', 'https://example.com/secret');
     const renderer = new UIRenderer();

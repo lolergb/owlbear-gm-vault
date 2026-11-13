@@ -94,6 +94,14 @@ export function setPlayerAccessEnabled(target, enabled) {
   return target;
 }
 
+/** Collect existing pages recursively; folders do not grant or inherit access. */
+export function getPagesInFolder(folder) {
+  return [
+    ...(folder?.pages || []),
+    ...(folder?.categories || []).flatMap(getPagesInFolder)
+  ];
+}
+
 function recalculateOrder(order, pageIndexes, categoryIndexes) {
   if (!Array.isArray(order)) return null;
 
