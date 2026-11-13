@@ -21,11 +21,11 @@ function visibleRect(element) {
 
 describe('UIRenderer player access actions', () => {
   it.each([
-    ['mixed', [true, false], ['Show all pages', 'Hide all pages']],
-    ['visible', [true, true], ['Hide all pages']],
-    ['hidden', [false, false], ['Show all pages']],
-    ['empty', [], []]
-  ])('offers bulk actions for %s folders including nested pages', async (_state, visibility, expectedActions) => {
+    ['partly visible', [true, false], 'Hide from 1 player', '1', false],
+    ['visible', [true, true], 'Hide from 1 player', '1', false],
+    ['hidden', [false, false], 'Show to 1 player', '1', true],
+    ['empty', [], 'Show to all players', '', true]
+  ])('offers a page-style eye for %s folders including nested pages', async (_state, visibility, label, count, nextVisible) => {
     const pages = visibility.map((visible, index) => new Page(`Page ${index}`, `https://example.com/${index}`, {
       sharedWithPlayerIds: ['player-1'], playerAccessEnabled: visible
     }));
@@ -37,16 +37,13 @@ describe('UIRenderer player access actions', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     renderer.renderCategory(folder, container, 0, 'room-1', [], true);
-    const button = container.querySelector('.category-context-menu-button');
-    visibleRect(button);
-    button.click();
-    const actions = [...document.querySelectorAll('.context-menu__item')]
-      .filter(item => /^(Show|Hide) all pages$/.test(item.textContent));
-    expect(actions.map(item => item.textContent)).toEqual(expectedActions);
-    for (const action of actions) {
-      action.click();
-      expect(callback).toHaveBeenLastCalledWith(folder, [{ id: folder.id, name: folder.name }], action.textContent.startsWith('Show'));
-    }
+    const eye = container.querySelector('.category-visibility-button');
+    expect(eye.classList.contains('page-visibility-button')).toBe(true);
+    expect(eye.title).toBe(label);
+    expect(eye.querySelector('.page-visibility-button__label').textContent).toBe(count);
+    eye.click();
+    expect(callback).toHaveBeenCalledWith(folder, [{ id: folder.id, name: folder.name }], nextVisible);
+    expect(container.querySelector('.category-collapse-button').getAttribute('aria-expanded')).toBe('true');
   });
 
   it('adds the selected-player action to a page context menu', () => {
@@ -67,11 +64,12 @@ describe('UIRenderer player access actions', () => {
     expect(renderer.onPageAccessManage).toHaveBeenCalledWith(page, [], 0);
   });
 
-  it('does not expose player visibility controls on folders', () => {
+  it('opens Choose players from the folder menu without the old bulk menu actions', () => {
     const folder = new Category('Secrets', { sharedWithPlayerIds: ['player-1'] });
     const config = new Config({ categories: [folder] });
     const renderer = new UIRenderer();
     renderer.setConfig(config);
+    renderer.setCallbacks({ onCategoryAccessManage: jest.fn() });
     const container = document.createElement('div');
     document.body.appendChild(container);
     renderer.renderCategory(folder, container, 0, 'room-1', [], true);
@@ -81,8 +79,38 @@ describe('UIRenderer player access actions', () => {
     button.click();
     const item = [...document.querySelectorAll('.context-menu__item')]
       .find(candidate => candidate.textContent.includes('Choose players'));
-    expect(item).toBeUndefined();
+    expect(item).toBeDefined();
+    expect(document.querySelector('#context-menu').textContent).not.toMatch(/(Show|Hide) all pages/);
+    item.click();
+    expect(renderer.onCategoryAccessManage).toHaveBeenCalledWith(folder, [{ id: folder.id, name: folder.name }]);
     expect(container.querySelector('.player-access-badge')).toBeNull();
+  });
+
+  it.each([{ isGM: false }, { isGM: true, isCoGM: true }])('keeps folder access controls limited to the owner: %j', options => {
+    const renderer = new UIRenderer();
+    const page = new Page('Public', 'https://example.com', { visibleToPlayers: true });
+    const config = new Config({ categories: [new Category('Folder', { pages: [page] })] });
+    const container = document.createElement('div');
+    renderer.renderAllCategories(config, container, 'room-1', options);
+    expect(container.querySelector('.category-visibility-button')).toBeNull();
+    expect(container.querySelector('.category-context-menu-button')).toBeNull();
+  });
+
+  it('refreshes the folder eye when individual pages have different audiences', () => {
+    const first = new Page('First', 'https://example.com/first', { sharedWithPlayerIds: ['one'] });
+    const second = new Page('Second', 'https://example.com/second', { sharedWithPlayerIds: ['one'] });
+    const folder = new Category('Folder', { pages: [first, second] });
+    const renderer = new UIRenderer();
+    renderer.setConfig(new Config({ categories: [folder] }));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    renderer.renderCategory(folder, container, 0, 'room-1', [], true);
+    const eye = container.querySelector('.category-visibility-button');
+    expect(eye.title).toBe('Hide from 1 player');
+    second.sharedWithPlayerIds = ['two'];
+    renderer.updatePageVisibility(second, true);
+    expect(eye.title).toBe('Hide from players');
+    expect(eye.querySelector('.page-visibility-button__label').hidden).toBe(true);
   });
 
   it('combines the page visibility icon and audience count into one control', () => {

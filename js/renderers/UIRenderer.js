@@ -13,7 +13,7 @@ import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurit
 import { getVisibilityActionLabel } from '../utils/playerVisibilityCopy.js';
 import {
   PLAYER_ACCESS_MODE,
-  getPagesInFolder,
+  getFolderPlayerAccess,
   getPlayerAudienceMode,
   isPlayerAccessEnabled,
   normalizePlayerIds,
@@ -44,6 +44,7 @@ export class UIRenderer {
     this.onCategoryMove = null;
     this.onCategoryDuplicate = null;
     this.onCategoryVisibilityChange = null;
+    this.onCategoryAccessManage = null;
     this.onAddPage = null;
     this.onAddCategory = null;
     this.onShowModal = null;
@@ -79,7 +80,7 @@ export class UIRenderer {
     const keys = [
       'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageOpenModal', 'onPageEdit', 'onPageDelete', 
       'onPageMove', 'onPageDuplicate', 'onPageAccessManage', 'onPageIconLoaded', 'onCategoryEdit', 'onCategoryDelete',
-      'onCategoryMove', 'onCategoryDuplicate', 'onCategoryVisibilityChange', 'onAddPage', 'onAddCategory', 'onShowModal'
+      'onCategoryMove', 'onCategoryDuplicate', 'onCategoryVisibilityChange', 'onCategoryAccessManage', 'onAddPage', 'onAddCategory', 'onShowModal'
     ];
     keys.forEach(key => {
       if (callbacks[key]) this[key] = callbacks[key];
@@ -269,23 +270,38 @@ export class UIRenderer {
 
     // Botón de menú contextual para carpetas (solo GM completo, no coGM)
     if (isGM && !this.isCoGM) {
+      const folderPath = [...categoryPath, { id: category.id, name: category.name }];
+      const actions = document.createElement('div');
+      actions.className = 'category-actions';
+      const visibilityButton = document.createElement('button');
+      visibilityButton.type = 'button';
+      visibilityButton.className = 'page-visibility-button category-visibility-button';
+      visibilityButton.dataset.categoryPath = JSON.stringify(folderPath);
+      const currentAccess = () => getFolderPlayerAccess(this._getParentFromPath(folderPath) || category);
+      this._setVisibilityButtonState(visibilityButton, currentAccess());
+      visibilityButton.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        if (!this.onCategoryVisibilityChange || visibilityButton.disabled) return;
+        const access = currentAccess();
+        const visible = !isPlayerAccessEnabled(access);
+        visibilityButton.disabled = true;
+        visibilityButton.setAttribute('aria-busy', 'true');
+        this._setVisibilityButtonState(visibilityButton, access, visible);
+        try {
+          await this.onCategoryVisibilityChange(category, folderPath, visible);
+        } catch (error) {
+          console.error('Error updating folder visibility:', error);
+        } finally {
+          this._setVisibilityButtonState(visibilityButton, currentAccess());
+          visibilityButton.disabled = false;
+          visibilityButton.removeAttribute('aria-busy');
+        }
+      });
+      actions.appendChild(visibilityButton);
       const contextMenuButton = document.createElement('button');
       contextMenuButton.className = 'category-context-menu-button icon-button';
       contextMenuButton.innerHTML = iconHtml('img/icon-contextualmenu.svg', { className: 'icon-button-icon', alt: 'Menu' });
       contextMenuButton.title = 'Folder options';
-      contextMenuButton.style.opacity = '0';
-      
-      // Mostrar/ocultar en hover
-      titleContainer.addEventListener('mouseenter', () => {
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '1';
-        }
-      });
-      titleContainer.addEventListener('mouseleave', (e) => {
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '0';
-        }
-      });
 
       contextMenuButton.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -299,7 +315,8 @@ export class UIRenderer {
         }
       });
 
-      titleContainer.appendChild(contextMenuButton);
+      actions.appendChild(contextMenuButton);
+      titleContainer.appendChild(actions);
     }
 
     categoryDiv.appendChild(titleContainer);
@@ -449,6 +466,10 @@ export class UIRenderer {
           visible
         );
       }
+    });
+    document.querySelectorAll('.category-visibility-button').forEach(button => {
+      const folder = this._getParentFromPath(JSON.parse(button.dataset.categoryPath));
+      if (folder) this._setVisibilityButtonState(button, getFolderPlayerAccess(folder));
     });
   }
 
@@ -798,7 +819,8 @@ export class UIRenderer {
     for (const pathItem of categoryPath) {
       // pathItem puede ser un objeto { id, name } o un string
       const catName = typeof pathItem === 'object' ? pathItem.name : pathItem;
-      const cat = (current.categories || []).find(c => c.name === catName);
+      const catId = typeof pathItem === 'object' ? pathItem.id : null;
+      const cat = (current.categories || []).find(c => catId ? c.id === catId : c.name === catName);
       if (cat) current = cat;
       else return null;
     }
@@ -1034,23 +1056,6 @@ export class UIRenderer {
       console.error('Error calculando orden para menú contextual de categoría:', e);
     }
     
-    const folderPages = getPagesInFolder(this._getParentFromPath(categoryPath) || category);
-    const visibilityItems = [];
-    if (folderPages.some(page => !isPlayerAccessEnabled(page))) {
-      visibilityItems.push({
-        icon: 'img/icon-eye-open.svg',
-        text: 'Show all pages',
-        action: () => this.onCategoryVisibilityChange?.(category, categoryPath, true)
-      });
-    }
-    if (folderPages.some(page => isPlayerAccessEnabled(page))) {
-      visibilityItems.push({
-        icon: 'img/icon-eye-close.svg',
-        text: 'Hide all pages',
-        action: () => this.onCategoryVisibilityChange?.(category, categoryPath, false)
-      });
-    }
-
     const menuItems = [
       { 
         icon: 'img/folder-close.svg', 
@@ -1071,8 +1076,6 @@ export class UIRenderer {
         }
       },
       { separator: true },
-      ...visibilityItems,
-      ...(visibilityItems.length ? [{ separator: true }] : []),
       { 
         icon: 'img/icon-edit.svg', 
         text: 'Edit', 
@@ -1081,6 +1084,11 @@ export class UIRenderer {
             this.onCategoryEdit(category, categoryPath);
           }
         }
+      },
+      {
+        icon: 'img/icon-eye-open.svg',
+        text: 'Choose players',
+        action: () => this.onCategoryAccessManage?.(category, categoryPath)
       },
       { 
         icon: 'img/icon-clone.svg', 
@@ -1148,7 +1156,6 @@ export class UIRenderer {
       const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
         button.classList.remove('context-menu-active');
         titleContainer.classList.remove('context-menu-open');
-        button.style.opacity = '0';
       });
       
       if (!menu) {

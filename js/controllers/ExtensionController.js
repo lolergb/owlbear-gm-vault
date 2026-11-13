@@ -17,6 +17,8 @@ import {
   canPlayerAccessPage,
   filterConfigForPlayer,
   getPagesInFolder,
+  getFoldersInFolder,
+  getFolderPlayerAccess,
   getPlayerAudienceMode,
   getPlayerAccessMode,
   isPlayerAccessEnabled,
@@ -883,26 +885,44 @@ export class ExtensionController {
     }
   }
 
-  /** Toggle existing descendant pages in one save, preserving each audience. */
+  /** The eye pauses the existing audiences; Choose players replaces them. */
   async _handleCategoryVisibilityChange(category, categoryPath, visible) {
+    const saved = await this._applyFolderPlayerAccess(category, categoryPath, { visible });
+    if (!saved) this._showFeedback(visible
+      ? 'Could not show this folder. Try again.'
+      : 'Could not hide this folder. Try again.');
+    return saved;
+  }
+
+  async _applyFolderPlayerAccess(category, categoryPath, { visible, mode, playerIds = [] }) {
     if (!this.config || !this.isGM || this.isCoGM || this._folderVisibilityUpdating) return false;
     if (!categoryPath?.length) return false;
     const folder = this._navigateToCategory(categoryPath);
     if (!folder || (category?.id && folder.id !== category.id)) return false;
+    const ids = normalizePlayerIds(playerIds);
+    if (mode === PLAYER_ACCESS_MODE.SELECTED && !ids.length) return false;
 
-    const changes = getPagesInFolder(folder)
-      .filter(page => isPlayerAccessEnabled(page) !== visible)
-      .map(page => ({
-        page,
-        visibleToPlayers: page.visibleToPlayers,
-        sharedWithPlayerIds: normalizePlayerIds(page.sharedWithPlayerIds),
-        playerAccessEnabled: page.playerAccessEnabled
+    const pages = getPagesInFolder(folder);
+    const entries = [...getFoldersInFolder(folder), ...pages]
+      .map(target => ({
+        target,
+        visibleToPlayers: target.visibleToPlayers,
+        sharedWithPlayerIds: normalizePlayerIds(target.sharedWithPlayerIds),
+        playerAccessEnabled: target.playerAccessEnabled
       }));
-    if (!changes.length) return true;
 
     this._folderVisibilityUpdating = true;
     try {
-      changes.forEach(({ page }) => setPlayerAccessEnabled(page, visible));
+      entries.forEach(({ target }) => {
+        if (mode) applyPlayerAccess(target, mode, ids);
+        else setPlayerAccessEnabled(target, visible);
+      });
+      const changes = entries.filter(({ target, ...previous }) => (
+        target.visibleToPlayers !== previous.visibleToPlayers ||
+        target.playerAccessEnabled !== previous.playerAccessEnabled ||
+        JSON.stringify(target.sharedWithPlayerIds) !== JSON.stringify(previous.sharedWithPlayerIds)
+      ));
+      if (!changes.length) return true;
       let saved = false;
       try {
         saved = await this.saveConfig(this.config, { render: false });
@@ -911,33 +931,43 @@ export class ExtensionController {
       }
 
       if (!saved) {
-        changes.forEach(({ page, ...previousAccess }) => {
-          Object.assign(page, previousAccess);
-          const storedPage = this.config.findPageById(page.id);
-          if (storedPage) Object.assign(storedPage, previousAccess);
+        const storedFolder = this._navigateToCategory(categoryPath);
+        const storedTargets = [...getFoldersInFolder(storedFolder), ...getPagesInFolder(storedFolder)];
+        changes.forEach(({ target, ...previousAccess }) => {
+          Object.assign(target, previousAccess);
+          const stored = storedTargets.find(item => item?.id === target.id);
+          if (stored) Object.assign(stored, previousAccess);
         });
         try {
           await this.saveConfig(this.config, { render: false });
         } catch (error) {
           logError('Error restoring folder page visibility:', error);
         }
-        this._showFeedback(visible
-          ? 'Could not show these pages. Try again.'
-          : 'Could not hide these pages. Try again.');
         return false;
       }
 
-      for (const { page } of changes) {
-        if (!visible) {
-          await this.broadcastService.invalidatePage(page.getNotionPageId?.() || page.id);
+      const pageChanges = changes.filter(({ target }) => pages.includes(target));
+      for (const { target: page, ...previous } of pageChanges) {
+        const enabled = isPlayerAccessEnabled(page);
+        const reduced = isPlayerAccessEnabled(previous) && (
+          !enabled || (getPlayerAudienceMode(page) !== PLAYER_ACCESS_MODE.EVERYONE && (
+            previous.visibleToPlayers ||
+            previous.sharedWithPlayerIds.some(id => !page.sharedWithPlayerIds.includes(id))
+          ))
+        );
+        if (reduced) await this.broadcastService.invalidatePage(page.getNotionPageId?.() || page.id);
+        if (this.currentPage?.id === page.id) {
+          this.currentPage.visibleToPlayers = page.visibleToPlayers;
+          this.currentPage.sharedWithPlayerIds = [...page.sharedWithPlayerIds];
         }
-        this._updateCurrentPageVisibility(page, visible);
+        this._updateCurrentPageVisibility(page, enabled);
       }
-      await this._updateLinkedPagesVisibility(changes.map(({ page }) => page), visible);
+      if (pageChanges.length) {
+        await this._updateLinkedPagesVisibility(pageChanges.map(({ target }) => target), mode
+          ? mode !== PLAYER_ACCESS_MODE.GM_ONLY : visible);
+      }
       await this.render();
-      this._showFeedback(visible
-        ? 'All pages in this folder are visible to their players'
-        : 'All pages in this folder are hidden from players');
+      this._showFeedback(getVisibilityStatusLabel(getFolderPlayerAccess(this._navigateToCategory(categoryPath))));
       return true;
     } finally {
       this._folderVisibilityUpdating = false;
@@ -967,6 +997,9 @@ export class ExtensionController {
   }
 
   async _handlePlayerAccessChange(target, targetType, mode, playerIds = [], categoryPath = []) {
+    if (targetType === 'category') {
+      return this._applyFolderPlayerAccess(target, categoryPath, { mode, playerIds });
+    }
     if (!this.config || !this.isGM || this.isCoGM || targetType !== 'page') return false;
 
     const storedTarget = this.config.findPageById(target?.id)
@@ -1024,9 +1057,13 @@ export class ExtensionController {
   }
 
   async _showPlayerAccessModal(target, targetType, categoryPath = []) {
-    if (!target || targetType !== 'page' || !this.playerDirectoryService) return;
+    if (!target || !['page', 'category'].includes(targetType) || !this.playerDirectoryService) return;
+    const isFolder = targetType === 'category';
+    const access = isFolder
+      ? getFolderPlayerAccess(this._navigateToCategory(categoryPath) || target)
+      : target;
 
-    const selectedIds = new Set(normalizePlayerIds(target.sharedWithPlayerIds));
+    const selectedIds = new Set(normalizePlayerIds(access.sharedWithPlayerIds));
     const knownPlayers = await this.playerDirectoryService.listPlayers();
     const knownIds = new Set(knownPlayers.map(player => player.id));
     for (const playerId of selectedIds) {
@@ -1063,7 +1100,9 @@ export class ExtensionController {
 
     const description = document.createElement('p');
     description.className = 'import-source-label player-access-description';
-    description.textContent = `Choose who can see “${target.name}” in their vault.`;
+    description.textContent = isFolder
+      ? `Choose who can see everything in “${target.name}”. This replaces the player settings for all pages and subfolders inside.`
+      : `Choose who can see “${target.name}” in their vault.`;
     form.appendChild(description);
 
     const audience = document.createElement('fieldset');
@@ -1087,7 +1126,7 @@ export class ExtensionController {
     everyone.type = 'checkbox';
     everyone.name = 'player-access-everyone';
     everyone.value = PLAYER_ACCESS_MODE.EVERYONE;
-    everyone.checked = getPlayerAudienceMode(target) === PLAYER_ACCESS_MODE.EVERYONE;
+    everyone.checked = !access.mixedPlayerAccess && getPlayerAudienceMode(access) === PLAYER_ACCESS_MODE.EVERYONE;
     const everyoneAvatar = document.createElement('span');
     everyoneAvatar.className = 'player-access-player__avatar player-access-player__avatar--everyone';
     everyoneAvatar.setAttribute('aria-hidden', 'true');
@@ -1155,8 +1194,8 @@ export class ExtensionController {
     const save = document.createElement('button');
     save.type = 'submit';
     save.className = 'btn btn--primary btn--flex';
-    const showPage = !isPlayerAccessEnabled(target);
-    const saveLabel = showPage ? 'Show page' : 'Save changes';
+    const showPage = !isPlayerAccessEnabled(access);
+    const saveLabel = showPage ? (isFolder ? 'Show folder' : 'Show page') : 'Save changes';
     save.textContent = saveLabel;
     buttons.append(cancel, save);
     form.appendChild(buttons);
@@ -1208,7 +1247,7 @@ export class ExtensionController {
       if (saved) close();
       else {
         formError.textContent = showPage
-          ? 'Could not show this page. Try again.'
+          ? (isFolder ? 'Could not show this folder. Try again.' : 'Could not show this page. Try again.')
           : 'Could not save changes. Try again.';
         formError.classList.add('form__error--visible');
         save.disabled = false;
@@ -6189,6 +6228,8 @@ export class ExtensionController {
       // Categorías
       onCategoryVisibilityChange: (category, categoryPath, visible) =>
         this._handleCategoryVisibilityChange(category, categoryPath, visible),
+      onCategoryAccessManage: (category, categoryPath) =>
+        this._showPlayerAccessModal(category, 'category', categoryPath),
       onCategoryEdit: async (category, categoryPath) => {
         await this._handleCategoryEdit(category, categoryPath);
       },

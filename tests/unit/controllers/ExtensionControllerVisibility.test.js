@@ -93,7 +93,7 @@ describe('folder content visibility', () => {
     expect(controller.OBR.scene.items.updateItems).toHaveBeenCalledTimes(1);
     expect(tokens.map(item => item.metadata[`${METADATA_KEY}/pageVisible`])).toEqual([false, false, true]);
     expect(controller.render).toHaveBeenCalledTimes(1);
-    expect(controller._showFeedback).toHaveBeenCalledWith('All pages in this folder are hidden from players');
+    expect(controller._showFeedback).toHaveBeenCalledWith('Hidden from players');
   });
 
   it('shows all descendants, restoring selected audiences and defaulting unconfigured pages to all players', async () => {
@@ -117,7 +117,7 @@ describe('folder content visibility', () => {
     expect(other).not.toContain('Secret');
     expect(other).toContain('Private');
     expect(other).toContain('Everyone');
-    expect(controller._showFeedback).toHaveBeenLastCalledWith('All pages in this folder are visible to their players');
+    expect(controller._showFeedback).toHaveBeenLastCalledWith('Visible to players');
   });
 
   it.each([true, false])('rolls back the whole batch if saving fails (visible: %s)', async visible => {

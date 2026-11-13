@@ -992,21 +992,31 @@
     height: var(--icon-size-md); /* 20px */
   }
   
-  /* Botones de categoría (mantienen position absolute) */
-  .category-context-menu-button,
-  .category-visibility-button {
-    position: absolute;
-    right: var(--spacing-sm);
-    top: 50%;
-    transform: translateY(-50%);
+  .category-title { min-width: 0; overflow-wrap: anywhere; }
+  .category-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--button-group-gap-sm);
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .category-actions > .page-visibility-button--no-access,
+  .category-context-menu-button {
     opacity: 0;
+  }
+  .category-title-container:hover .category-actions > *,
+  .category-title-container:focus-within .category-actions > *,
+  .category-title-container.context-menu-open .category-actions > * {
+    opacity: 1;
+  }
+  .category-context-menu-button {
     color: var(--color-text-secondary);
     transition: var(--button-transition);
     width: var(--button-height-sm);
     height: var(--button-height-sm);
     background: transparent;
     border: none;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-lg);
     cursor: pointer;
     display: flex;
     align-items: center;
