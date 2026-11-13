@@ -453,7 +453,7 @@ describe('Netlify static asset cache policy', () => {
     expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
     expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
-    expect(mainJs).toContain(`2.1.0`);
+    expect(mainJs).toContain(`2.1.0-beta.3`);
     expect(controllerJs).toContain(`../services/BroadcastService.js?v=${metadataBuildTag}`);
     expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
