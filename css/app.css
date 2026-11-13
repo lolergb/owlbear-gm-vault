@@ -836,10 +836,13 @@
     flex-shrink: 0;
   }
   
-  @media (hover: hover) {
-    :is(.category__collapse-btn, .category-collapse-button):hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
-      background: var(--button-secondary-hover-bg);
-    }
+  :is(.category__collapse-btn, .category-collapse-button):focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  :is(.category__collapse-btn, .category-collapse-button):focus-visible {
+    outline: 2px solid var(--button-focus-ring);
+    outline-offset: 3px;
   }
 
   .category__collapse-icon {
