@@ -35,6 +35,7 @@ export class UIRenderer {
     this.onPageMove = null;
     this.onPageDuplicate = null;
     this.onPageAccessManage = null;
+    this.onPageIconLoaded = null;
     // Callbacks para categorías
     this.onCategoryEdit = null;
     this.onCategoryDelete = null;
@@ -74,7 +75,7 @@ export class UIRenderer {
   setCallbacks(callbacks) {
     const keys = [
       'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageOpenModal', 'onPageEdit', 'onPageDelete', 
-      'onPageMove', 'onPageDuplicate', 'onPageAccessManage', 'onCategoryEdit', 'onCategoryDelete',
+      'onPageMove', 'onPageDuplicate', 'onPageAccessManage', 'onPageIconLoaded', 'onCategoryEdit', 'onCategoryDelete',
       'onCategoryMove', 'onCategoryDuplicate', 'onAddPage', 'onAddCategory', 'onShowModal'
     ];
     keys.forEach(key => {
@@ -509,11 +510,11 @@ export class UIRenderer {
       linkIconHtml = ico('img/icon-link.svg', 'Link');
     }
 
-    // Indicador de visible para players
-    // HTML del botón
+    // Use the icon included in the vault: players cannot query the GM's Notion account.
+    const pageIconHtml = this._getPageIconHtml(page.icon, page.name);
     button.innerHTML = `
       <div class="page-button-inner">
-        <div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>
+        ${pageIconHtml || `<div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>`}
         <div class="page-name-text">${escapeHtml(page.name)}</div>
         ${linkIconHtml}
       </div>
@@ -656,10 +657,10 @@ export class UIRenderer {
       }
     });
 
-    // Intentar cargar icono real de Notion
+    // Only GM views refresh metadata; actual players use the shared icon.
     const pageId = extractNotionPageId(page.url);
-    if (pageId && this.notionService) {
-      this._loadPageIcon(button, pageId, page.name, linkIconHtml);
+    if (pageId && this.notionService && (isGM || this.previewPlayerAccess)) {
+      this._loadPageIcon(button, pageId, page, linkIconHtml);
     }
 
     return button;
@@ -744,40 +745,41 @@ export class UIRenderer {
   }
 
   /**
+   * Render saved and fetched icons through the same escaping and URL checks.
+   * @private
+   */
+  _getPageIconHtml(icon, pageName) {
+    if (icon?.type === 'emoji') {
+      return `<span class="page-icon-emoji">${escapeHtml(icon.emoji || '📄')}</span>`;
+    }
+    const url = icon?.type === 'external' ? icon.external?.url
+      : icon?.type === 'file' ? icon.file?.url : null;
+    const safeUrl = sanitizeHttpUrl(url);
+    return safeUrl
+      ? `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`
+      : '';
+  }
+
+  /**
    * Carga el icono real de una página de Notion
    * @private
    */
-  async _loadPageIcon(button, pageId, pageName, linkIconHtml) {
+  async _loadPageIcon(button, pageId, page, linkIconHtml) {
+    const sourceUrl = page.url;
     try {
       const pageInfo = await this.notionService.fetchPageInfo(pageId);
-      if (pageInfo && pageInfo.icon) {
-        let iconHtml = '';
-        if (pageInfo.icon.type === 'emoji') {
-          iconHtml = `<span class="page-icon-emoji">${escapeHtml(pageInfo.icon.emoji || '📄')}</span>`;
-        } else if (pageInfo.icon.type === 'external' && pageInfo.icon.external?.url) {
-          const safeUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
-          if (safeUrl) {
-            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
-          }
-        } else if (pageInfo.icon.type === 'file' && pageInfo.icon.file?.url) {
-          const safeUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
-          if (safeUrl) {
-            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
-          }
+      if (page.url !== sourceUrl) return;
+      const iconHtml = this._getPageIconHtml(pageInfo?.icon, page.name);
+      if (iconHtml) {
+        const inner = button.querySelector('.page-button-inner');
+        if (inner) {
+          inner.innerHTML = `
+            ${iconHtml}
+            <div class="page-name-text">${escapeHtml(page.name)}</div>
+            ${linkIconHtml}
+          `;
         }
-
-        if (iconHtml) {
-          const inner = button.querySelector('.page-button-inner');
-          if (inner) {
-            inner.innerHTML = `
-              <div style="display: flex; align-items: center; gap: var(--spacing-md); width: 100%;">
-                ${iconHtml}
-                <div class="page-name" style="flex: 1; text-align: left;">${escapeHtml(pageName)}</div>
-                ${linkIconHtml}
-              </div>
-            `;
-          }
-        }
+        this.onPageIconLoaded?.(page, pageInfo.icon);
       }
     } catch (e) {
       // Ignorar errores de carga de icono

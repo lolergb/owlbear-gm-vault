@@ -141,6 +141,7 @@ export class ExtensionController {
     this.roleChangeUnsubscribe = null;
     this.playerDirectoryStopWatching = null;
     this._coGMSyncPromise = null;
+    this._pageIconSyncTimer = null;
   }
 
   /**
@@ -650,6 +651,28 @@ export class ExtensionController {
    */
   getConfig() {
     return this.config;
+  }
+
+  /** Save Notion icons with the page so every authorized player receives them. */
+  _handlePageIconLoaded(page, icon) {
+    if (!this.isGM || this.isCoGM || !this.config) return;
+    // A fetch can finish after an edit, deletion, or config replacement.
+    const storedPage = this.config.findPageById(page.id);
+    if (!storedPage || storedPage.url !== page.url ||
+        JSON.stringify(storedPage.icon) === JSON.stringify(icon)) return;
+
+    storedPage.icon = icon;
+    // Group icons loaded by one render into a single save and room update.
+    if (this._pageIconSyncTimer) return;
+    this._pageIconSyncTimer = setTimeout(async () => {
+      this._pageIconSyncTimer = null;
+      if (!this.isGM || this.isCoGM || !this.config) return;
+      try {
+        await this.saveConfig(this.config, { render: false });
+      } catch (error) {
+        logWarn('No se pudieron sincronizar los iconos de las páginas:', error);
+      }
+    }, 250);
   }
 
   /**
@@ -2460,6 +2483,10 @@ export class ExtensionController {
     log('🧹 Limpiando recursos...');
     this.announcementCancelled = true;
     this.betaPromotionCancelled = true;
+
+    clearTimeout(this._pageIconSyncTimer);
+    this._pageIconSyncTimer = null;
+    this.uiRenderer.onPageIconLoaded = null;
 
     // Detener intervals
     if (this.heartbeatInterval) {
@@ -6073,6 +6100,7 @@ export class ExtensionController {
       onPageClick: (page, categoryPath, pageIndex) => {
         this.openPage(page, categoryPath, pageIndex);
       },
+      onPageIconLoaded: (page, icon) => this._handlePageIconLoaded(page, icon),
       onVisibilityChange: (page, categoryPath, pageIndex, visible) =>
         this._handleVisibilityChange(page, categoryPath, pageIndex, visible),
       onPageShare: (page, categoryPath, pageIndex) =>
