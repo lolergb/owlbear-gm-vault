@@ -47,6 +47,8 @@ export class UIRenderer {
     this.isGM = true;
     // Es coGM? (solo ve botón compartir)
     this.isCoGM = false;
+    // GM-only preview of all configured player audiences.
+    this.previewPlayerAccess = false;
     // Config para calcular posiciones
     this.config = null;
   }
@@ -106,6 +108,7 @@ export class UIRenderer {
       (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'));
     const hasHtmlContent = !!page.htmlContent;
     if (!hasValidUrl && !hasHtmlContent) return false;
+    if (!isGM && this.previewPlayerAccess) return isPlayerAccessEnabled(page);
     return isGM || (
       page.visibleToPlayers === true && page.playerAccessEnabled !== false
     );
@@ -116,16 +119,18 @@ export class UIRenderer {
    * @param {Object} config - Configuración
    * @param {HTMLElement} container - Contenedor
    * @param {string} roomId - ID de la room
-   * @param {boolean|Object} isGMOrOptions - true/false para GM, o objeto {isGM, isCoGM}
+   * @param {boolean|Object} isGMOrOptions - true/false para GM, o objeto {isGM, isCoGM, previewPlayerAccess}
    */
   renderAllCategories(config, container, roomId, isGMOrOptions = true) {
     // Soportar tanto boolean como objeto de opciones
     if (typeof isGMOrOptions === 'object') {
       this.isGM = isGMOrOptions.isGM !== false;
       this.isCoGM = isGMOrOptions.isCoGM === true;
+      this.previewPlayerAccess = isGMOrOptions.previewPlayerAccess === true;
     } else {
       this.isGM = isGMOrOptions;
       this.isCoGM = false;
+      this.previewPlayerAccess = false;
     }
     
     container.innerHTML = '';

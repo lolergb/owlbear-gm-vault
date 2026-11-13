@@ -2413,11 +2413,8 @@
 }
 
 .player-access-audience legend {
-  padding: 0;
-}
-
-.player-access-option {
   width: 100%;
+  padding: 0 0 var(--spacing-sm);
 }
 
 .player-access-player input {
@@ -2428,29 +2425,14 @@
   accent-color: var(--color-accent-primary);
 }
 
-.player-access-option__copy {
-  min-width: 0;
-}
-
-.player-access-players__heading {
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
-}
-
-.player-access-players {
-  min-height: 0;
-}
-
-.player-access-players[hidden] {
-  display: none;
-}
-
 .player-access-players__heading {
   display: flex;
   justify-content: space-between;
   gap: var(--spacing-md);
   align-items: baseline;
   font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
 }
 
 .player-access-players__heading .form__label {
@@ -2514,6 +2496,24 @@
   font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.player-access-player__avatar--everyone {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.player-access-everyone__copy {
+  display: flex;
+  flex-direction: column;
+  grid-column: 3 / -1;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.player-access-everyone__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .player-access-player__status {

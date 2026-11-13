@@ -4,10 +4,12 @@ import { Category } from '../../../js/models/Category.js';
 import { Config } from '../../../js/models/Config.js';
 import { Page } from '../../../js/models/Page.js';
 import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
+import { UIRenderer } from '../../../js/renderers/UIRenderer.js';
 import { PLAYER_ACCESS_MODE } from '../../../js/utils/playerAccess.js';
 
 afterEach(() => {
   document.body.innerHTML = '';
+  document.body.classList.remove('role-player');
 });
 
 function createController(config) {
@@ -72,7 +74,7 @@ describe('ExtensionController player access', () => {
     expect(controller.broadcastService.invalidatePage).toHaveBeenCalledWith('secret');
   });
 
-  it('renders connected and historical players and requires a selection', async () => {
+  it('lets the GM select players directly from the Everyone audience and saves that selection', async () => {
     const page = new Page('Secret', 'https://example.com/secret', { visibleToPlayers: true });
     const controller = createController(new Config({ categories: [] }));
     controller.playerDirectoryService = {
@@ -81,31 +83,76 @@ describe('ExtensionController player access', () => {
         { id: 'offline', name: 'Milo', connected: false, color: '' }
       ])
     };
+    controller._handlePlayerAccessChange = jest.fn().mockResolvedValue(true);
     await controller._showPlayerAccessModal(page, 'page');
 
     expect(document.querySelector('.player-access-modal.modal__content')).not.toBeNull();
     expect(document.querySelector('#player-access-modal-title').textContent).toBe('Manage visibility');
     expect(document.querySelector(`input[value="${PLAYER_ACCESS_MODE.GM_ONLY}"]`)).toBeNull();
     expect([...document.querySelectorAll('.player-access-player__name')].map(node => node.textContent))
-      .toEqual(['Lyra', 'Milo']);
+      .toEqual(['Everyone', 'Lyra', 'Milo']);
     expect([...document.querySelectorAll('.player-access-player__status')].map(node => node.textContent))
       .toEqual(['Connected', 'Offline']);
 
-    const selectedMode = document.querySelector(
-      `input[name="player-access-mode"][value="${PLAYER_ACCESS_MODE.SELECTED}"]`
-    );
-    const playerSection = document.querySelector('.player-access-players');
-    expect(playerSection.hidden).toBe(true);
-    selectedMode.click();
-    expect(playerSection.hidden).toBe(false);
+    expect(document.querySelector('input[type="radio"]')).toBeNull();
+    const everyone = document.querySelector('input[name="player-access-everyone"]');
+    const online = document.querySelector('input[value="online"]');
+    expect(everyone.checked).toBe(true);
+    expect(online.disabled).toBe(false);
+    expect(online.closest('[hidden]')).toBeNull();
     const save = document.querySelector('.player-access-actions .btn--primary');
-    expect(save.disabled).toBe(true);
-    expect(document.querySelector('.player-access-validation').textContent)
-      .toBe('Choose at least one player.');
-
-    document.querySelector('input[value="online"]').click();
+    online.click();
+    expect(everyone.checked).toBe(false);
     expect(save.disabled).toBe(false);
     expect(document.querySelector('.player-access-players__count').textContent).toBe('1 selected');
+
+    online.click();
+    expect(save.disabled).toBe(true);
+    expect(document.querySelector('.player-access-validation').textContent)
+      .toBe('Choose Everyone or at least one player.');
+
+    document.querySelector('input[value="offline"]').click();
+    save.click();
+    await Promise.resolve();
+    expect(controller._handlePlayerAccessChange)
+      .toHaveBeenCalledWith(page, 'page', PLAYER_ACCESS_MODE.SELECTED, ['offline'], []);
+    expect(document.querySelector('#player-access-modal')).toBeNull();
+  });
+
+  it('keeps a paused selection checked and clears it when saving Everyone', async () => {
+    const page = new Page('Secret', 'https://example.com/secret', {
+      sharedWithPlayerIds: ['offline'],
+      playerAccessEnabled: false
+    });
+    const controller = createController(new Config({ pages: [page] }));
+    controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([]) };
+    controller._handlePlayerAccessChange = jest.fn().mockResolvedValue(true);
+    await controller._showPlayerAccessModal(page, 'page');
+
+    const everyone = document.querySelector('input[name="player-access-everyone"]');
+    const offline = document.querySelector('input[value="offline"]');
+    expect(everyone.checked).toBe(false);
+    expect(offline.checked).toBe(true);
+    everyone.click();
+    expect(offline.checked).toBe(false);
+    expect(offline.disabled).toBe(false);
+    document.querySelector('.player-access-actions .btn--primary').click();
+    await Promise.resolve();
+    expect(controller._handlePlayerAccessChange)
+      .toHaveBeenCalledWith(page, 'page', PLAYER_ACCESS_MODE.EVERYONE, [], []);
+  });
+
+  it('allows Everyone even when no player has joined yet', async () => {
+    const page = new Page('Secret', 'https://example.com/secret');
+    const controller = createController(new Config({ pages: [page] }));
+    controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([]) };
+    await controller._showPlayerAccessModal(page, 'page');
+
+    const save = document.querySelector('.player-access-actions .btn--primary');
+    expect(save.disabled).toBe(true);
+    expect(document.querySelector('.player-access-empty')).not.toBeNull();
+    document.querySelector('input[name="player-access-everyone"]').click();
+    expect(save.disabled).toBe(false);
   });
 
   it('ignores legacy folder access when managing a page', async () => {
@@ -125,9 +172,9 @@ describe('ExtensionController player access', () => {
     );
 
     expect(document.querySelector('.player-access-inherited')).toBeNull();
-    expect(document.querySelector('.player-access-audience legend').textContent)
+    expect(document.querySelector('.player-access-audience legend .form__label').textContent)
       .toBe('Who can see this?');
-    expect(document.querySelector('.player-access-option strong').textContent)
+    expect(document.querySelector('.player-access-player__name').textContent)
       .toBe('Everyone');
   });
 
@@ -163,5 +210,83 @@ describe('ExtensionController player access', () => {
 
     expect(controller.cacheService.clearPageCache).toHaveBeenCalledWith('revoked');
     expect(controller.cacheService.clearPageCache).not.toHaveBeenCalledWith('kept');
+  });
+});
+
+describe('GM Player view preview', () => {
+  function createPreviewController(config) {
+    const controller = createController(config);
+    controller.render = ExtensionController.prototype.render;
+    controller.playerViewMode = false;
+    controller.roomId = 'room-1';
+    controller.uiRenderer = new UIRenderer();
+    controller.pagesContainer = document.createElement('div');
+    document.body.appendChild(controller.pagesContainer);
+    return controller;
+  }
+
+  const renderedNames = controller => [...controller.pagesContainer.querySelectorAll('.page-name-text')]
+    .map(node => node.textContent).sort();
+
+  it('includes active selected audiences at root and in nested folders when toggled on', async () => {
+    const privatePage = new Page('Private', 'https://example.com/private');
+    const selected = new Page('Selected', 'https://example.com/selected', {
+      sharedWithPlayerIds: ['player-1']
+    });
+    const everyone = new Page('Everyone', 'https://example.com/everyone', { visibleToPlayers: true });
+    const paused = new Page('Paused', 'https://example.com/paused', {
+      sharedWithPlayerIds: ['player-2'], playerAccessEnabled: false
+    });
+    const pausedEveryone = new Page('Paused everyone', 'https://example.com/paused-all', {
+      visibleToPlayers: true, playerAccessEnabled: false
+    });
+    const nested = new Page('Nested selected', null, {
+      htmlContent: '<p>Selected content</p>', sharedWithPlayerIds: ['player-2']
+    });
+    const controller = createPreviewController(new Config({
+      pages: [privatePage, selected, everyone, paused, pausedEveryone],
+      categories: [new Category('Parent', { categories: [new Category('Child', { pages: [nested] })] })]
+    }));
+    const savedConfig = JSON.stringify(controller.config.toJSON());
+
+    await controller._togglePlayerViewMode();
+
+    expect(renderedNames(controller)).toEqual(['Everyone', 'Nested selected', 'Selected']);
+    expect([...controller.pagesContainer.querySelectorAll('.category-title')].map(node => node.textContent))
+      .toEqual(['Parent', 'Child']);
+    expect(controller.pagesContainer.querySelector('.page-context-menu-button')).toBeNull();
+    expect(controller.pagesContainer.querySelector('[data-page-name="Selected"]').dataset.pageIndex).toBe('1');
+    expect(JSON.stringify(controller.config.toJSON())).toBe(savedConfig);
+
+    await controller._togglePlayerViewMode();
+    expect(renderedNames(controller))
+      .toEqual(['Everyone', 'Nested selected', 'Paused', 'Paused everyone', 'Private', 'Selected']);
+  });
+
+  it('renders a vault containing only selected-player content instead of the empty state', async () => {
+    const page = new Page('Selected', 'https://example.com/selected', { sharedWithPlayerIds: ['player-1'] });
+    const controller = createPreviewController(new Config({ pages: [page] }));
+
+    await controller._togglePlayerViewMode();
+    expect(renderedNames(controller)).toEqual(['Selected']);
+    expect(controller.pagesContainer.querySelector('.empty-state')).toBeNull();
+
+    page.playerAccessEnabled = false;
+    await controller.render();
+    expect(renderedNames(controller)).toEqual([]);
+    expect(controller.pagesContainer.querySelector('.empty-state')).not.toBeNull();
+  });
+
+  it('resets the aggregate preview when rendering as an actual player', async () => {
+    const controller = createPreviewController(new Config({ pages: [
+      new Page('Selected', 'https://example.com/selected', { sharedWithPlayerIds: ['other-player'] }),
+      new Page('Everyone', 'https://example.com/all', { visibleToPlayers: true })
+    ] }));
+    await controller._togglePlayerViewMode();
+    expect(renderedNames(controller)).toEqual(['Everyone', 'Selected']);
+
+    controller.isGM = false;
+    await controller.render();
+    expect(renderedNames(controller)).toEqual(['Everyone']);
   });
 });

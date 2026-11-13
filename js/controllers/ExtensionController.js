@@ -468,9 +468,9 @@ export class ExtensionController {
     // Pasar la config al UIRenderer para calcular posiciones
     this.uiRenderer.setConfig(this.config);
     
-    // Si playerViewMode está activo, simular vista de jugador (isGM: false)
-    const viewOptions = this.playerViewMode 
-      ? { isGM: false, isCoGM: false }
+    // The GM preview includes anything visible to at least one player.
+    const viewOptions = this.isGM && this.playerViewMode
+      ? { isGM: false, isCoGM: false, previewPlayerAccess: true }
       : { isGM: this.isGM, isCoGM: this.isCoGM };
     
     if (this._showVaultEmptyState()) {
@@ -986,64 +986,43 @@ export class ExtensionController {
     form.appendChild(description);
 
     const audience = document.createElement('fieldset');
-    audience.className = 'import-options__modes player-access-audience';
+    audience.className = 'form__field player-access-audience';
     const legend = document.createElement('legend');
-    legend.className = 'import-options__question';
-    legend.textContent = 'Who can see this?';
-    audience.appendChild(legend);
-
-    const storedMode = getPlayerAudienceMode(target);
-    const initialMode = storedMode === PLAYER_ACCESS_MODE.EVERYONE
-      ? PLAYER_ACCESS_MODE.EVERYONE
-      : PLAYER_ACCESS_MODE.SELECTED;
-    const options = [
-      {
-        value: PLAYER_ACCESS_MODE.EVERYONE,
-        label: 'Everyone',
-        hint: 'Every player in the room can see and open it.'
-      },
-      {
-        value: PLAYER_ACCESS_MODE.SELECTED,
-        label: 'Selected players',
-        hint: 'Only the players you choose below can see and open it.'
-      }
-    ];
-    for (const option of options) {
-      const label = document.createElement('label');
-      label.className = 'import-option player-access-option';
-      const radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = 'player-access-mode';
-      radio.value = option.value;
-      radio.checked = option.value === initialMode;
-      const copy = document.createElement('span');
-      copy.className = 'import-option__content player-access-option__copy';
-      const name = document.createElement('strong');
-      name.className = 'import-option__title';
-      name.textContent = option.label;
-      const hint = document.createElement('span');
-      hint.className = 'import-option__hint';
-      hint.textContent = option.hint;
-      copy.append(name, hint);
-      label.append(radio, copy);
-      audience.appendChild(label);
-    }
-    form.appendChild(audience);
-
-    const playerSection = document.createElement('div');
-    playerSection.className = 'form__field player-access-players';
-    const playerHeading = document.createElement('div');
-    playerHeading.className = 'player-access-players__heading';
+    legend.className = 'player-access-players__heading';
     const playerLabel = document.createElement('span');
     playerLabel.className = 'form__label';
-    playerLabel.textContent = 'Choose players';
+    playerLabel.textContent = 'Who can see this?';
     const playerCount = document.createElement('span');
     playerCount.className = 'player-access-players__count';
-    playerHeading.append(playerLabel, playerCount);
-    playerSection.appendChild(playerHeading);
+    playerCount.setAttribute('aria-live', 'polite');
+    legend.append(playerLabel, playerCount);
+    audience.appendChild(legend);
 
     const list = document.createElement('div');
     list.className = 'player-access-list';
+    const everyoneRow = document.createElement('label');
+    everyoneRow.className = 'player-access-player';
+    const everyone = document.createElement('input');
+    everyone.type = 'checkbox';
+    everyone.name = 'player-access-everyone';
+    everyone.value = PLAYER_ACCESS_MODE.EVERYONE;
+    everyone.checked = getPlayerAudienceMode(target) === PLAYER_ACCESS_MODE.EVERYONE;
+    const everyoneAvatar = document.createElement('span');
+    everyoneAvatar.className = 'player-access-player__avatar player-access-player__avatar--everyone';
+    everyoneAvatar.setAttribute('aria-hidden', 'true');
+    everyoneAvatar.innerHTML = iconHtml('img/icon-players.svg');
+    const everyoneCopy = document.createElement('span');
+    everyoneCopy.className = 'player-access-everyone__copy';
+    const everyoneName = document.createElement('span');
+    everyoneName.className = 'player-access-player__name';
+    everyoneName.textContent = 'Everyone';
+    const everyoneHint = document.createElement('span');
+    everyoneHint.className = 'player-access-everyone__hint';
+    everyoneHint.textContent = 'Includes players who join later';
+    everyoneCopy.append(everyoneName, everyoneHint);
+    everyoneRow.append(everyone, everyoneAvatar, everyoneCopy);
+    list.appendChild(everyoneRow);
+
     if (knownPlayers.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'player-access-empty';
@@ -1057,7 +1036,7 @@ export class ExtensionController {
         checkbox.type = 'checkbox';
         checkbox.name = 'player-access-player';
         checkbox.value = player.id;
-        checkbox.checked = selectedIds.has(player.id);
+        checkbox.checked = !everyone.checked && selectedIds.has(player.id);
         const avatar = document.createElement('span');
         avatar.className = 'player-access-player__avatar';
         avatar.textContent = player.name.slice(0, 1).toUpperCase();
@@ -1072,14 +1051,14 @@ export class ExtensionController {
         list.appendChild(label);
       }
     }
-    playerSection.appendChild(list);
+    audience.appendChild(list);
 
     const validation = document.createElement('p');
     validation.className = 'form__help player-access-validation';
     validation.setAttribute('role', 'status');
     validation.setAttribute('aria-live', 'polite');
-    playerSection.appendChild(validation);
-    form.appendChild(playerSection);
+    audience.appendChild(validation);
+    form.appendChild(audience);
 
     const formError = document.createElement('div');
     formError.className = 'form__error player-access-error';
@@ -1099,26 +1078,31 @@ export class ExtensionController {
     buttons.append(cancel, save);
     form.appendChild(buttons);
 
-    const getMode = () => form.querySelector('input[name="player-access-mode"]:checked')?.value;
+    const getMode = () => everyone.checked ? PLAYER_ACCESS_MODE.EVERYONE : PLAYER_ACCESS_MODE.SELECTED;
     const getCheckedIds = () => [...form.querySelectorAll('input[name="player-access-player"]:checked')]
       .map(input => input.value);
     const updateState = () => {
       const selectedMode = getMode();
       const ids = getCheckedIds();
-      const selectionEnabled = selectedMode === PLAYER_ACCESS_MODE.SELECTED;
-      playerSection.hidden = !selectionEnabled;
-      playerSection.setAttribute('aria-hidden', String(!selectionEnabled));
-      list.querySelectorAll('input').forEach(input => { input.disabled = !selectionEnabled; });
-      playerCount.textContent = `${ids.length} selected`;
-      const invalid = selectionEnabled && ids.length === 0;
-      validation.textContent = invalid ? 'Choose at least one player.' : '';
+      playerCount.textContent = everyone.checked ? 'Everyone' : `${ids.length} selected`;
+      const invalid = selectedMode === PLAYER_ACCESS_MODE.SELECTED && ids.length === 0;
+      validation.textContent = invalid ? 'Choose Everyone or at least one player.' : '';
       save.disabled = invalid;
       if (!invalid) {
         formError.textContent = '';
         formError.classList.remove('form__error--visible');
       }
     };
-    form.addEventListener('change', updateState);
+    form.addEventListener('change', (event) => {
+      if (event.target === everyone && everyone.checked) {
+        list.querySelectorAll('input[name="player-access-player"]').forEach(input => {
+          input.checked = false;
+        });
+      } else if (event.target.name === 'player-access-player' && event.target.checked) {
+        everyone.checked = false;
+      }
+      updateState();
+    });
 
     const close = () => {
       overlay.remove();
@@ -1178,7 +1162,7 @@ export class ExtensionController {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     updateState();
-    form.querySelector('input[name="player-access-mode"]:checked')?.focus();
+    (list.querySelector('input:checked') || everyone).focus();
     return overlay;
   }
 
