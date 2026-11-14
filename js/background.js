@@ -9,7 +9,7 @@ import {
   listenForImageShares,
   sendImageShareStatus
 } from './services/ImageShareService.js';
-import { setupPlayerProfilePublishing } from './services/PlayerDirectoryService.js?v=2.1.3';
+import { setupPlayerProfilePublishing } from './services/PlayerDirectoryService.js?v=2.1.4';
 
 let stopListening = null;
 let stopPublishingProfile = null;

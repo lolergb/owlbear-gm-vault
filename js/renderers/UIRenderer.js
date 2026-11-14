@@ -5,7 +5,7 @@
  * Compatible con el CSS existente (app.css)
  */
 
-import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js';
+import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js?v=2.1.4';
 import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';

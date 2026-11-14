@@ -5,7 +5,7 @@
  * Este modelo es independiente del framework y puede ser serializado a JSON.
  */
 
-import { Page } from './Page.js';
+import { Page } from './Page.js?v=2.1.4';
 
 /**
  * Genera un ID único para categorías
