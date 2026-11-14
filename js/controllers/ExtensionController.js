@@ -11,7 +11,7 @@ import {
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
   METADATA_KEY,
   VAULT_OWNER_KEY
-} from '../utils/constants.js?v=20260815-1';
+} from '../utils/constants.js?v=2.1.3';
 import {
   PLAYER_ACCESS_MODE,
   applyPlayerAccess,
@@ -50,13 +50,13 @@ import { Category } from '../models/Category.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js?v=20260812-1';
-import { StorageService } from '../services/StorageService.js?v=2.1.2';
+import { StorageService } from '../services/StorageService.js?v=2.1.3';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
-import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
+import { BroadcastService } from '../services/BroadcastService.js?v=2.1.3';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-9';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
-import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js';
+import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.3';
 import {
   getVaultState,
   markContentOrigin,

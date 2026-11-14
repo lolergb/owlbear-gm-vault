@@ -432,7 +432,6 @@ describe('Netlify static asset cache policy', () => {
 
   it('fuerza una URL nueva para los módulos que tuvieron caché de siete días', () => {
     const legacyBuildTag = '20260722-4';
-    const metadataBuildTag = '20260815-1';
     const buildTag = '20260816-1';
     const welcomeBuildTag = '20260906-9';
     const rendererBuildTag = '20260906-10';
@@ -455,7 +454,7 @@ describe('Netlify static asset cache policy', () => {
     expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
     expect(mainJs).toContain(`const BUILD_VERSION = '${releaseVersion}'`);
-    expect(controllerJs).toContain(`../services/BroadcastService.js?v=${metadataBuildTag}`);
+    expect(controllerJs).toContain(`../services/BroadcastService.js?v=${releaseVersion}`);
     expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(uiRendererJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
