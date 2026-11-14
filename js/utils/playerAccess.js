@@ -4,8 +4,7 @@
  * `visibleToPlayers` remains the backwards-compatible "everyone" audience.
  * `sharedWithPlayerIds` stores the selected-player audience.
  * `playerAccessEnabled` toggles that configured audience without destroying it.
- * Access is granted at page level only. Folder controls update descendants
- * explicitly; their saved audience does not override individual page access.
+ * Access is granted at page level only. Legacy folder ACL fields are ignored.
  */
 
 const MAX_PLAYER_IDS = 128;
@@ -93,38 +92,6 @@ export function setPlayerAccessEnabled(target, enabled) {
   target.playerAccessEnabled = enabled &&
     getPlayerAudienceMode(target) !== PLAYER_ACCESS_MODE.GM_ONLY;
   return target;
-}
-
-/** Collect existing pages recursively; folders do not grant or inherit access. */
-export function getPagesInFolder(folder) {
-  return [
-    ...(folder?.pages || []),
-    ...(folder?.categories || []).flatMap(getPagesInFolder)
-  ];
-}
-
-export function getFoldersInFolder(folder) {
-  return [folder, ...(folder?.categories || []).flatMap(getFoldersInFolder)];
-}
-
-/** Folder controls summarize current pages, including later individual edits. */
-export function getFolderPlayerAccess(folder) {
-  const pages = getPagesInFolder(folder);
-  if (!pages.length) return folder;
-  const first = pages[0];
-  const mode = getPlayerAudienceMode(first);
-  const ids = normalizePlayerIds(first.sharedWithPlayerIds).sort();
-  const sameAudience = pages.every(page => getPlayerAudienceMode(page) === mode && (
-    mode !== PLAYER_ACCESS_MODE.SELECTED ||
-    JSON.stringify(normalizePlayerIds(page.sharedWithPlayerIds).sort()) === JSON.stringify(ids)
-  ));
-  const enabled = pages.some(isPlayerAccessEnabled);
-  return {
-    visibleToPlayers: sameAudience ? mode === PLAYER_ACCESS_MODE.EVERYONE : enabled,
-    sharedWithPlayerIds: sameAudience && mode === PLAYER_ACCESS_MODE.SELECTED ? ids : [],
-    playerAccessEnabled: enabled,
-    mixedPlayerAccess: !sameAudience
-  };
 }
 
 function recalculateOrder(order, pageIndexes, categoryIndexes) {

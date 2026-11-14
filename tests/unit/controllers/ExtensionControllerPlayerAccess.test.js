@@ -5,7 +5,7 @@ import { Config } from '../../../js/models/Config.js';
 import { Page } from '../../../js/models/Page.js';
 import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
 import { UIRenderer } from '../../../js/renderers/UIRenderer.js';
-import { PLAYER_ACCESS_MODE, filterConfigForPlayer, getFolderPlayerAccess } from '../../../js/utils/playerAccess.js';
+import { PLAYER_ACCESS_MODE } from '../../../js/utils/playerAccess.js';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -181,7 +181,7 @@ describe('ExtensionController player access', () => {
       .toBe('All players');
   });
 
-  it('saves an empty folder audience without granting access to pages added later', async () => {
+  it('rejects folder access changes', async () => {
     const folder = new Category('Secrets', { sharedWithPlayerIds: ['player-1'] });
     const controller = createController(new Config({ categories: [folder] }));
 
@@ -191,85 +191,8 @@ describe('ExtensionController player access', () => {
       PLAYER_ACCESS_MODE.EVERYONE,
       [],
       [{ id: folder.id, name: folder.name }]
-    )).resolves.toBe(true);
-    expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.config.categories[0].visibleToPlayers).toBe(true);
-    controller.config.categories[0].pages.push(new Page('New private page', 'https://example.com/new'));
-    expect(JSON.stringify(filterConfigForPlayer(controller.config, 'player-1'))).not.toContain('New private page');
-  });
-
-  it('replaces all page and subfolder audiences, retains unrelated pages and restores counts through the eye', async () => {
-    const publicPage = new Page('Public', 'https://example.com/public', { visibleToPlayers: true });
-    const selectedPage = new Page('Selected', 'https://example.com/selected', { sharedWithPlayerIds: ['old-player'] });
-    const privatePage = new Page('Private', 'https://example.com/private');
-    const nested = new Category('Nested', { pages: [selectedPage, privatePage], visibleToPlayers: true });
-    const folder = new Category('Folder', { pages: [publicPage], categories: [nested] });
-    const outside = new Page('Outside', 'https://example.com/outside', { sharedWithPlayerIds: ['outside-player'] });
-    const controller = createController(new Config({ categories: [folder], pages: [outside] }));
-    controller._updateLinkedPagesVisibility = jest.fn();
-    controller.currentPage = selectedPage;
-    const path = [{ id: folder.id, name: folder.name }];
-
-    expect(await controller._handlePlayerAccessChange(folder, 'category', PLAYER_ACCESS_MODE.SELECTED, ['new-player'], path)).toBe(true);
-    const savedFolder = controller.config.categories[0];
-    for (const target of [savedFolder, savedFolder.categories[0], ...savedFolder.getAllPages()]) {
-      expect(target.visibleToPlayers).toBe(false);
-      expect(target.sharedWithPlayerIds).toEqual(['new-player']);
-      expect(target.playerAccessEnabled).toBe(true);
-    }
-    expect(controller.config.findPageById(outside.id).sharedWithPlayerIds).toEqual(['outside-player']);
-    expect(controller.currentPage.sharedWithPlayerIds).toEqual(['new-player']);
-    expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.notifyPlayerVaultUpdated).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.invalidatePage.mock.calls).toEqual([[publicPage.id], [selectedPage.id]]);
-    expect(JSON.stringify(filterConfigForPlayer(controller.config, 'old-player'))).not.toContain('Selected');
-    const authorized = JSON.stringify(filterConfigForPlayer(controller.config, 'new-player'));
-    expect(authorized).toContain('Public');
-    expect(authorized).toContain('Selected');
-    expect(authorized).toContain('Private');
-
-    await controller._handleCategoryVisibilityChange(folder, path, false);
-    expect(getFolderPlayerAccess(controller.config.categories[0])).toMatchObject({ sharedWithPlayerIds: ['new-player'], playerAccessEnabled: false });
-    expect(JSON.stringify(filterConfigForPlayer(controller.config, 'new-player'))).not.toContain('Selected');
-    await controller._handleCategoryVisibilityChange(folder, path, true);
-    expect(getFolderPlayerAccess(controller.config.categories[0])).toMatchObject({ sharedWithPlayerIds: ['new-player'], playerAccessEnabled: true });
-    expect(controller.config.categories[0].getAllPages().every(page => page.sharedWithPlayerIds[0] === 'new-player')).toBe(true);
-
-    await controller._handlePlayerAccessChange(folder, 'category', PLAYER_ACCESS_MODE.EVERYONE, [], path);
-    expect(controller.config.categories[0].getAllPages().every(page => page.visibleToPlayers && !page.sharedWithPlayerIds.length)).toBe(true);
-  });
-
-  it('rolls back every folder and page audience if the replacement cannot be saved', async () => {
-    const page = new Page('Secret', 'https://example.com/secret', { sharedWithPlayerIds: ['old'], playerAccessEnabled: false });
-    const nested = new Category('Nested', { pages: [page], visibleToPlayers: true });
-    const folder = new Category('Folder', { categories: [nested] });
-    const controller = createController(new Config({ categories: [folder] }));
-    controller.storageService.saveLocalConfig.mockReturnValue(false);
-    const before = controller.config.toJSON();
-    expect(await controller._handlePlayerAccessChange(folder, 'category', PLAYER_ACCESS_MODE.SELECTED, ['new'], [{ id: folder.id, name: folder.name }])).toBe(false);
-    expect(controller.config.toJSON()).toEqual(before);
-    expect(folder.toJSON()).toEqual(before.categories[0]);
-    expect(controller.broadcastService.invalidatePage).not.toHaveBeenCalled();
-    expect(controller.render).not.toHaveBeenCalled();
-  });
-
-  it('uses the same player checklist for folders and explains the replacement before saving', async () => {
-    const folder = new Category('Folder', { pages: [new Page('Private', 'https://example.com')] });
-    const controller = createController(new Config({ categories: [folder] }));
-    controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([
-      { id: 'player-1', name: 'Lyra', connected: true, color: '' }
-    ]) };
-    controller._handlePlayerAccessChange = jest.fn().mockResolvedValue(true);
-    const path = [{ id: folder.id, name: folder.name }];
-    await controller._showPlayerAccessModal(folder, 'category', path);
-    expect(document.querySelector('#player-access-modal-title').textContent).toBe('Choose players');
-    expect(document.querySelector('.player-access-description').textContent).toContain('replaces the player settings for all pages and subfolders');
-    expect(document.querySelector('button[type="submit"]').textContent).toBe('Show folder');
-    document.querySelector('input[name="player-access-player"]').click();
-    document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(controller._handlePlayerAccessChange).toHaveBeenCalledWith(folder, 'category', PLAYER_ACCESS_MODE.SELECTED, ['player-1'], path);
-    expect(document.querySelector('#player-access-modal')).toBeNull();
+    )).resolves.toBe(false);
+    expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
   });
 
   it('clears cached content for every page removed by an access refresh', async () => {

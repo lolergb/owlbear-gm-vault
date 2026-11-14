@@ -5,8 +5,6 @@ import { Config } from '../../../js/models/Config.js';
 import { Page } from '../../../js/models/Page.js';
 import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
 import { UIRenderer } from '../../../js/renderers/UIRenderer.js';
-import { filterConfigForPlayer, isPlayerAccessEnabled } from '../../../js/utils/playerAccess.js';
-import { METADATA_KEY } from '../../../js/utils/constants.js';
 
 function flushPromises() {
   return new Promise(resolve => setTimeout(resolve, 0));
@@ -27,7 +25,6 @@ function createController(config, { localSaved = true } = {}) {
   };
   controller.broadcastService = {
     broadcastVisiblePages: jest.fn().mockResolvedValue(true),
-    notifyPlayerVaultUpdated: jest.fn().mockResolvedValue(true),
     notifyFullVaultUpdated: jest.fn().mockResolvedValue(true),
     sendMessage: jest.fn().mockResolvedValue({ success: true }),
     invalidatePage: jest.fn().mockResolvedValue(true)
@@ -48,119 +45,6 @@ function createController(config, { localSaved = true } = {}) {
   };
   return controller;
 }
-
-describe('folder content visibility', () => {
-  function setup(options) {
-    const everyone = new Page('Everyone', 'https://example.com/everyone', {
-      id: 'everyone', visibleToPlayers: true
-    });
-    const selected = new Page('Secret', 'https://example.com/secret', {
-      id: 'secret', sharedWithPlayerIds: ['player-1']
-    });
-    const privatePage = new Page('Private', 'https://example.com/private', { id: 'private' });
-    const nested = new Category('Nested', { pages: [selected, privatePage] });
-    const folder = new Category('Folder', { pages: [everyone], categories: [nested] });
-    const outside = new Page('Outside', 'https://example.com/outside', {
-      id: 'outside', visibleToPlayers: true
-    });
-    const controller = createController(new Config({ categories: [folder], pages: [outside] }), options);
-    const path = [{ id: folder.id, name: folder.name }];
-    return { controller, folder, path, everyone, selected, privatePage, outside };
-  }
-
-  it('hides descendant pages in one save, invalidates content and preserves audiences and other folders', async () => {
-    const { controller, folder, path, selected } = setup();
-    controller.currentPage = selected;
-    const token = (pageId) => ({ metadata: { [`${METADATA_KEY}/pageId`]: pageId, [`${METADATA_KEY}/pageVisible`]: true } });
-    const tokens = [token('everyone'), token('secret'), token('outside')];
-    controller.OBR.scene.items.getItems.mockResolvedValue(tokens);
-    controller.OBR.scene.items.updateItems = jest.fn(async (items, update) => update(items));
-
-    expect(await controller._handleCategoryVisibilityChange(folder, path, false)).toBe(true);
-
-    for (const id of ['everyone', 'secret', 'private']) {
-      expect(isPlayerAccessEnabled(controller.config.findPageById(id))).toBe(false);
-    }
-    expect(isPlayerAccessEnabled(controller.config.findPageById('outside'))).toBe(true);
-    expect(controller.config.findPageById('everyone').visibleToPlayers).toBe(true);
-    expect(controller.config.findPageById('secret').sharedWithPlayerIds).toEqual(['player-1']);
-    expect(controller.currentPage.playerAccessEnabled).toBe(false);
-    expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.broadcastVisiblePages).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.notifyPlayerVaultUpdated).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.invalidatePage.mock.calls).toEqual([['everyone'], ['secret']]);
-    expect(controller.OBR.scene.items.getItems).toHaveBeenCalledTimes(1);
-    expect(controller.OBR.scene.items.updateItems).toHaveBeenCalledTimes(1);
-    expect(tokens.map(item => item.metadata[`${METADATA_KEY}/pageVisible`])).toEqual([false, false, true]);
-    expect(controller.render).toHaveBeenCalledTimes(1);
-    expect(controller._showFeedback).toHaveBeenCalledWith('Hidden from players');
-  });
-
-  it('shows all descendants, restoring selected audiences and defaulting unconfigured pages to all players', async () => {
-    const { controller, folder, path } = setup();
-    await controller._handleCategoryVisibilityChange(folder, path, false);
-    controller.storageService.saveLocalConfig.mockClear();
-    controller.broadcastService.invalidatePage.mockClear();
-
-    // Use the original folder reference, as an open menu can outlive a save.
-    expect(await controller._handleCategoryVisibilityChange(folder, path, true)).toBe(true);
-    const secret = controller.config.findPageById('secret');
-    expect(secret.visibleToPlayers).toBe(false);
-    expect(secret.sharedWithPlayerIds).toEqual(['player-1']);
-    expect(secret.playerAccessEnabled).toBe(true);
-    expect(controller.config.findPageById('private').visibleToPlayers).toBe(true);
-    expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller.broadcastService.invalidatePage).not.toHaveBeenCalled();
-    const allowed = JSON.stringify(filterConfigForPlayer(controller.config, 'player-1'));
-    const other = JSON.stringify(filterConfigForPlayer(controller.config, 'player-2'));
-    expect(allowed).toContain('Secret');
-    expect(other).not.toContain('Secret');
-    expect(other).toContain('Private');
-    expect(other).toContain('Everyone');
-    expect(controller._showFeedback).toHaveBeenLastCalledWith('Visible to players');
-  });
-
-  it.each([true, false])('rolls back the whole batch if saving fails (visible: %s)', async visible => {
-    const { controller, folder, path } = setup({ localSaved: false });
-    const before = controller.config.toJSON();
-    expect(await controller._handleCategoryVisibilityChange(folder, path, visible)).toBe(false);
-    expect(controller.config.toJSON()).toEqual(before);
-    expect(folder.toJSON()).toEqual(before.categories[0]);
-    expect(controller.broadcastService.broadcastVisiblePages).not.toHaveBeenCalled();
-    expect(controller.broadcastService.invalidatePage).not.toHaveBeenCalled();
-    expect(controller.OBR.scene.items.getItems).not.toHaveBeenCalled();
-    expect(controller.render).not.toHaveBeenCalled();
-    expect(controller._folderVisibilityUpdating).toBe(false);
-  });
-
-  it('rejects non-owner changes and ignores empty or missing folders', async () => {
-    const { controller, folder, path } = setup();
-    controller.isCoGM = true;
-    expect(await controller._handleCategoryVisibilityChange(folder, path, false)).toBe(false);
-    controller.isCoGM = false;
-    controller.isGM = false;
-    expect(await controller._handleCategoryVisibilityChange(folder, path, false)).toBe(false);
-    controller.isGM = true;
-    expect(await controller._handleCategoryVisibilityChange(folder, [], false)).toBe(false);
-    expect(await controller._handleCategoryVisibilityChange({ id: 'removed' }, path, false)).toBe(false);
-    folder.pages = [];
-    folder.categories = [];
-    expect(await controller._handleCategoryVisibilityChange(folder, path, false)).toBe(true);
-    expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
-  });
-
-  it('ignores repeat bulk clicks while saving', async () => {
-    const { controller, folder, path } = setup();
-    let release;
-    controller.broadcastService.broadcastVisiblePages.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
-    const pending = controller._handleCategoryVisibilityChange(folder, path, false);
-    expect(await controller._handleCategoryVisibilityChange(folder, path, true)).toBe(false);
-    release(true);
-    expect(await pending).toBe(true);
-    expect(controller.storageService.saveLocalConfig).toHaveBeenCalledTimes(1);
-    expect(controller._folderVisibilityUpdating).toBe(false);
-  });
-});
 
 describe('page visibility updates', () => {
   it('persiste el cambio sin reconstruir toda la lista', async () => {

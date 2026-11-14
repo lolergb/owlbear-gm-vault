@@ -2,7 +2,6 @@ import { getPlayerAudienceMode, isPlayerAccessEnabled, normalizePlayerIds, PLAYE
 
 /** Action labels describe the next click, including the default audience. */
 export function getVisibilityActionLabel(page, enabled = isPlayerAccessEnabled(page)) {
-  if (page?.mixedPlayerAccess) return enabled ? 'Hide from players' : 'Show to players';
   if (getPlayerAudienceMode(page) !== PLAYER_ACCESS_MODE.SELECTED) {
     return enabled ? 'Hide from all players' : 'Show to all players';
   }
@@ -14,7 +13,6 @@ export function getVisibilityActionLabel(page, enabled = isPlayerAccessEnabled(p
 /** Feedback describes the result, whether it came from the eye or the dialog. */
 export function getVisibilityStatusLabel(page) {
   if (!isPlayerAccessEnabled(page)) return 'Hidden from players';
-  if (page?.mixedPlayerAccess) return 'Visible to players';
   if (getPlayerAudienceMode(page) === PLAYER_ACCESS_MODE.EVERYONE) {
     return 'Visible to all players';
   }
