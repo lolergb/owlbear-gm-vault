@@ -12,6 +12,7 @@ export const STORAGE_KEY_PREFIX = 'notion-pages-json-';
 export const TOKEN_STORAGE_PREFIX = 'notion-user-token-';
 export const GLOBAL_TOKEN_KEY = 'notion-global-token';
 export const ANALYTICS_CONSENT_KEY = 'analytics_consent';
+export const PLAYER_DIRECTORY_STORAGE_PREFIX = 'gm-vault-player-directory-';
 
 // ============================================
 // CACHE KEYS
@@ -28,6 +29,7 @@ export const ROOM_HTML_CACHE_KEY = 'com.dmscreen/htmlCache';
 export const FULL_CONFIG_KEY = 'com.dmscreen/fullConfig';
 export const VAULT_OWNER_KEY = 'com.dmscreen/vaultOwner';
 export const METADATA_KEY = 'com.dmscreen';
+export const PLAYER_PROFILE_METADATA_KEY = 'com.dmscreen/playerProfile';
 
 // ============================================
 // BROADCAST CHANNELS
@@ -41,6 +43,9 @@ export const BROADCAST_CHANNEL_REQUEST_FULL_VAULT = 'com.dmscreen/requestFullVau
 export const BROADCAST_CHANNEL_RESPONSE_FULL_VAULT = 'com.dmscreen/responseFullVault';
 export const BROADCAST_CHANNEL_FULL_VAULT_UPDATED = 'com.dmscreen/fullVaultUpdated';
 export const BROADCAST_CHANNEL_INVALIDATE_PAGE = 'com.dmscreen/invalidatePage';
+export const BROADCAST_CHANNEL_REQUEST_PLAYER_VAULT = 'com.dmscreen/requestPlayerVault';
+export const BROADCAST_CHANNEL_RESPONSE_PLAYER_VAULT = 'com.dmscreen/responsePlayerVault';
+export const BROADCAST_CHANNEL_PLAYER_VAULT_UPDATED = 'com.dmscreen/playerVaultUpdated';
 
 // ============================================
 // TIMEOUTS Y LÍMITES

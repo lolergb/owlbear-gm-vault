@@ -12,7 +12,19 @@ import {
   METADATA_KEY,
   VAULT_OWNER_KEY
 } from '../utils/constants.js?v=20260815-1';
+import {
+  PLAYER_ACCESS_MODE,
+  applyPlayerAccess,
+  canPlayerAccessPage,
+  filterConfigForPlayer,
+  getPlayerAudienceMode,
+  getPlayerAccessMode,
+  isPlayerAccessEnabled,
+  setPlayerAccessEnabled,
+  normalizePlayerIds
+} from '../utils/playerAccess.js';
 import { iconHtml } from '../utils/iconHelper.js';
+import { getVisibilityStatusLabel } from '../utils/playerVisibilityCopy.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import {
   escapeHtml,
@@ -45,6 +57,7 @@ import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-9';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
+import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js';
 import {
   getVaultState,
   markContentOrigin,
@@ -98,6 +111,7 @@ export class ExtensionController {
     this.broadcastService = new BroadcastService();
     this.analyticsService = new AnalyticsService();
     this.imageCacheService = getImageCacheService();
+    this.playerDirectoryService = new PlayerDirectoryService();
 
     // Renderers
     this.notionRenderer = new NotionRenderer();
@@ -130,7 +144,9 @@ export class ExtensionController {
 
     // Función para desuscribirse de cambios de rol (usa Player.onChange en vez de polling)
     this.roleChangeUnsubscribe = null;
+    this.playerDirectoryStopWatching = null;
     this._coGMSyncPromise = null;
+    this._pageIconSyncTimer = null;
   }
 
   /**
@@ -462,9 +478,9 @@ export class ExtensionController {
     // Pasar la config al UIRenderer para calcular posiciones
     this.uiRenderer.setConfig(this.config);
     
-    // Si playerViewMode está activo, simular vista de jugador (isGM: false)
-    const viewOptions = this.playerViewMode 
-      ? { isGM: false, isCoGM: false }
+    // The GM preview includes anything visible to at least one player.
+    const viewOptions = this.isGM && this.playerViewMode
+      ? { isGM: false, isCoGM: false, previewPlayerAccess: true }
       : { isGM: this.isGM, isCoGM: this.isCoGM };
     
     if (this._showVaultEmptyState()) {
@@ -528,9 +544,7 @@ export class ExtensionController {
     if (pageList) pageList.classList.add('hidden');
     if (backButton) backButton.classList.remove('hidden');
     if (pageTitle) {
-      // Añadir indicador de visibilidad si está compartida con players
-      const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      pageTitle.innerHTML = escapeHtml(resolvePageTitle(page.name)) + visibilityIndicator;
+      pageTitle.textContent = resolvePageTitle(page.name);
     }
     if (buttonContainer) buttonContainer.classList.add('hidden');
     if (playerViewToggle) playerViewToggle.classList.add('hidden');
@@ -625,6 +639,7 @@ export class ExtensionController {
       if (saved) {
         const visibleConfig = filterVisiblePages(configToSave);
         await this.broadcastService.broadcastVisiblePages(visibleConfig);
+        await this.broadcastService.notifyPlayerVaultUpdated?.();
 
         // Avisar sin incluir ningún dato privado. Cada Co-GM vuelve a solicitar
         // el vault mediante su propio intercambio ECDH cifrado y fragmentado.
@@ -645,6 +660,28 @@ export class ExtensionController {
    */
   getConfig() {
     return this.config;
+  }
+
+  /** Save Notion icons with the page so every authorized player receives them. */
+  _handlePageIconLoaded(page, icon) {
+    if (!this.isGM || this.isCoGM || !this.config) return;
+    // A fetch can finish after an edit, deletion, or config replacement.
+    const storedPage = this.config.findPageById(page.id);
+    if (!storedPage || storedPage.url !== page.url ||
+        JSON.stringify(storedPage.icon) === JSON.stringify(icon)) return;
+
+    storedPage.icon = icon;
+    // Group icons loaded by one render into a single save and room update.
+    if (this._pageIconSyncTimer) return;
+    this._pageIconSyncTimer = setTimeout(async () => {
+      this._pageIconSyncTimer = null;
+      if (!this.isGM || this.isCoGM || !this.config) return;
+      try {
+        await this.saveConfig(this.config, { render: false });
+      } catch (error) {
+        logWarn('No se pudieron sincronizar los iconos de las páginas:', error);
+      }
+    }, 250);
   }
 
   /**
@@ -744,7 +781,9 @@ export class ExtensionController {
     
     if (pageToUpdate) {
       const previousVisibility = pageToUpdate.visibleToPlayers === true;
-      pageToUpdate.visibleToPlayers = newVisibility;
+      const previousPlayerIds = normalizePlayerIds(pageToUpdate.sharedWithPlayerIds);
+      const previousAccessEnabled = isPlayerAccessEnabled(pageToUpdate);
+      setPlayerAccessEnabled(pageToUpdate, newVisibility);
       let saved = false;
       try {
         saved = await this.saveConfig(this.config, { render: false });
@@ -754,11 +793,17 @@ export class ExtensionController {
 
       if (!saved) {
         pageToUpdate.visibleToPlayers = previousVisibility;
+        pageToUpdate.sharedWithPlayerIds = previousPlayerIds;
+        pageToUpdate.playerAccessEnabled = previousAccessEnabled;
         const rollbackPage = page.id
           ? this.config?.findPageById?.(page.id)
           : this.config?.findPageByName?.(page.name);
         if (rollbackPage) rollbackPage.visibleToPlayers = previousVisibility;
+        if (rollbackPage) rollbackPage.sharedWithPlayerIds = previousPlayerIds;
+        if (rollbackPage) rollbackPage.playerAccessEnabled = previousAccessEnabled;
         page.visibleToPlayers = previousVisibility;
+        page.sharedWithPlayerIds = previousPlayerIds;
+        page.playerAccessEnabled = previousAccessEnabled;
         try {
           await this.saveConfig(this.config, { render: false });
         } catch (error) {
@@ -767,7 +812,7 @@ export class ExtensionController {
         return false;
       }
 
-      page.visibleToPlayers = newVisibility;
+      setPlayerAccessEnabled(page, newVisibility);
 
       if (!newVisibility) {
         const contentId = pageToUpdate.getNotionPageId?.() || pageToUpdate.id;
@@ -818,21 +863,22 @@ export class ExtensionController {
    * @private
    */
   async _handleVisibilityChange(page, categoryPath, pageIndex, visible) {
+    const failureMessage = visible
+      ? 'Could not show this page. Try again.'
+      : 'Could not hide this page. Try again.';
     try {
       const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
       if (updated) {
         this.uiRenderer?.updatePageVisibility?.(page, visible);
         this._updateCurrentPageVisibility(page, visible);
         this.analyticsService.trackVisibilityToggle(page.name, visible);
-        this._showFeedback(visible
-          ? '👁️ Page visible to players'
-          : '🙈 Page hidden from players');
+        this._showFeedback(getVisibilityStatusLabel(page));
       } else {
-        this._showFeedback('❌ Could not update page visibility');
+        this._showFeedback(failureMessage);
       }
       return updated;
     } catch (error) {
-      this._showFeedback('❌ Could not update page visibility');
+      this._showFeedback(failureMessage);
       throw error;
     }
   }
@@ -848,20 +894,300 @@ export class ExtensionController {
         (this.currentPage?.url || '') === (page?.url || '');
     if (!matchesCurrentPage) return;
 
-    this.currentPage.visibleToPlayers = visible;
-    const titleElements = [
-      document.getElementById('page-title'),
-      document.getElementById('notion-content')?.querySelector('.notion-page-title')
-    ].filter(Boolean);
+    setPlayerAccessEnabled(this.currentPage, visible);
+    const visibilityButton = document.getElementById('page-visibility-button-header');
+    if (visibilityButton) {
+      this.uiRenderer?._setVisibilityButtonState?.(
+        visibilityButton,
+        this.currentPage,
+        visible
+      );
+    }
+  }
 
-    titleElements.forEach(titleElement => {
-      const indicator = titleElement.querySelector('.visibility-indicator');
-      if (visible && !indicator) {
-        titleElement.insertAdjacentHTML('beforeend', this._getVisibilityIndicator());
-      } else if (!visible && indicator) {
-        indicator.remove();
+  async _handlePlayerAccessChange(target, targetType, mode, playerIds = [], categoryPath = []) {
+    if (!this.config || !this.isGM || this.isCoGM || targetType !== 'page') return false;
+
+    const storedTarget = this.config.findPageById(target?.id)
+      || this.config.findPageByUrl(target?.url)
+      || target;
+    if (!storedTarget) return false;
+
+    const previousMode = getPlayerAccessMode(storedTarget);
+    const previousAudienceMode = getPlayerAudienceMode(storedTarget);
+    const previousAccessEnabled = isPlayerAccessEnabled(storedTarget);
+    const previousPlayerIds = normalizePlayerIds(storedTarget.sharedWithPlayerIds);
+    const normalizedIds = normalizePlayerIds(playerIds);
+    const isRestrictive = previousAccessEnabled && previousMode === PLAYER_ACCESS_MODE.EVERYONE
+      ? mode !== PLAYER_ACCESS_MODE.EVERYONE
+      : previousAccessEnabled && previousMode === PLAYER_ACCESS_MODE.SELECTED && (
+        mode === PLAYER_ACCESS_MODE.GM_ONLY ||
+        previousPlayerIds.some(playerId => !normalizedIds.includes(playerId))
+      );
+    applyPlayerAccess(storedTarget, mode, normalizedIds);
+    if (target !== storedTarget) applyPlayerAccess(target, mode, normalizedIds);
+
+    const saved = await this.saveConfig(this.config);
+    if (!saved) {
+      const rollbackTarget = this.config.findPageById(target?.id)
+        || this.config.findPageByUrl(target?.url);
+      applyPlayerAccess(rollbackTarget, previousAudienceMode, previousPlayerIds);
+      setPlayerAccessEnabled(rollbackTarget, previousAccessEnabled);
+      applyPlayerAccess(target, previousAudienceMode, previousPlayerIds);
+      setPlayerAccessEnabled(target, previousAccessEnabled);
+      return false;
+    }
+
+    const savedTarget = this.config.findPageById(target?.id)
+      || this.config.findPageByUrl(target?.url);
+    const affectedPages = [savedTarget].filter(Boolean);
+    if (isRestrictive) {
+      await Promise.all(affectedPages.map((page) => {
+        const contentId = page?.getNotionPageId?.() || page?.id;
+        return contentId ? this.broadcastService.invalidatePage(contentId) : false;
+      }));
+    }
+
+    if (this.currentPage?.id && affectedPages.some(page => page.id === this.currentPage.id)) {
+      const currentStoredPage = this.config.findPageById(this.currentPage.id);
+      if (currentStoredPage) {
+        this.currentPage.visibleToPlayers = currentStoredPage.visibleToPlayers;
+        this.currentPage.sharedWithPlayerIds = normalizePlayerIds(currentStoredPage.sharedWithPlayerIds);
+        this.currentPage.playerAccessEnabled = isPlayerAccessEnabled(currentStoredPage);
+        this._createPageDetailButtons(this.currentPage);
+      }
+    }
+
+    this._showFeedback(getVisibilityStatusLabel(savedTarget || target));
+    return true;
+  }
+
+  async _showPlayerAccessModal(target, targetType, categoryPath = []) {
+    if (!target || targetType !== 'page' || !this.playerDirectoryService) return;
+
+    const selectedIds = new Set(normalizePlayerIds(target.sharedWithPlayerIds));
+    const knownPlayers = await this.playerDirectoryService.listPlayers();
+    const knownIds = new Set(knownPlayers.map(player => player.id));
+    for (const playerId of selectedIds) {
+      if (!knownIds.has(playerId)) {
+        knownPlayers.push({
+          id: playerId,
+          name: `Player ${playerId.slice(0, 6)}`,
+          connected: false,
+          color: ''
+        });
+      }
+    }
+
+    const previouslyFocusedElement = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const overlay = document.createElement('div');
+    overlay.id = 'player-access-modal';
+    overlay.className = 'modal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'player-access-modal-title');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal__content notion-pages-modal player-access-modal';
+
+    const title = document.createElement('h2');
+    title.id = 'player-access-modal-title';
+    title.className = 'modal__title';
+    title.textContent = 'Choose players';
+
+    const form = document.createElement('form');
+    form.className = 'form player-access-form';
+
+    const description = document.createElement('p');
+    description.className = 'import-source-label player-access-description';
+    description.textContent = `Choose who can see “${target.name}” in their vault.`;
+    form.appendChild(description);
+
+    const audience = document.createElement('fieldset');
+    audience.className = 'form__field player-access-audience';
+    const legend = document.createElement('legend');
+    legend.className = 'player-access-players__heading';
+    const playerLabel = document.createElement('span');
+    playerLabel.className = 'form__label';
+    playerLabel.textContent = 'Players';
+    const playerCount = document.createElement('span');
+    playerCount.className = 'player-access-players__count';
+    playerCount.setAttribute('aria-live', 'polite');
+    legend.append(playerLabel, playerCount);
+    audience.appendChild(legend);
+
+    const list = document.createElement('div');
+    list.className = 'player-access-list';
+    const everyoneRow = document.createElement('label');
+    everyoneRow.className = 'player-access-player';
+    const everyone = document.createElement('input');
+    everyone.type = 'checkbox';
+    everyone.name = 'player-access-everyone';
+    everyone.value = PLAYER_ACCESS_MODE.EVERYONE;
+    everyone.checked = getPlayerAudienceMode(target) === PLAYER_ACCESS_MODE.EVERYONE;
+    const everyoneAvatar = document.createElement('span');
+    everyoneAvatar.className = 'player-access-player__avatar player-access-player__avatar--everyone';
+    everyoneAvatar.setAttribute('aria-hidden', 'true');
+    everyoneAvatar.innerHTML = iconHtml('img/icon-players.svg');
+    const everyoneCopy = document.createElement('span');
+    everyoneCopy.className = 'player-access-everyone__copy';
+    const everyoneName = document.createElement('span');
+    everyoneName.className = 'player-access-player__name';
+    everyoneName.textContent = 'All players';
+    const everyoneHint = document.createElement('span');
+    everyoneHint.className = 'player-access-everyone__hint';
+    everyoneHint.textContent = 'Includes players who join later';
+    everyoneCopy.append(everyoneName, everyoneHint);
+    everyoneRow.append(everyone, everyoneAvatar, everyoneCopy);
+    list.appendChild(everyoneRow);
+
+    if (knownPlayers.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'player-access-empty';
+      empty.textContent = 'No players have joined this room yet. Ask a player to join, then reopen this dialog.';
+      list.appendChild(empty);
+    } else {
+      for (const player of knownPlayers) {
+        const label = document.createElement('label');
+        label.className = 'player-access-player';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'player-access-player';
+        checkbox.value = player.id;
+        checkbox.checked = !everyone.checked && selectedIds.has(player.id);
+        const avatar = document.createElement('span');
+        avatar.className = 'player-access-player__avatar';
+        avatar.textContent = player.name.slice(0, 1).toUpperCase();
+        if (player.color) avatar.style.backgroundColor = player.color;
+        const name = document.createElement('span');
+        name.className = 'player-access-player__name';
+        name.textContent = player.name;
+        const status = document.createElement('span');
+        status.className = `player-access-player__status ${player.connected ? 'is-online' : 'is-offline'}`;
+        status.textContent = player.connected ? 'Connected' : 'Offline';
+        label.append(checkbox, avatar, name, status);
+        list.appendChild(label);
+      }
+    }
+    audience.appendChild(list);
+
+    const validation = document.createElement('p');
+    validation.className = 'form__help player-access-validation';
+    validation.setAttribute('role', 'status');
+    validation.setAttribute('aria-live', 'polite');
+    audience.appendChild(validation);
+    form.appendChild(audience);
+
+    const formError = document.createElement('div');
+    formError.className = 'form__error player-access-error';
+    formError.setAttribute('role', 'alert');
+    form.appendChild(formError);
+
+    const buttons = document.createElement('div');
+    buttons.className = 'form__actions player-access-actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn btn--ghost btn--flex';
+    cancel.textContent = 'Cancel';
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'btn btn--primary btn--flex';
+    const showPage = !isPlayerAccessEnabled(target);
+    const saveLabel = showPage ? 'Show page' : 'Save changes';
+    save.textContent = saveLabel;
+    buttons.append(cancel, save);
+    form.appendChild(buttons);
+
+    const getMode = () => everyone.checked ? PLAYER_ACCESS_MODE.EVERYONE : PLAYER_ACCESS_MODE.SELECTED;
+    const getCheckedIds = () => [...form.querySelectorAll('input[name="player-access-player"]:checked')]
+      .map(input => input.value);
+    const updateState = () => {
+      const selectedMode = getMode();
+      const ids = getCheckedIds();
+      playerCount.textContent = everyone.checked ? 'All players' : `${ids.length} selected`;
+      const invalid = selectedMode === PLAYER_ACCESS_MODE.SELECTED && ids.length === 0;
+      validation.textContent = invalid ? 'Choose All players or at least one player.' : '';
+      save.disabled = invalid;
+      if (!invalid) {
+        formError.textContent = '';
+        formError.classList.remove('form__error--visible');
+      }
+    };
+    form.addEventListener('change', (event) => {
+      if (event.target === everyone && everyone.checked) {
+        list.querySelectorAll('input[name="player-access-player"]').forEach(input => {
+          input.checked = false;
+        });
+      } else if (event.target.name === 'player-access-player' && event.target.checked) {
+        everyone.checked = false;
+      }
+      updateState();
+    });
+
+    const close = () => {
+      overlay.remove();
+      if (previouslyFocusedElement?.isConnected) previouslyFocusedElement.focus();
+    };
+    cancel.addEventListener('click', close);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (save.disabled) return;
+      save.disabled = true;
+      save.setAttribute('aria-busy', 'true');
+      save.textContent = showPage ? 'Showing…' : 'Saving…';
+      const saved = await this._handlePlayerAccessChange(
+        target,
+        targetType,
+        getMode(),
+        getCheckedIds(),
+        categoryPath
+      );
+      if (saved) close();
+      else {
+        formError.textContent = showPage
+          ? 'Could not show this page. Try again.'
+          : 'Could not save changes. Try again.';
+        formError.classList.add('form__error--visible');
+        save.disabled = false;
+        save.removeAttribute('aria-busy');
+        save.textContent = saveLabel;
       }
     });
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    overlay.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = [...overlay.querySelectorAll(
+        'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])'
+      )].filter(element => !element.closest('[hidden]'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    modal.append(title, form);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    updateState();
+    (list.querySelector('input:checked') || everyone).focus();
+    return overlay;
   }
 
   /**
@@ -1605,7 +1931,7 @@ export class ExtensionController {
         placeholder: 'https://... or <iframe ...>',
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
-      { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
+      { name: 'visibleToPlayers', label: 'Available to everyone', type: 'checkbox', value: false }
     ], async (data) => {
       if (!data.name || !data.url) return;
 
@@ -2160,6 +2486,10 @@ export class ExtensionController {
     this.announcementCancelled = true;
     this.betaPromotionCancelled = true;
 
+    clearTimeout(this._pageIconSyncTimer);
+    this._pageIconSyncTimer = null;
+    this.uiRenderer.onPageIconLoaded = null;
+
     // Detener intervals
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
@@ -2170,6 +2500,8 @@ export class ExtensionController {
       this.roleChangeUnsubscribe();
       this.roleChangeUnsubscribe = null;
     }
+    this.playerDirectoryStopWatching?.();
+    this.playerDirectoryStopWatching = null;
     
     // Limpiar broadcast
     this.broadcastService.cleanup();
@@ -2347,6 +2679,7 @@ export class ExtensionController {
       OBR: this.OBR,
       cacheService: this.cacheService
     });
+    this.playerDirectoryService.setDependencies({ OBR: this.OBR });
     this.broadcastService.setSizeLimitCallback((channel, estimatedKB) => {
       this._showFeedback(`❌ Content too large to share (${estimatedKB} KB > 16 KB limit)`);
       this.analyticsService.trackContentTooLarge(estimatedKB * 1024, channel);
@@ -2552,7 +2885,7 @@ export class ExtensionController {
         shareBtn.id = 'page-share-button-header';
         shareBtn.className = 'icon-button';
         shareBtn.innerHTML = iconHtml('img/icon-players.svg', { className: 'icon-button-icon', alt: 'Share' });
-        shareBtn.title = 'Share with players';
+        shareBtn.title = 'Present to all players now';
         header.appendChild(shareBtn);
       }
       shareBtn.classList.remove('hidden');
@@ -2580,46 +2913,45 @@ export class ExtensionController {
       if (!visibilityBtn) {
         visibilityBtn = document.createElement('button');
         visibilityBtn.id = 'page-visibility-button-header';
-        visibilityBtn.className = 'icon-button';
+        visibilityBtn.className = 'page-visibility-button';
         header.appendChild(visibilityBtn);
       }
-      visibilityBtn.classList.remove('hidden');
-      const isVisible = page.visibleToPlayers === true;
-      const setHeaderVisibilityState = (button, visible) => {
-        button.innerHTML = iconHtml(`img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`, { className: 'icon-button-icon', alt: 'Visibility' });
-        button.title = visible ? 'Visible to players (click to hide)' : 'Hidden from players (click to show)';
-        button.setAttribute('aria-label', button.title);
-        button.setAttribute('aria-pressed', String(visible));
-      };
-      setHeaderVisibilityState(visibilityBtn, isVisible);
+      visibilityBtn.className = 'page-visibility-button';
+      this.uiRenderer._setVisibilityButtonState(visibilityBtn, pageInstance);
       
       // Remover listener anterior y agregar nuevo
       const newVisibilityBtn = visibilityBtn.cloneNode(true);
       visibilityBtn.parentNode.replaceChild(newVisibilityBtn, visibilityBtn);
       newVisibilityBtn.addEventListener('click', async () => {
         if (newVisibilityBtn.disabled) return;
-        const previousVisibility = page.visibleToPlayers === true;
-        const newVisibility = !page.visibleToPlayers;
+        const previousVisibility = isPlayerAccessEnabled(pageInstance);
+        const newVisibility = !previousVisibility;
         newVisibilityBtn.disabled = true;
         newVisibilityBtn.setAttribute('aria-busy', 'true');
-        setHeaderVisibilityState(newVisibilityBtn, newVisibility);
+        this.uiRenderer._setVisibilityButtonState(newVisibilityBtn, pageInstance, newVisibility);
 
         try {
           const updated = await this._handleVisibilityChange(
-            page,
+            pageInstance,
             this.currentCategoryPath,
             this.currentPageIndex,
             newVisibility
           );
           if (updated) {
-            page.visibleToPlayers = newVisibility;
+            setPlayerAccessEnabled(pageInstance, newVisibility);
           } else {
-            page.visibleToPlayers = previousVisibility;
-            setHeaderVisibilityState(newVisibilityBtn, previousVisibility);
+            this.uiRenderer._setVisibilityButtonState(
+              newVisibilityBtn,
+              pageInstance,
+              previousVisibility
+            );
           }
         } catch (error) {
-          page.visibleToPlayers = previousVisibility;
-          setHeaderVisibilityState(newVisibilityBtn, previousVisibility);
+          this.uiRenderer._setVisibilityButtonState(
+            newVisibilityBtn,
+            pageInstance,
+            previousVisibility
+          );
           logError('Error actualizando visibilidad desde el header:', error);
         } finally {
           newVisibilityBtn.disabled = false;
@@ -2715,7 +3047,7 @@ export class ExtensionController {
         name: page.name,
         senderId: this.playerId
       });
-      if (result?.success) this._showFeedback('📄 Document shared!');
+      if (result?.success) this._showFeedback('Presented to all players');
       else if (result?.error !== 'size_limit') this._showFeedback('❌ Error sharing document');
       return result?.success === true;
     } else if (page.hasEmbeddedHtml() && page.htmlContent) {
@@ -2762,7 +3094,7 @@ export class ExtensionController {
         
         // El callback onSizeLimitExceeded ya muestra feedback si hay error de tamaño
         if (result?.success) {
-          this._showFeedback('📄 Page shared!');
+          this._showFeedback('Presented to all players');
         } else if (result?.error !== 'size_limit') {
           this._showFeedback('❌ Error sharing page');
         }
@@ -2820,7 +3152,7 @@ export class ExtensionController {
           
           // El callback onSizeLimitExceeded ya muestra feedback si hay error de tamaño
           if (result?.success) {
-            this._showFeedback('📄 Page shared!');
+            this._showFeedback('Presented to all players');
           } else if (result?.error !== 'size_limit') {
             this._showFeedback('❌ Error sharing page');
           }
@@ -2842,7 +3174,7 @@ export class ExtensionController {
       });
       
       if (result?.success) {
-        this._showFeedback('🔗 Content shared!');
+        this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing content');
       }
@@ -2933,11 +3265,18 @@ export class ExtensionController {
 
     // Solo Master GM puede editar y eliminar
     if (this.isGM && !this.isCoGM) {
-      menuItems.push({ 
-        icon: 'img/icon-edit.svg', 
-        text: 'Edit page',
-        action: () => this._showEditPageModal(page)
-      });
+      menuItems.push(
+        {
+          icon: 'img/icon-edit.svg',
+          text: 'Edit page',
+          action: () => this._showEditPageModal(page)
+        },
+        {
+          icon: 'img/icon-eye-open.svg',
+          text: 'Choose players',
+          action: () => this._showPlayerAccessModal(page, 'page', this.currentCategoryPath)
+        }
+      );
     }
 
     // Agregar Refresh para páginas de Notion (disponible para TODOS los roles)
@@ -3143,7 +3482,7 @@ export class ExtensionController {
       },
       { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
-      { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
+      { name: 'visibleToPlayers', label: 'Available to everyone', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
       const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
@@ -3218,7 +3557,7 @@ export class ExtensionController {
       },
       { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
       { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
-      { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: page.visibleToPlayers }
+      { name: 'visibleToPlayers', label: 'Available to everyone', type: 'checkbox', value: page.visibleToPlayers }
     ], async (data) => {
       const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
@@ -3333,7 +3672,7 @@ export class ExtensionController {
     // Ajustar posición si se sale de pantalla
     const rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
-      menu.style.left = `${position.x - rect.width}px`;
+      menu.style.left = `${Math.max(8, position.x - rect.width)}px`;
     }
     if (rect.bottom > window.innerHeight) {
       menu.style.top = `${position.y - rect.height}px`;
@@ -4016,7 +4355,7 @@ export class ExtensionController {
     if (tokenInput) {
       tokenInput.value = '';
       tokenInput.placeholder = currentToken
-        ? '•••••••••••••••• (replace token)'
+        ? '••••••••••••••••'
         : 'ntn_... or secret_...';
     }
     
@@ -4059,7 +4398,7 @@ export class ExtensionController {
         }
         if (tokenInput) {
           tokenInput.value = '';
-          tokenInput.placeholder = '•••••••••••••••• (replace token)';
+          tokenInput.placeholder = '••••••••••••••••';
         }
         
         // Mostrar toast de éxito (quedarse en settings)
@@ -5480,6 +5819,7 @@ export class ExtensionController {
         collapseBtn.style.maskImage = `url('${folderSrc}')`;
         collapseBtn.style.webkitMaskImage = `url('${folderSrc}')`;
         collapseBtn.setAttribute('aria-label', newState ? 'Expand' : 'Collapse');
+        collapseBtn.closest('button').setAttribute('aria-expanded', String(!newState));
 
         if (categoryName) {
           const collapseStateKey = `category-collapsed-${categoryName}-level-${level}`;
@@ -5710,7 +6050,7 @@ export class ExtensionController {
         options: allOptions,
         required: false 
       },
-      { name: 'visibleToPlayers', label: 'Visible to players', type: 'checkbox', value: false }
+      { name: 'visibleToPlayers', label: 'Available to everyone', type: 'checkbox', value: false }
     ], async (data) => {
       if (!data.name || !data.url) return;
 
@@ -5869,6 +6209,7 @@ export class ExtensionController {
       onPageClick: (page, categoryPath, pageIndex) => {
         this.openPage(page, categoryPath, pageIndex);
       },
+      onPageIconLoaded: (page, icon) => this._handlePageIconLoaded(page, icon),
       onVisibilityChange: (page, categoryPath, pageIndex, visible) =>
         this._handleVisibilityChange(page, categoryPath, pageIndex, visible),
       onPageShare: (page, categoryPath, pageIndex) =>
@@ -5887,6 +6228,9 @@ export class ExtensionController {
       },
       onPageDuplicate: async (page, categoryPath, pageIndex) => {
         await this._handlePageDuplicate(page, categoryPath, pageIndex);
+      },
+      onPageAccessManage: (page, categoryPath) => {
+        this._showPlayerAccessModal(page, 'page', categoryPath);
       },
       // Categorías
       onCategoryEdit: async (category, categoryPath) => {
@@ -6098,6 +6442,11 @@ export class ExtensionController {
       }
       
       this.storageService.setRoomId(this.roomId);
+      this.playerDirectoryService.setRoomId(this.roomId);
+      if (this.isGM) {
+        this.playerDirectoryStopWatching?.();
+        this.playerDirectoryStopWatching = this.playerDirectoryService.startWatching?.() || null;
+      }
       
       log('👤 Info del jugador:', {
         roomId: this.roomId,
@@ -6232,7 +6581,17 @@ export class ExtensionController {
       
       if (gmAvailable.isActive) {
         // GM activo: solicitar páginas visibles
-        const visibleConfig = await this.broadcastService.requestVisiblePages();
+        const owner = await this.storageService.getVaultOwner();
+        let visibleConfig = this.broadcastService.requestEncryptedPlayerVault
+          ? await this.broadcastService.requestEncryptedPlayerVault({
+            requesterId: this.playerId,
+            requesterName: this.playerName,
+            expectedSenderConnectionId: owner?.connectionId || null
+          })
+          : await this.broadcastService.requestVisiblePages?.();
+        if (!visibleConfig && this.broadcastService.requestVisiblePages) {
+          visibleConfig = await this.broadcastService.requestVisiblePages();
+        }
         if (visibleConfig && visibleConfig.categories) {
           config = visibleConfig;
           configSource = 'broadcast';
@@ -6315,13 +6674,16 @@ export class ExtensionController {
       const requestedPage = this.config?.findPageByNotionId?.(pageId);
       if (!requestedPage) return null;
 
-      if (!requestedPage.visibleToPlayers) {
-        const players = await this.OBR.party.getPlayers();
-        const requester = players.find(player => player.connectionId === request.connectionId);
-        if (requester?.role !== 'GM') {
-          logWarn('⛔ Solicitud rechazada para una página oculta:', pageId);
-          return null;
-        }
+      const players = await this.OBR.party.getPlayers();
+      const requester = players.find(player => player.connectionId === request.connectionId);
+      const isAuthorizedPlayer = requester?.role === 'PLAYER' && canPlayerAccessPage(
+        this.config,
+        requestedPage.id,
+        requester.id
+      );
+      if (requester?.role !== 'GM' && !isAuthorizedPlayer) {
+        logWarn('⛔ Solicitud rechazada para una página sin acceso:', pageId);
+        return null;
       }
 
       // Si NO es forceRefresh, intentar obtener del caché local (mismo HTML para GM y players; oculto con CSS .notion-gm-only)
@@ -6359,6 +6721,11 @@ export class ExtensionController {
     this.broadcastService.setupGMVisiblePagesResponder(async () => {
       if (!this.config) return null;
       return filterVisiblePages(this.config.toJSON ? this.config.toJSON() : this.config);
+    });
+
+    this.broadcastService.setupGMPlayerVaultResponder?.(async ({ playerId }) => {
+      if (!this.config || !playerId) return null;
+      return filterConfigForPlayer(this.config, playerId);
     });
 
     // Responder a solicitudes de vault completo (cuando un player se promociona a GM)
@@ -6449,10 +6816,10 @@ export class ExtensionController {
    * @private
    */
   _setupPlayerBroadcast() {
-    // Escuchar actualizaciones de páginas visibles
-    this.broadcastService.listenForVisiblePagesUpdates(async (config) => {
-      this.config = this.configParser.parse(config);
-      await this.render();
+    // La actualización solo es una señal sin datos. Cada player solicita de
+    // nuevo su vault filtrado y cifrado para evitar ACLs en el cliente.
+    this.broadcastService.listenForPlayerVaultUpdates?.(async () => {
+      await this._refreshPlayerVault();
     });
 
     this.broadcastService.listenForPageInvalidation((pageId) => {
@@ -6466,6 +6833,41 @@ export class ExtensionController {
     
     // Nota: El listener para vault completo está en _requestFullVaultOnPromotion()
     // ya que necesita esperar la respuesta antes de recargar
+  }
+
+  async _refreshPlayerVault() {
+    const owner = await this.storageService.getVaultOwner();
+    const config = await this.broadcastService.requestEncryptedPlayerVault?.({
+      requesterId: this.playerId,
+      requesterName: this.playerName,
+      expectedSenderConnectionId: owner?.connectionId || null
+    });
+    if (!config?.categories) return false;
+
+    const previouslyAvailablePages = this.config?.getAllPages?.() || [];
+    const currentId = this.currentPage?.id;
+    const currentNotionId = this.currentPage?.getNotionPageId?.();
+    this.config = this.configParser.parse(config);
+    this.configBuilder = new ConfigBuilder(this.config);
+    this.notionRenderer.setDependencies({ config: this.config });
+
+    const nextPageIds = new Set(this.config.getAllPages().map(page => page.id));
+    previouslyAvailablePages
+      .filter(page => !nextPageIds.has(page.id))
+      .forEach((page) => {
+        this.cacheService.clearPageCache(page.getNotionPageId?.() || page.id);
+      });
+
+    const currentStillAvailable = !this.currentPage || Boolean(
+      (currentId && this.config.findPageById(currentId)) ||
+      (currentNotionId && this.config.findPageByNotionId(currentNotionId))
+    );
+    if (!currentStillAvailable) {
+      this.cacheService.clearPageCache(currentNotionId || currentId);
+      this._goBackToList();
+    }
+    await this.render();
+    return true;
   }
 
   /**
@@ -6918,7 +7320,7 @@ export class ExtensionController {
               <button class="notion-image-share-button share-button"
                       data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
-                      title="Share with room">
+                      title="Present to all players now" aria-label="Present to all players now">
                 <img src="img/icon-players.svg" alt="Share" />
               </button>
             </div>
@@ -6941,11 +7343,8 @@ export class ExtensionController {
       }
     }
     
-    // Indicador de visibilidad para players - fácil de personalizar
-    const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-    
     // Usar el mismo título reparado en el contenido y en la configuración.
-    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${escapeHtml(notionPageTitle)}${visibilityIndicator}</h1>`;
+    headerHtml += `<h1 class="notion-page-title">${notionIconMarkup}${escapeHtml(notionPageTitle)}</h1>`;
     
     // Renderizar propiedades de base de datos (si las hay)
     const propertiesHtml = this.notionRenderer.renderPageProperties(pageInfo?.properties);
@@ -7016,6 +7415,7 @@ export class ExtensionController {
     if (this.isGM && !this.isCoGM) {
       try {
         this.broadcastService.broadcastVisiblePages(filterVisiblePages(configToSave));
+        await this.broadcastService.notifyPlayerVaultUpdated?.();
         await this.broadcastService.notifyFullVaultUpdated();
       } catch (error) {
         // La página debe seguir abriéndose aunque falle la persistencia remota.
@@ -7025,8 +7425,7 @@ export class ExtensionController {
 
     const pageTitle = document.getElementById('page-title');
     if (pageTitle && this.currentPage?.id === page?.id) {
-      const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
-      pageTitle.innerHTML = escapeHtml(resolvedTitle) + visibilityIndicator;
+      pageTitle.textContent = resolvedTitle;
     }
 
     log(`📝 Título reparado y guardado: "${resolvedTitle}"`);
@@ -7073,7 +7472,7 @@ export class ExtensionController {
               <button class="notion-image-share-button share-button"
                       data-image-url="${escapedCoverUrl}"
                       data-image-caption=""
-                      title="Share with room">
+                      title="Present to all players now" aria-label="Present to all players now">
                 <img src="img/icon-players.svg" alt="Share" />
               </button>` : '';
           
@@ -7287,7 +7686,7 @@ export class ExtensionController {
           <button class="notion-image-share-button share-button" 
                   data-image-url="${escapedImageUrl}"
                   data-image-caption="${escapedCaption}"
-                  title="Share with room">
+                  title="Present to all players now" aria-label="Present to all players now">
             ${iconHtml('img/icon-players.svg', { alt: 'Share' })}
           </button>
         </div>
@@ -7486,7 +7885,7 @@ export class ExtensionController {
       
       if (result?.success) {
         log('📤 Video compartido');
-        this._showFeedback('🎬 Video shared!');
+        this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing video');
       }
@@ -7671,7 +8070,7 @@ export class ExtensionController {
       
       if (result?.success) {
         log('📤 Google Doc compartido');
-        this._showFeedback('📄 Document shared!');
+        this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
         this._showFeedback('❌ Error sharing document');
       }
@@ -7794,10 +8193,9 @@ export class ExtensionController {
         }
       }
       
-      // Agregar título con indicador de visibilidad si aplica
-      const visibilityIndicator = page.visibleToPlayers ? this._getVisibilityIndicator() : '';
+      // Agregar título de la página
       const pageName = resolvePageTitle(page.name);
-      const titleHtml = `<h1 class="notion-page-title">${escapeHtml(pageName)}${visibilityIndicator}</h1>`;
+      const titleHtml = `<h1 class="notion-page-title">${escapeHtml(pageName)}</h1>`;
       notionContent.insertAdjacentHTML('afterbegin', titleHtml);
       
       log('✅ Demo HTML cargado correctamente');
@@ -9271,9 +9669,10 @@ export class ExtensionController {
         // Actualizar metadatos de todos los tokens
         log(`🔗 Vinculando página a token - ID: ${selectedPage.id}, Name: ${selectedPage.name}`);
         
-        // Buscar la página completa para obtener visibleToPlayers
+        // Buscar la página completa para obtener el estado efectivo sin
+        // confundirlo con la audiencia configurada.
         const fullPage = this.config?.findPageById(selectedPage.id);
-        const isVisible = fullPage?.visibleToPlayers || false;
+        const isVisible = isPlayerAccessEnabled(fullPage);
         
         await this.OBR.scene.items.updateItems(items, (updateItems) => {
           updateItems.forEach(item => {
@@ -9409,21 +9808,6 @@ export class ExtensionController {
       const page = new Page(name, url || null, { visibleToPlayers: false, blockTypes: null });
       await this.openPage(page, [], 0);
     }
-  }
-
-  /**
-   * Obtiene el indicador de visibilidad para páginas compartidas con players
-   * Fácil de personalizar: puede ser texto, emoji o imagen
-   * @returns {string} HTML del indicador
-   * @private
-   */
-  _getVisibilityIndicator() {
-    // Opciones de personalización:
-    // Texto: return ' <span class="visibility-indicator">(Player)</span>';
-    // Emoji: return ' <span class="visibility-indicator">👁️</span>';
-    // Icono: return ' <img src="img/icon-players.svg" class="visibility-indicator-icon" alt="Visible to players" title="Visible to players" />';
-    
-    return ' <span class="visibility-indicator" title="Visible to players">(Player)</span>';
   }
 
   /**

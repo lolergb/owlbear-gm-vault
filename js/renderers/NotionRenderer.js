@@ -801,7 +801,7 @@ export class NotionRenderer {
             <button class="notion-image-share-button share-button"
                     data-image-url="${escapedImageUrl}"
                     data-image-caption="${escapedCaptionText}"
-                    title="Share with room">
+                    title="Present to all players now" aria-label="Present to all players now">
               <img src="img/icon-players.svg" alt="Share" />
             </button>
           </div>

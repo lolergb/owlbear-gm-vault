@@ -10,6 +10,14 @@ import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import { escapeHtml, isOneDriveUrl, sanitizeHttpUrl } from '../utils/htmlSecurity.js?v=20260816-1';
+import { getVisibilityActionLabel } from '../utils/playerVisibilityCopy.js';
+import {
+  PLAYER_ACCESS_MODE,
+  getPlayerAudienceMode,
+  isPlayerAccessEnabled,
+  normalizePlayerIds,
+  setPlayerAccessEnabled
+} from '../utils/playerAccess.js';
 
 /**
  * Renderizador de interfaz de usuario
@@ -27,6 +35,8 @@ export class UIRenderer {
     this.onPageDelete = null;
     this.onPageMove = null;
     this.onPageDuplicate = null;
+    this.onPageAccessManage = null;
+    this.onPageIconLoaded = null;
     // Callbacks para categorías
     this.onCategoryEdit = null;
     this.onCategoryDelete = null;
@@ -39,6 +49,8 @@ export class UIRenderer {
     this.isGM = true;
     // Es coGM? (solo ve botón compartir)
     this.isCoGM = false;
+    // GM-only preview of all configured player audiences.
+    this.previewPlayerAccess = false;
     // Config para calcular posiciones
     this.config = null;
   }
@@ -64,7 +76,7 @@ export class UIRenderer {
   setCallbacks(callbacks) {
     const keys = [
       'onPageClick', 'onVisibilityChange', 'onPageShare', 'onPageOpenModal', 'onPageEdit', 'onPageDelete', 
-      'onPageMove', 'onPageDuplicate', 'onCategoryEdit', 'onCategoryDelete',
+      'onPageMove', 'onPageDuplicate', 'onPageAccessManage', 'onPageIconLoaded', 'onCategoryEdit', 'onCategoryDelete',
       'onCategoryMove', 'onCategoryDuplicate', 'onAddPage', 'onAddCategory', 'onShowModal'
     ];
     keys.forEach(key => {
@@ -98,7 +110,10 @@ export class UIRenderer {
       (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'));
     const hasHtmlContent = !!page.htmlContent;
     if (!hasValidUrl && !hasHtmlContent) return false;
-    return isGM || page.visibleToPlayers === true;
+    if (!isGM && this.previewPlayerAccess) return isPlayerAccessEnabled(page);
+    return isGM || (
+      page.visibleToPlayers === true && page.playerAccessEnabled !== false
+    );
   }
 
   /**
@@ -106,16 +121,18 @@ export class UIRenderer {
    * @param {Object} config - Configuración
    * @param {HTMLElement} container - Contenedor
    * @param {string} roomId - ID de la room
-   * @param {boolean|Object} isGMOrOptions - true/false para GM, o objeto {isGM, isCoGM}
+   * @param {boolean|Object} isGMOrOptions - true/false para GM, o objeto {isGM, isCoGM, previewPlayerAccess}
    */
   renderAllCategories(config, container, roomId, isGMOrOptions = true) {
     // Soportar tanto boolean como objeto de opciones
     if (typeof isGMOrOptions === 'object') {
       this.isGM = isGMOrOptions.isGM !== false;
       this.isCoGM = isGMOrOptions.isCoGM === true;
+      this.previewPlayerAccess = isGMOrOptions.previewPlayerAccess === true;
     } else {
       this.isGM = isGMOrOptions;
       this.isCoGM = false;
+      this.previewPlayerAccess = false;
     }
     
     container.innerHTML = '';
@@ -138,7 +155,7 @@ export class UIRenderer {
           <div class="empty-state">
             <div class="empty-state-icon">👁️</div>
             <p class="empty-state-text">No content visible to players</p>
-            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
+            <p class="empty-state-hint">The GM can make pages visible using the eye control</p>
           </div>
         `;
       return;
@@ -158,7 +175,7 @@ export class UIRenderer {
           <div class="empty-state">
             <div class="empty-state-icon">👁️</div>
             <p class="empty-state-text">No content visible to players</p>
-            <p class="empty-state-hint">The GM can share pages using the visibility control</p>
+            <p class="empty-state-hint">The GM can make pages visible using the eye control</p>
           </div>
         `;
         return;
@@ -231,9 +248,11 @@ export class UIRenderer {
     // Botón de colapsar
     const collapseButton = document.createElement('button');
     collapseButton.className = 'category-collapse-button';
+    collapseButton.type = 'button';
     
     const collapseStateKey = `category-collapsed-${category.name}-level-${level}`;
     const isCollapsed = localStorage.getItem(collapseStateKey) === 'true';
+    collapseButton.setAttribute('aria-expanded', String(!isCollapsed));
     const folderSrc = isCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
     collapseButton.innerHTML = iconHtml(folderSrc, { className: 'category-collapse-icon', alt: isCollapsed ? 'Expand' : 'Collapse' });
     const collapseIcon = collapseButton.querySelector('.icon');
@@ -253,7 +272,7 @@ export class UIRenderer {
       contextMenuButton.innerHTML = iconHtml('img/icon-contextualmenu.svg', { className: 'icon-button-icon', alt: 'Menu' });
       contextMenuButton.title = 'Folder options';
       contextMenuButton.style.opacity = '0';
-      
+
       // Mostrar/ocultar en hover
       titleContainer.addEventListener('mouseenter', () => {
         if (!contextMenuButton.classList.contains('context-menu-active')) {
@@ -327,16 +346,21 @@ export class UIRenderer {
     categoryDiv.appendChild(contentContainer);
 
     // === EVENT LISTENERS ===
-    // Click para colapsar/expandir
-    titleContainer.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      
+    // The folder button and title perform the same toggle, exactly once.
+    const toggleCollapsed = () => {
       const newIsCollapsed = contentContainer.style.display !== 'none';
       contentContainer.style.display = newIsCollapsed ? 'none' : 'block';
       const newFolderSrc = newIsCollapsed ? 'img/folder-close.svg' : 'img/folder-open.svg';
       collapseIcon.style.maskImage = `url('${newFolderSrc}')`;
       collapseIcon.style.webkitMaskImage = `url('${newFolderSrc}')`;
+      collapseIcon.setAttribute('aria-label', newIsCollapsed ? 'Expand' : 'Collapse');
+      collapseButton.setAttribute('aria-expanded', String(!newIsCollapsed));
       localStorage.setItem(collapseStateKey, newIsCollapsed);
+    };
+    collapseButton.addEventListener('click', toggleCollapsed);
+    titleContainer.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      toggleCollapsed();
     });
 
     parentElement.appendChild(categoryDiv);
@@ -351,9 +375,16 @@ export class UIRenderer {
    * Actualiza el estado visual y accesible del control de visibilidad.
    * @private
    */
-  _setVisibilityButtonState(button, visible) {
-    const title = visible ? 'Visible to players' : 'Hidden from players';
-    const iconPath = `img/${visible ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
+  _setVisibilityButtonState(button, target, enabled = isPlayerAccessEnabled(target)) {
+    const selectedCount = normalizePlayerIds(target?.sharedWithPlayerIds).length;
+    const configuredMode = getPlayerAudienceMode(target);
+    const audienceMode = enabled && configuredMode === PLAYER_ACCESS_MODE.GM_ONLY
+      ? PLAYER_ACCESS_MODE.EVERYONE
+      : configuredMode;
+    const hasPlayerAccess = enabled && audienceMode !== PLAYER_ACCESS_MODE.GM_ONLY;
+    const hasSelectedAudience = audienceMode === PLAYER_ACCESS_MODE.SELECTED;
+    const title = getVisibilityActionLabel(target, enabled);
+    const iconPath = `img/${enabled ? 'icon-eye-open' : 'icon-eye-close'}.svg`;
     let icon = button.querySelector('.icon');
     if (!icon) {
       button.innerHTML = iconHtml(iconPath, { alt: 'Visibility' });
@@ -365,10 +396,34 @@ export class UIRenderer {
       icon.style.webkitMaskImage = `url('${iconPath}')`;
       icon.style.maskImage = `url('${iconPath}')`;
     }
-    button.classList.toggle('page-visibility-button--visible', visible);
+
+    let label = button.querySelector('.page-visibility-button__label');
+    if (!label) {
+      label = document.createElement('span');
+      label.className = 'page-visibility-button__label';
+      button.appendChild(label);
+    }
+    label.textContent = hasSelectedAudience ? String(selectedCount) : '';
+    label.hidden = !hasSelectedAudience;
+
+    button.classList.toggle('page-visibility-button--has-access', hasPlayerAccess);
+    button.classList.toggle('page-visibility-button--enabled', enabled);
+    button.classList.toggle('page-visibility-button--visible', enabled);
+    button.classList.toggle('page-visibility-button--selected', hasSelectedAudience);
+    button.classList.toggle(
+      'page-visibility-button--no-access',
+      !hasPlayerAccess && !hasSelectedAudience
+    );
+    button.classList.toggle(
+      'hidden',
+      button.id === 'page-visibility-button-header' &&
+        !hasPlayerAccess &&
+        !hasSelectedAudience
+    );
+    button.dataset.accessMode = audienceMode;
     button.title = title;
     button.setAttribute('aria-label', title);
-    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-pressed', String(enabled));
   }
 
   /**
@@ -386,7 +441,11 @@ export class UIRenderer {
 
       const visibilityButton = pageButton.querySelector('.page-visibility-button');
       if (visibilityButton) {
-        this._setVisibilityButtonState(visibilityButton, visible);
+        this._setVisibilityButtonState(
+          visibilityButton,
+          page,
+          visible
+        );
       }
     });
   }
@@ -451,17 +510,12 @@ export class UIRenderer {
       linkIconHtml = ico('img/icon-link.svg', 'Link');
     }
 
-    // Indicador de visible para players
-    const visibleIndicator = page.visibleToPlayers 
-      ? '<span class="page-visibility-badge">👁️</span>' 
-      : '';
-
-    // HTML del botón
+    // Use the icon included in the vault: players cannot query the GM's Notion account.
+    const pageIconHtml = this._getPageIconHtml(page.icon, page.name);
     button.innerHTML = `
       <div class="page-button-inner">
-        <div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>
+        ${pageIconHtml || `<div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>`}
         <div class="page-name-text">${escapeHtml(page.name)}</div>
-        ${visibleIndicator}
         ${linkIconHtml}
       </div>
     `;
@@ -476,7 +530,7 @@ export class UIRenderer {
       shareButton = document.createElement('button');
       shareButton.className = 'page-share-button';
       shareButton.innerHTML = iconHtml('img/icon-players.svg', { alt: 'Share' });
-      shareButton.title = 'Share with players';
+      shareButton.title = 'Present to all players now';
       shareButton.setAttribute('aria-label', shareButton.title);
 
       shareButton.addEventListener('click', async (e) => {
@@ -520,20 +574,24 @@ export class UIRenderer {
 
     // Botones adicionales solo para GM completo (no coGM ni Player)
     if (isGM && !this.isCoGM) {
+        actionsContainer.classList.add('page-button-actions--has-visibility');
         // Botón de visibilidad
         const visibilityButton = document.createElement('button');
         visibilityButton.className = 'page-visibility-button';
-        this._setVisibilityButtonState(visibilityButton, page.visibleToPlayers === true);
+        this._setVisibilityButtonState(
+          visibilityButton,
+          page
+        );
         
         visibilityButton.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (!this.onVisibilityChange || visibilityButton.disabled) return;
 
-          const previousVisibility = visibilityButton.getAttribute('aria-pressed') === 'true';
+          const previousVisibility = isPlayerAccessEnabled(page);
           const newVisibility = !previousVisibility;
           visibilityButton.disabled = true;
           visibilityButton.setAttribute('aria-busy', 'true');
-          this._setVisibilityButtonState(visibilityButton, newVisibility);
+          this._setVisibilityButtonState(visibilityButton, page, newVisibility);
 
           try {
             const updated = await this.onVisibilityChange(
@@ -544,14 +602,20 @@ export class UIRenderer {
             );
 
             if (updated === false) {
-              page.visibleToPlayers = previousVisibility;
-              this._setVisibilityButtonState(visibilityButton, previousVisibility);
+              this._setVisibilityButtonState(
+                visibilityButton,
+                page,
+                previousVisibility
+              );
             } else {
-              page.visibleToPlayers = newVisibility;
+              setPlayerAccessEnabled(page, newVisibility);
             }
           } catch (error) {
-            page.visibleToPlayers = previousVisibility;
-            this._setVisibilityButtonState(visibilityButton, previousVisibility);
+            this._setVisibilityButtonState(
+              visibilityButton,
+              page,
+              previousVisibility
+            );
             console.error('Error updating page visibility:', error);
           } finally {
             visibilityButton.disabled = false;
@@ -593,10 +657,10 @@ export class UIRenderer {
       }
     });
 
-    // Intentar cargar icono real de Notion
+    // Only GM views refresh metadata; actual players use the shared icon.
     const pageId = extractNotionPageId(page.url);
-    if (pageId && this.notionService) {
-      this._loadPageIcon(button, pageId, page.name, linkIconHtml);
+    if (pageId && this.notionService && (isGM || this.previewPlayerAccess)) {
+      this._loadPageIcon(button, pageId, page, linkIconHtml);
     }
 
     return button;
@@ -681,40 +745,41 @@ export class UIRenderer {
   }
 
   /**
+   * Render saved and fetched icons through the same escaping and URL checks.
+   * @private
+   */
+  _getPageIconHtml(icon, pageName) {
+    if (icon?.type === 'emoji') {
+      return `<span class="page-icon-emoji">${escapeHtml(icon.emoji || '📄')}</span>`;
+    }
+    const url = icon?.type === 'external' ? icon.external?.url
+      : icon?.type === 'file' ? icon.file?.url : null;
+    const safeUrl = sanitizeHttpUrl(url);
+    return safeUrl
+      ? `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`
+      : '';
+  }
+
+  /**
    * Carga el icono real de una página de Notion
    * @private
    */
-  async _loadPageIcon(button, pageId, pageName, linkIconHtml) {
+  async _loadPageIcon(button, pageId, page, linkIconHtml) {
+    const sourceUrl = page.url;
     try {
       const pageInfo = await this.notionService.fetchPageInfo(pageId);
-      if (pageInfo && pageInfo.icon) {
-        let iconHtml = '';
-        if (pageInfo.icon.type === 'emoji') {
-          iconHtml = `<span class="page-icon-emoji">${escapeHtml(pageInfo.icon.emoji || '📄')}</span>`;
-        } else if (pageInfo.icon.type === 'external' && pageInfo.icon.external?.url) {
-          const safeUrl = sanitizeHttpUrl(pageInfo.icon.external.url);
-          if (safeUrl) {
-            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
-          }
-        } else if (pageInfo.icon.type === 'file' && pageInfo.icon.file?.url) {
-          const safeUrl = sanitizeHttpUrl(pageInfo.icon.file.url);
-          if (safeUrl) {
-            iconHtml = `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(pageName)}" class="page-icon-image" />`;
-          }
+      if (page.url !== sourceUrl) return;
+      const iconHtml = this._getPageIconHtml(pageInfo?.icon, page.name);
+      if (iconHtml) {
+        const inner = button.querySelector('.page-button-inner');
+        if (inner) {
+          inner.innerHTML = `
+            ${iconHtml}
+            <div class="page-name-text">${escapeHtml(page.name)}</div>
+            ${linkIconHtml}
+          `;
         }
-
-        if (iconHtml) {
-          const inner = button.querySelector('.page-button-inner');
-          if (inner) {
-            inner.innerHTML = `
-              <div style="display: flex; align-items: center; gap: var(--spacing-md); width: 100%;">
-                ${iconHtml}
-                <div class="page-name" style="flex: 1; text-align: left;">${escapeHtml(pageName)}</div>
-                ${linkIconHtml}
-              </div>
-            `;
-          }
-        }
+        this.onPageIconLoaded?.(page, pageInfo.icon);
       }
     } catch (e) {
       // Ignorar errores de carga de icono
@@ -835,6 +900,11 @@ export class UIRenderer {
         icon: 'img/icon-edit.svg', 
         text: 'Edit', 
         action: () => this._showEditPageModal(page, categoryPath, pageIndex)
+      },
+      {
+        icon: 'img/icon-eye-open.svg',
+        text: 'Choose players',
+        action: () => this.onPageAccessManage?.(page, categoryPath, pageIndex)
       },
       { 
         icon: 'img/icon-clone.svg', 
@@ -1163,7 +1233,7 @@ export class UIRenderer {
     // Ajustar posición si se sale de la pantalla
     const rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) {
-      menu.style.left = `${position.x - rect.width}px`;
+      menu.style.left = `${Math.max(8, position.x - rect.width)}px`;
     }
     if (rect.bottom > window.innerHeight) {
       menu.style.top = `${position.y - rect.height}px`;

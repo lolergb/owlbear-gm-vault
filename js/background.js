@@ -9,8 +9,10 @@ import {
   listenForImageShares,
   sendImageShareStatus
 } from './services/ImageShareService.js';
+import { setupPlayerProfilePublishing } from './services/PlayerDirectoryService.js';
 
 let stopListening = null;
+let stopPublishingProfile = null;
 let activeShare = null;
 let modalQueue = Promise.resolve();
 const MODAL_OPERATION_TIMEOUT_MS = 5000;
@@ -47,6 +49,7 @@ function buildViewerUrl({ url, caption, shareId, senderConnectionId }) {
 }
 
 OBR.onReady(() => {
+  stopPublishingProfile = setupPlayerProfilePublishing(OBR);
   stopListening = listenForImageShares({
     OBR,
     // A shared image is a live presentation: the newest share replaces the
@@ -95,4 +98,6 @@ OBR.onReady(() => {
 window.addEventListener('beforeunload', () => {
   stopListening?.();
   stopListening = null;
+  stopPublishingProfile?.();
+  stopPublishingProfile = null;
 });

@@ -21,7 +21,7 @@ describe('UIRenderer empty states', () => {
     expect(container.querySelector('.empty-state-text').textContent)
       .toBe('No content visible to players');
     expect(container.querySelector('.empty-state-hint').textContent)
-      .toBe('The GM can share pages using the visibility control');
+      .toBe('The GM can make pages visible using the eye control');
     expect(container.textContent).not.toContain('Click +');
   });
 

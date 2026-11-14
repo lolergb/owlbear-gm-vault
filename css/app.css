@@ -836,10 +836,13 @@
     flex-shrink: 0;
   }
   
-  @media (hover: hover) {
-    :is(.category__collapse-btn, .category-collapse-button):hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
-      background: var(--button-secondary-hover-bg);
-    }
+  :is(.category__collapse-btn, .category-collapse-button):focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  :is(.category__collapse-btn, .category-collapse-button):focus-visible {
+    outline: 2px solid var(--button-focus-ring);
+    outline-offset: 3px;
   }
 
   .category__collapse-icon {
@@ -905,6 +908,28 @@
   .page-button.context-menu-open .page-button-actions {
     opacity: 1;
   }
+
+  /* Mantener visible el estado; las acciones secundarias siguen apareciendo
+     al interactuar con la fila. */
+  .page-button-actions--has-visibility {
+    opacity: 1;
+  }
+
+  .page-button-actions--has-visibility > :not(.page-visibility-button) {
+    opacity: 0;
+    transition: opacity var(--transition-fast), background var(--transition-fast);
+  }
+
+  .page-button-actions--has-visibility > .page-visibility-button--no-access {
+    opacity: 0;
+  }
+
+  .page-button:hover .page-button-actions--has-visibility > *,
+  .page-button:focus-within .page-button-actions--has-visibility > *,
+  .page-button.context-menu-open .page-button-actions--has-visibility > *,
+  .page-button.share-state-visible .page-button-actions--has-visibility > * {
+    opacity: 1;
+  }
   
   /* Estilos base para botones de acción */
   .page-share-button,
@@ -915,7 +940,7 @@
     height: var(--button-height-sm);
     background: transparent;
     border: none;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-lg);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -933,6 +958,26 @@
     .page-context-menu-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
       background: var(--button-secondary-hover-bg);
     }
+  }
+
+  .page-visibility-button--has-access,
+  #page-visibility-button-header.page-visibility-button--has-access {
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  .page-visibility-button--selected,
+  #page-visibility-button-header.page-visibility-button--selected {
+    width: auto;
+    min-width: 32px;
+    gap: var(--spacing-xs);
+    padding: 4px var(--spacing-sm);
+  }
+
+  .page-visibility-button__label {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--font-line-xs);
   }
   
   .page-share-button img,
@@ -1052,10 +1097,12 @@
   /* ==========================================================================
       Context Menu
       ========================================================================== */
-  .context-menu {
+  .context-menu,
+  #context-menu {
     position: fixed;
     border-radius: var(--radius-lg);
-    min-width: 180px;
+    min-width: min(220px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
     z-index: 10000;
     background-color: var(--color-bg-surface);
     box-shadow: var(--shadow-menu);
@@ -1095,7 +1142,6 @@
   }
   
   /* Alias para compatibilidad */
-  #context-menu {position: fixed;border-radius: var(--radius-lg);min-width: 180px;z-index: 10000;background-color: var(--color-bg-surface);box-shadow: var(--shadow-menu);background-image: linear-gradient(var(--color-surface-tint), var(--color-surface-tint));overflow: hidden;}
   .context-menu-item { display: flex; align-items: center; gap: var(--spacing-lg); padding: var(--spacing-md) var(--spacing-lg); cursor: pointer;  transition: background var(--transition-fast); }
   .context-menu-item:hover { background: var(--color-surface-hover); }
   .context-menu-separator { height: 1px; background: var(--color-surface-separator); }
@@ -1477,25 +1523,6 @@
   }
 
   /* ==========================================================================
-      Visibility Indicator
-      ========================================================================== */
-  .visibility-indicator {
-    font-size: var(--font-size-sm);
-    color: var(--color-accent-primary);
-    opacity: 0.8;
-    margin-left: var(--spacing-xs);
-    display: none;
-  }
-
-  .visibility-indicator-icon {
-    width: var(--icon-size-sm);
-    height: var(--icon-size-sm);
-    vertical-align: middle;
-    margin-left: var(--spacing-xs);
-    opacity: 0.8;
-  }
-  
-  /* ==========================================================================
       Toggle Heading
       ========================================================================== */
   .notion-toggle-heading-inline {
@@ -1521,6 +1548,7 @@
   
   /* Alias: icon-button → btn--icon (para compatibilidad) */
   .icon-button { background: transparent; border: none; border-radius: var(--radius-full); width: var(--button-height-sm); height: var(--button-height-sm); padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--button-transition); color: var(--color-text-secondary); flex-shrink: 0; }
+  .category-context-menu-button { border-radius: var(--radius-lg); }
   .category-context-menu-button.context-menu-active,
   .page-context-menu-button.context-menu-active,
   .category-title-container.context-menu-open .category-context-menu-button,
@@ -1537,6 +1565,7 @@
   #header :where(.icon-button) {
     width: 32px;
     height: 32px;
+    border-radius: var(--radius-lg);
     padding: 0;
     flex-shrink: 1;
     transition: all var(--transition-normal);
@@ -1560,7 +1589,7 @@
     height: 32px;
     background: transparent;
     border: none;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-lg);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1603,10 +1632,15 @@
   
   #page-context-menu-button-header:hover,
   #refresh-page-button:hover,
-  #page-visibility-button-header:hover,
   #page-open-modal-button-header:hover,
   #page-share-button-header:hover {
     background: var(--color-bg-hover);
+  }
+
+  @media (hover: hover) {
+    #page-visibility-button-header:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
+      background: var(--button-secondary-hover-bg);
+    }
   }
   
   #page-context-menu-button-header:active,
@@ -2361,6 +2395,199 @@
 .form-hint {
   display: block;
   margin-top: var(--spacing-xs);
+}
+
+/* Player access dialog */
+.player-access-modal {
+  width: min(440px, calc(100% - (2 * var(--spacing-lg))));
+  max-width: 440px;
+}
+
+.player-access-form {
+  min-height: 0;
+}
+
+.player-access-description {
+  margin: 0;
+}
+
+.player-access-audience {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.player-access-audience legend {
+  width: 100%;
+  padding: 0 0 var(--spacing-sm);
+}
+
+.player-access-player input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--color-accent-primary);
+}
+
+.player-access-players__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: baseline;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.player-access-players__heading .form__label {
+  margin: 0;
+}
+
+.player-access-players__count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+}
+
+.player-access-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+}
+
+.player-access-player {
+  display: grid;
+  grid-template-columns: 18px 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-md);
+  min-height: 48px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.player-access-player + .player-access-player {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.player-access-player:hover,
+.player-access-player:has(input:focus-visible) {
+  background: var(--color-bg-hover);
+}
+
+.player-access-player:has(input:checked) {
+  background: var(--color-bg-active);
+}
+
+.player-access-player__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-accent-primary);
+  color: var(--color-accent-primary-contrast);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.player-access-player__name {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-access-player__avatar--everyone {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.player-access-everyone__copy {
+  display: flex;
+  flex-direction: column;
+  grid-column: 3 / -1;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.player-access-everyone__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.player-access-player__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.player-access-player__status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+
+.player-access-player__status.is-online {
+  color: var(--color-success);
+}
+
+.player-access-empty {
+  padding: var(--spacing-lg);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--font-line-sm);
+  text-align: center;
+}
+
+.player-access-validation {
+  min-height: 0;
+  margin: 0;
+  color: var(--color-error-text);
+  font-size: var(--font-size-xs);
+  line-height: var(--font-line-xs);
+}
+
+.player-access-validation:empty {
+  display: none;
+}
+
+.player-access-error {
+  margin: 0;
+}
+
+.player-access-actions {
+  margin-top: 0;
+}
+
+@media (max-width: 480px) {
+  .player-access-modal {
+    width: calc(100% - (2 * var(--spacing-md)));
+    padding: var(--spacing-lg);
+  }
+
+  .player-access-player {
+    grid-template-columns: 18px 28px minmax(0, 1fr);
+  }
+
+  .player-access-player__avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .player-access-player__status {
+    grid-column: 3;
+  }
 }
 
 /* ==========================================================================

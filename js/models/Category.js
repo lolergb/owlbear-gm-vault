@@ -6,6 +6,7 @@
  */
 
 import { Page } from './Page.js';
+import { normalizePlayerIds } from '../utils/playerAccess.js';
 
 /**
  * Genera un ID único para categorías
@@ -32,6 +33,9 @@ export class Category {
    * @param {Category[]} [options.categories=[]] - Subcategorías
    * @param {boolean} [options.collapsed=false] - Si está colapsada en la UI
    * @param {Array} [options.order=null] - Orden combinado de categorías y páginas
+   * @param {boolean} [options.visibleToPlayers=false] - Acceso para todos los jugadores
+   * @param {string[]} [options.sharedWithPlayerIds=[]] - Acceso heredado para jugadores concretos
+   * @param {boolean} [options.playerAccessEnabled] - Si la audiencia configurada está activa
    */
   constructor(name, options = {}) {
     this.id = options.id || generateCategoryId();
@@ -40,6 +44,10 @@ export class Category {
     this.categories = options.categories || [];
     this.collapsed = options.collapsed || false;
     this.order = options.order || null;
+    this.visibleToPlayers = options.visibleToPlayers || false;
+    this.sharedWithPlayerIds = normalizePlayerIds(options.sharedWithPlayerIds);
+    const hasConfiguredAudience = this.visibleToPlayers || this.sharedWithPlayerIds.length > 0;
+    this.playerAccessEnabled = hasConfiguredAudience && options.playerAccessEnabled !== false;
   }
 
   /**
@@ -150,7 +158,10 @@ export class Category {
         return Category.fromJSON(c).clone(keepId);
       }),
       collapsed: this.collapsed,
-      order: this.order ? JSON.parse(JSON.stringify(this.order)) : null
+      order: this.order ? JSON.parse(JSON.stringify(this.order)) : null,
+      visibleToPlayers: this.visibleToPlayers,
+      sharedWithPlayerIds: [...this.sharedWithPlayerIds],
+      playerAccessEnabled: this.playerAccessEnabled
     });
   }
 
@@ -180,6 +191,18 @@ export class Category {
       json.order = this.order;
     }
 
+    if (this.visibleToPlayers) {
+      json.visibleToPlayers = true;
+    }
+
+    if (this.sharedWithPlayerIds.length > 0) {
+      json.sharedWithPlayerIds = [...this.sharedWithPlayerIds];
+    }
+
+    if ((this.visibleToPlayers || this.sharedWithPlayerIds.length > 0) && !this.playerAccessEnabled) {
+      json.playerAccessEnabled = false;
+    }
+
     return json;
   }
 
@@ -203,10 +226,12 @@ export class Category {
       pages,
       categories,
       collapsed: json.collapsed,
-      order: json.order || null
+      order: json.order || null,
+      visibleToPlayers: json.visibleToPlayers,
+      sharedWithPlayerIds: json.sharedWithPlayerIds,
+      playerAccessEnabled: json.playerAccessEnabled
     });
   }
 }
 
 export default Category;
-

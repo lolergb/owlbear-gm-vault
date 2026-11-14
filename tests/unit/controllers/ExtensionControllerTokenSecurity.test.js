@@ -43,7 +43,7 @@ describe('ExtensionController Notion token privacy', () => {
     controller._setupSettingsEventListeners();
 
     expect(document.getElementById('token-input').value).toBe('');
-    expect(document.getElementById('token-input').placeholder).toMatch(/replace/i);
+    expect(document.getElementById('token-input').placeholder).toBe('••••••••••••••••');
     expect(document.getElementById('token-masked').textContent).toBe(
       `Notion connected · ending in ${SAVED_TOKEN.slice(-4)}`
     );

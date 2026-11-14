@@ -8,6 +8,7 @@ import { Config } from '../models/Config.js?v=20260722-4';
 import { Category } from '../models/Category.js';
 import { Page } from '../models/Page.js';
 import { log } from '../utils/logger.js?v=20260722-4';
+import { setPlayerAccessEnabled } from '../utils/playerAccess.js';
 
 /**
  * Builder para construir configuraciones del vault
@@ -86,6 +87,12 @@ export class ConfigBuilder {
       if (updates.name !== undefined) page.name = updates.name;
       if (updates.url !== undefined) page.url = updates.url;
       if (updates.visibleToPlayers !== undefined) page.visibleToPlayers = updates.visibleToPlayers;
+      if (updates.sharedWithPlayerIds !== undefined) page.sharedWithPlayerIds = [...updates.sharedWithPlayerIds];
+      if (updates.playerAccessEnabled !== undefined) {
+        setPlayerAccessEnabled(page, updates.playerAccessEnabled);
+      } else if (updates.visibleToPlayers === true) {
+        page.playerAccessEnabled = true;
+      }
       if (updates.blockTypes !== undefined) page.blockTypes = updates.blockTypes;
       if (updates.icon !== undefined) page.icon = updates.icon;
       if (updates.linkedTokenId !== undefined) page.linkedTokenId = updates.linkedTokenId;
@@ -282,7 +289,7 @@ export class ConfigBuilder {
   _setVisibilityRecursive(category, visible, recursive) {
     // Actualizar páginas de esta categoría
     category.pages.forEach(page => {
-      page.visibleToPlayers = visible;
+      setPlayerAccessEnabled(page, visible);
     });
 
     // Si es recursivo, actualizar subcategorías

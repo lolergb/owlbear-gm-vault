@@ -82,6 +82,47 @@ describe('ConfigParser', () => {
       expect(page.visibleToPlayers).toBe(true);
       expect(page.blockTypes).toEqual(['quote', 'callout']);
     });
+
+    it('preserva acceso selectivo en páginas y carpetas anidadas', () => {
+      const config = parser.parse({
+        categories: [{
+          name: 'Secrets',
+          sharedWithPlayerIds: ['player-1'],
+          pages: [{
+            name: 'Map',
+            url: 'https://example.com/map',
+            sharedWithPlayerIds: ['player-2']
+          }]
+        }]
+      });
+
+      expect(config.categories[0].sharedWithPlayerIds).toEqual(['player-1']);
+      expect(config.categories[0].pages[0].sharedWithPlayerIds).toEqual(['player-2']);
+      expect(config.toJSON().categories[0].sharedWithPlayerIds).toEqual(['player-1']);
+      expect(config.toJSON().categories[0].pages[0].sharedWithPlayerIds).toEqual(['player-2']);
+    });
+
+    it('preserva el estado desactivado sin perder la audiencia', () => {
+      const config = parser.parse({
+        categories: [{
+          name: 'Secrets',
+          pages: [{
+            name: 'Map',
+            url: 'https://example.com/map',
+            sharedWithPlayerIds: ['player-1'],
+            playerAccessEnabled: false
+          }]
+        }]
+      });
+
+      const page = config.categories[0].pages[0];
+      expect(page.sharedWithPlayerIds).toEqual(['player-1']);
+      expect(page.playerAccessEnabled).toBe(false);
+      expect(config.toJSON().categories[0].pages[0]).toMatchObject({
+        sharedWithPlayerIds: ['player-1'],
+        playerAccessEnabled: false
+      });
+    });
   });
 
   describe('validate', () => {

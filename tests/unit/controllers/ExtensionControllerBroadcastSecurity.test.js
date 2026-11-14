@@ -4,10 +4,10 @@ import {
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT
 } from '../../../js/utils/constants.js';
 
-function createController(players) {
+function createController(players, pageAccess = {}) {
   const handlers = new Map();
   const controller = Object.create(ExtensionController.prototype);
-  const hiddenPage = { id: 'secret-page', visibleToPlayers: false };
+  const hiddenPage = { id: 'secret-page', visibleToPlayers: false, ...pageAccess };
   let contentResponder;
 
   controller.config = {
@@ -15,7 +15,7 @@ function createController(players) {
     toJSON: jest.fn(() => ({
       categories: [{
         name: 'Secrets',
-        pages: [{ id: hiddenPage.id, name: 'Secret', visibleToPlayers: false }]
+        pages: [{ id: hiddenPage.id, name: 'Secret', ...hiddenPage }]
       }]
     }))
   };
@@ -83,6 +83,21 @@ describe('ExtensionController broadcast authorization', () => {
     await expect(getContentResponder()('secret-page', false, {
       connectionId: 'conn-gm'
     })).resolves.toContain('secret');
+  });
+
+  it('serves a selected page only to the authenticated player id', async () => {
+    const { controller, getContentResponder } = createController([
+      { id: 'player-1', connectionId: 'conn-selected', role: 'PLAYER' },
+      { id: 'player-2', connectionId: 'conn-other', role: 'PLAYER' }
+    ], { sharedWithPlayerIds: ['player-1'] });
+
+    await expect(getContentResponder()('secret-page', false, {
+      connectionId: 'conn-selected'
+    })).resolves.toContain('secret');
+    await expect(getContentResponder()('secret-page', false, {
+      connectionId: 'conn-other'
+    })).resolves.toBeNull();
+    expect(controller.cacheService.getHtmlFromLocalCache).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a full-vault request from a Player even if the payload claims a GM id', async () => {

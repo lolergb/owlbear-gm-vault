@@ -323,6 +323,21 @@ describe('Page Model', () => {
       expect(restored.getContentType()).toBe('embedded-html');
     });
 
+    it('preserva una audiencia seleccionada aunque la visibilidad esté desactivada', () => {
+      const original = new Page('Secret', 'https://example.com/secret', {
+        sharedWithPlayerIds: ['player-1'],
+        playerAccessEnabled: false
+      });
+
+      const json = original.toJSON();
+      const restored = Page.fromJSON(json);
+
+      expect(json.sharedWithPlayerIds).toEqual(['player-1']);
+      expect(json.playerAccessEnabled).toBe(false);
+      expect(restored.sharedWithPlayerIds).toEqual(['player-1']);
+      expect(restored.playerAccessEnabled).toBe(false);
+    });
+
     it('debe omitir propiedades vacías en toJSON', () => {
       const page = new Page('Test', 'https://example.com');
       const json = page.toJSON();

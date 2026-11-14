@@ -219,6 +219,26 @@ describe('filterVisiblePages', () => {
     expect(page.blockTypes).toEqual(['quote', 'callout']);
     expect(page.linkedTokenId).toBe('token-123');
   });
+
+  it('debe ignorar y retirar permisos antiguos de carpeta', () => {
+    const filtered = filterVisiblePages({
+      categories: [{
+        name: 'Legacy folder',
+        visibleToPlayers: true,
+        playerAccessEnabled: true,
+        sharedWithPlayerIds: ['player-1'],
+        pages: [{
+          name: 'Visible page',
+          visibleToPlayers: true
+        }]
+      }]
+    });
+
+    expect(filtered.categories[0]).not.toHaveProperty('visibleToPlayers');
+    expect(filtered.categories[0]).not.toHaveProperty('playerAccessEnabled');
+    expect(filtered.categories[0]).not.toHaveProperty('sharedWithPlayerIds');
+    expect(filtered.categories[0].pages).toHaveLength(1);
+  });
 });
 
 // ============================================
