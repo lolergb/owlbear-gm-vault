@@ -89,3 +89,11 @@
 # GM_VAULT_DEFAULT_CONFIG_V2: credencial de una integración de Notion dedicada.
 #   - Debe tener acceso de solo lectura exclusivamente a las páginas demo.
 #   - Se usa únicamente dentro de las Netlify Functions y nunca se devuelve al cliente.
+
+# Read-only recovery endpoint on the original beta origin.
+[[headers]]
+  for = "/html/beta-migration-bridge.html"
+  [headers.values]
+    Cache-Control = "no-store"
+    Referrer-Policy = "no-referrer"
+    Content-Security-Policy = "default-src 'none'; script-src 'self'; frame-ancestors https://owlbear-gm-vault.netlify.app https://www.owlbear.rodeo https://owlbear.rodeo; base-uri 'none'; form-action 'none'"

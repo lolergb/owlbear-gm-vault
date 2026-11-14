@@ -29,7 +29,7 @@ global.OBR = mockOBR;
 // Mock de localStorage
 const localStorageMock = {
   store: {},
-  getItem: jest.fn((key) => localStorageMock.store[key] || null),
+  getItem: jest.fn((key) => localStorageMock.store[key] ?? null),
   setItem: jest.fn((key, value) => {
     localStorageMock.store[key] = String(value);
   }),
