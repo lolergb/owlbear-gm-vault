@@ -445,16 +445,16 @@ describe('Netlify static asset cache policy', () => {
     const parserJs = readProjectFile('js/parsers/ConfigParser.js');
     const builderJs = readProjectFile('js/builders/ConfigBuilder.js');
 
-    expect(indexHtml).toContain(`href="css/app.css?v=${welcomeBuildTag}"`);
+    expect(indexHtml).toContain('href="css/app.css?v=20261114-1"');
     expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${welcomeBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${releaseVersion}"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${releaseVersion}`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${releaseVersion}&search=1"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${releaseVersion}&search=1`);
     expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
     expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${welcomeBuildTag}`);
     expect(mainJs).toContain(`const BUILD_VERSION = '${releaseVersion}'`);
     expect(controllerJs).toContain(`../services/BroadcastService.js?v=${releaseVersion}`);
-    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${releaseVersion}`);
+    expect(controllerJs).toContain(`../renderers/UIRenderer.js?v=${releaseVersion}&search=1`);
     expect(controllerJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(uiRendererJs).toContain(`../utils/htmlSecurity.js?v=${buildTag}`);
     expect(controllerJs).toContain(`../services/NotionService.js?v=${storageBuildTag}`);
