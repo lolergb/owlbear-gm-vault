@@ -116,10 +116,7 @@ export class ConfigParser {
       pages,
       categories: subcategories,
       collapsed: categoryJson.collapsed === true,
-      order: Array.isArray(categoryJson.order) ? categoryJson.order : null,
-      visibleToPlayers: categoryJson.visibleToPlayers || false,
-      sharedWithPlayerIds: categoryJson.sharedWithPlayerIds,
-      playerAccessEnabled: categoryJson.playerAccessEnabled
+      order: Array.isArray(categoryJson.order) ? categoryJson.order : null
     });
   }
 
@@ -159,10 +156,7 @@ export class ConfigParser {
       pages,
       categories,
       collapsed: categoryJson.collapsed === true,
-      order: order.length > 0 ? order : null,
-      visibleToPlayers: categoryJson.visibleToPlayers || false,
-      sharedWithPlayerIds: categoryJson.sharedWithPlayerIds,
-      playerAccessEnabled: categoryJson.playerAccessEnabled
+      order: order.length > 0 ? order : null
     });
   }
 
@@ -323,10 +317,6 @@ export class ConfigParser {
     }
 
     const folderLabel = this._describeImportEntity('Folder', category);
-
-    if (hasOwn(category, 'playerAccessEnabled') && typeof category.playerAccessEnabled !== 'boolean') {
-      errors.push(`${folderLabel} must use true or false for player visibility state.`);
-    }
 
     // Validación para formato items[]
     if (hasOwn(category, 'items')) {
@@ -537,6 +527,8 @@ export class ConfigParser {
       'playerAccessEnabled', 'blockTypes',
       'icon', 'linkedTokenId', 'htmlContent', 'origin'
     ]);
+    // Accept obsolete folder access fields in older backups, but ignore them
+    // when parsing/exporting. Only pages retain audience and visibility state.
     const legacyCategoryFields = new Set([
       'id', 'name', 'pages', 'categories', 'collapsed', 'order',
       'visibleToPlayers', 'sharedWithPlayerIds', 'playerAccessEnabled'
@@ -733,15 +725,6 @@ export class ConfigParser {
       result.collapsed = true;
     }
 
-    if (category.visibleToPlayers) result.visibleToPlayers = true;
-    if (category.sharedWithPlayerIds?.length > 0) {
-      result.sharedWithPlayerIds = [...category.sharedWithPlayerIds];
-    }
-    if ((category.visibleToPlayers || category.sharedWithPlayerIds?.length > 0) &&
-        category.playerAccessEnabled === false) {
-      result.playerAccessEnabled = false;
-    }
-
     return result;
   }
 
@@ -841,15 +824,6 @@ export class ConfigParser {
 
     if (category.collapsed) {
       result.collapsed = true;
-    }
-
-    if (category.visibleToPlayers) result.visibleToPlayers = true;
-    if (category.sharedWithPlayerIds?.length > 0) {
-      result.sharedWithPlayerIds = [...category.sharedWithPlayerIds];
-    }
-    if ((category.visibleToPlayers || category.sharedWithPlayerIds?.length > 0) &&
-        category.playerAccessEnabled === false) {
-      result.playerAccessEnabled = false;
     }
 
     return result;

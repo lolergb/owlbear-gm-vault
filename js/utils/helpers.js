@@ -342,8 +342,7 @@ export function filterVisiblePages(config) {
   }
   
   function filterCategory(category) {
-    // Folder-level access is no longer supported. Keep any legacy values in the
-    // GM's saved config, but never expose them in the player-facing payload.
+    // Ignore obsolete folder access fields even when filtering raw older JSON.
     const {
       visibleToPlayers: _legacyFolderVisibility,
       sharedWithPlayerIds: _legacyFolderPlayerIds,

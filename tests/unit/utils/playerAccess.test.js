@@ -79,7 +79,12 @@ describe('player access', () => {
       sharedWithPlayerIds: ['player-1']
     });
     sharedFolder.addPage(futurePage);
-    const config = new Config({ categories: [sharedFolder] });
+    const config = { categories: [{
+      ...sharedFolder.toJSON(),
+      // Raw old backups can still contain folder grants before parsing.
+      visibleToPlayers: true,
+      sharedWithPlayerIds: ['player-1']
+    }] };
 
     expect(canPlayerAccessPage(config, 'nested', 'player-1')).toBe(false);
     expect(canPlayerAccessPage(config, 'future', 'player-1')).toBe(true);

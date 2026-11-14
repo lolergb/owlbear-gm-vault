@@ -83,23 +83,40 @@ describe('ConfigParser', () => {
       expect(page.blockTypes).toEqual(['quote', 'callout']);
     });
 
-    it('preserva acceso selectivo en páginas y carpetas anidadas', () => {
-      const config = parser.parse({
-        categories: [{
-          name: 'Secrets',
-          sharedWithPlayerIds: ['player-1'],
-          pages: [{
-            name: 'Map',
-            url: 'https://example.com/map',
-            sharedWithPlayerIds: ['player-2']
-          }]
-        }]
-      });
+    it.each(['legacy', 'items'])('imports old %s folder metadata without retaining folder access or changing page grants', (format) => {
+      const obsoleteAccess = { visibleToPlayers: true, sharedWithPlayerIds: ['folder-player'], playerAccessEnabled: false };
+      const page = {
+        id: 'map', name: 'Map', url: 'https://example.com/map',
+        sharedWithPlayerIds: ['page-player'], playerAccessEnabled: false
+      };
+      const child = {
+        id: 'child', name: 'Child', ...obsoleteAccess,
+        ...(format === 'items' ? { items: [{ type: 'page', ...page }] } : { pages: [page] })
+      };
+      const json = { categories: [{
+        id: 'parent', name: 'Parent', ...obsoleteAccess,
+        ...(format === 'items' ? { items: [{ type: 'category', ...child }] } : { categories: [child] })
+      }] };
+      const original = JSON.stringify(json);
+      expect(parser.preflight(json)).toMatchObject({ valid: true, warnings: [] });
 
-      expect(config.categories[0].sharedWithPlayerIds).toEqual(['player-1']);
-      expect(config.categories[0].pages[0].sharedWithPlayerIds).toEqual(['player-2']);
-      expect(config.toJSON().categories[0].sharedWithPlayerIds).toEqual(['player-1']);
-      expect(config.toJSON().categories[0].pages[0].sharedWithPlayerIds).toEqual(['player-2']);
+      const config = parser.parse(json);
+      const folder = config.categories[0];
+      const nested = folder.categories[0];
+      expect(nested.pages[0].toJSON()).toMatchObject(page);
+      for (const key of Object.keys(obsoleteAccess)) {
+        expect(folder).not.toHaveProperty(key);
+        expect(nested).not.toHaveProperty(key);
+        expect(folder.clone(true)).not.toHaveProperty(key);
+      }
+
+      const exported = config.toJSON();
+      expect(exported.categories[0].categories[0].pages[0]).toMatchObject(page);
+      expect(JSON.stringify(exported)).not.toContain('folder-player');
+      const converted = format === 'items' ? parser.toLegacyFormat(json) : parser.toItemsFormat(json);
+      expect(JSON.stringify(converted)).not.toContain('folder-player');
+      expect(parser.parse(converted).findPageById('map').toJSON()).toMatchObject(page);
+      expect(JSON.stringify(json)).toBe(original);
     });
 
     it('preserva el estado desactivado sin perder la audiencia', () => {
