@@ -39,6 +39,45 @@ function createController(config) {
 }
 
 describe('ExtensionController CRUD ordering', () => {
+  it.each([
+    ['list', false, { sharedWithPlayerIds: ['player-1'] }],
+    ['detail', false, { visibleToPlayers: true, playerAccessEnabled: false }],
+    ['list', true, { visibleToPlayers: true }],
+    ['detail', true, { sharedWithPlayerIds: ['player-1'], playerAccessEnabled: false }]
+  ])('edits from %s (move: %s) without offering or changing player access', async (surface, move, access) => {
+    const page = new Page('Page', 'https://example.com/page', { id: 'page-edit', ...access });
+    const origin = new Category('Origin', { pages: [page] });
+    const destination = new Category('Destination');
+    const controller = createController(new Config({ categories: [origin, destination] }));
+    const path = [{ id: origin.id, name: origin.name }];
+    controller.currentPage = page;
+    controller.currentCategoryPath = path;
+    controller.currentPageIndex = 0;
+    controller._showModalForm = jest.fn();
+    controller._handleBack = jest.fn();
+
+    if (surface === 'detail') controller._showEditPageModal(page);
+    else controller._showEditPageModalFromList(page, path, 0);
+
+    const [, fields, submit] = controller._showModalForm.mock.calls[0];
+    expect(fields.map(field => field.name)).not.toContain('visibleToPlayers');
+    const data = Object.fromEntries(fields.map(field => [field.name, field.value]));
+    const previous = {
+      visibleToPlayers: page.visibleToPlayers,
+      sharedWithPlayerIds: [...page.sharedWithPlayerIds],
+      playerAccessEnabled: page.playerAccessEnabled
+    };
+    await submit({ ...data, name: 'Edited page', folder: move ? 'Destination' : data.folder });
+
+    const saved = controller.config.findPageById(page.id);
+    expect(saved.name).toBe('Edited page');
+    expect(saved).toMatchObject(previous);
+    if (move) {
+      expect(controller.config.categories[0].pages).toHaveLength(0);
+      expect(controller.config.categories[1].pages[0].id).toBe(page.id);
+    }
+  });
+
   it('renders a duplicated page above the original after Move up', async () => {
     const original = new Page('QA page', 'https://example.com/qa', {
       id: 'page-original',

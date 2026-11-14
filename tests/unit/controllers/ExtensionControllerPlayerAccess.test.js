@@ -5,6 +5,7 @@ import { Config } from '../../../js/models/Config.js';
 import { Page } from '../../../js/models/Page.js';
 import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
 import { UIRenderer } from '../../../js/renderers/UIRenderer.js';
+import { METADATA_KEY } from '../../../js/utils/constants.js';
 import { PLAYER_ACCESS_MODE } from '../../../js/utils/playerAccess.js';
 
 afterEach(() => {
@@ -25,13 +26,105 @@ function createController(config) {
     notifyFullVaultUpdated: jest.fn().mockResolvedValue(true),
     invalidatePage: jest.fn().mockResolvedValue(true)
   };
-  controller.uiRenderer = { setConfig: jest.fn() };
+  controller.uiRenderer = { setConfig: jest.fn(), updatePageVisibility: jest.fn() };
+  controller.OBR = { scene: { items: { getItems: jest.fn().mockResolvedValue([]) } } };
   controller.render = jest.fn();
   controller._showFeedback = jest.fn();
   return controller;
 }
 
 describe('ExtensionController player access', () => {
+  it.each([
+    [PLAYER_ACCESS_MODE.EVERYONE, []],
+    [PLAYER_ACCESS_MODE.SELECTED, ['player-1']]
+  ])('shows linked tokens from the %s chooser and preserves recipients through eye toggles', async (mode, playerIds) => {
+    const page = new Page('Linked', 'https://example.com/linked', { id: 'linked' });
+    const controller = createController(new Config({ pages: [page] }));
+    controller.analyticsService = { trackVisibilityToggle: jest.fn() };
+    controller.currentPage = page.clone(true);
+    const renderer = new UIRenderer();
+    controller.uiRenderer = renderer;
+    document.body.innerHTML = '<button id="page-visibility-button-header"></button>';
+    const header = document.getElementById('page-visibility-button-header');
+    document.body.appendChild(renderer._createPageButton(page, 'room-1', [], 0, true));
+    const token = { metadata: {
+      [`${METADATA_KEY}/pageId`]: page.id,
+      [`${METADATA_KEY}/pageVisible`]: false
+    } };
+    const items = controller.OBR.scene.items;
+    items.getItems.mockResolvedValue([token]);
+    items.updateItems = jest.fn(async (tokens, update) => update(tokens));
+
+    expect(await controller._handlePlayerAccessChange(page, mode, playerIds)).toBe(true);
+    expect(token.metadata[`${METADATA_KEY}/pageVisible`]).toBe(true);
+    expect(header.getAttribute('aria-pressed')).toBe('true');
+    expect(header.querySelector('.page-visibility-button__label').textContent)
+      .toBe(playerIds.length ? '1' : '');
+    expect(controller.currentPage.sharedWithPlayerIds).toEqual(playerIds);
+    expect(controller.broadcastService.notifyPlayerVaultUpdated).toHaveBeenCalledTimes(1);
+
+    expect(await controller._handleVisibilityChange(page, [], 0, false)).toBe(true);
+    expect(token.metadata[`${METADATA_KEY}/pageVisible`]).toBe(false);
+    expect(header.getAttribute('aria-pressed')).toBe('false');
+    expect(controller.config.findPageById(page.id).sharedWithPlayerIds).toEqual(playerIds);
+    expect(await controller._handleVisibilityChange(page, [], 0, true)).toBe(true);
+    expect(token.metadata[`${METADATA_KEY}/pageVisible`]).toBe(true);
+    expect(controller.config.findPageById(page.id).sharedWithPlayerIds).toEqual(playerIds);
+    expect(controller.currentPage.sharedWithPlayerIds).toEqual(playerIds);
+  });
+
+  it('restores paused recipients without changing tokens or UI when chooser persistence fails', async () => {
+    const page = new Page('Paused', 'https://example.com/paused', {
+      id: 'paused', sharedWithPlayerIds: ['player-1'], playerAccessEnabled: false
+    });
+    const controller = createController(new Config({ pages: [page] }));
+    controller.currentPage = page.clone(true);
+    const previous = page.toJSON();
+    controller.storageService.saveLocalConfig.mockReturnValue(false);
+
+    expect(await controller._handlePlayerAccessChange(page, PLAYER_ACCESS_MODE.EVERYONE)).toBe(false);
+
+    expect(page.toJSON()).toEqual(previous);
+    expect(controller.currentPage.toJSON()).toEqual(previous);
+    expect(controller.config.findPageById(page.id).toJSON()).toEqual(previous);
+    expect(controller.OBR.scene.items.getItems).not.toHaveBeenCalled();
+    expect(controller.uiRenderer.updatePageVisibility).not.toHaveBeenCalled();
+    expect(controller.render).not.toHaveBeenCalled();
+    expect(controller.broadcastService.notifyPlayerVaultUpdated).not.toHaveBeenCalled();
+    expect(controller.broadcastService.invalidatePage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the chooser usable after a failed save and allows retrying', async () => {
+    const page = new Page('Secret', 'https://example.com/secret');
+    const controller = createController(new Config({ pages: [page] }));
+    controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([]) };
+    controller.storageService.saveLocalConfig.mockReturnValue(false);
+    await controller._showPlayerAccessModal(page);
+    document.querySelector('input[name="player-access-everyone"]').click();
+    const save = document.querySelector('.player-access-actions .btn--primary');
+    save.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(save.disabled).toBe(false);
+    expect(document.querySelector('.player-access-error').textContent).toContain('Could not show this page');
+    controller.storageService.saveLocalConfig.mockReturnValue(true);
+    save.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.querySelector('#player-access-modal')).toBeNull();
+    expect(controller.config.findPageById(page.id).playerAccessEnabled).toBe(true);
+  });
+
+  it('does not revoke cached content when expanding selected access to everyone', async () => {
+    const page = new Page('Secret', 'https://example.com/secret', {
+      sharedWithPlayerIds: ['player-1']
+    });
+    const controller = createController(new Config({ pages: [page] }));
+
+    expect(await controller._handlePlayerAccessChange(page, PLAYER_ACCESS_MODE.EVERYONE)).toBe(true);
+    expect(controller.config.findPageById(page.id).sharedWithPlayerIds).toEqual([]);
+    expect(controller.broadcastService.invalidatePage).not.toHaveBeenCalled();
+  });
+
   it('persists selected players without broadcasting their ACL in the legacy config', async () => {
     const page = new Page('Secret', 'https://example.com/secret', { id: 'secret' });
     const controller = createController(new Config({
@@ -40,10 +133,8 @@ describe('ExtensionController player access', () => {
 
     const saved = await controller._handlePlayerAccessChange(
       page,
-      'page',
       PLAYER_ACCESS_MODE.SELECTED,
-      ['player-1', 'player-2'],
-      [{ id: controller.config.categories[0].id, name: 'Secrets' }]
+      ['player-1', 'player-2']
     );
 
     expect(saved).toBe(true);
@@ -64,10 +155,8 @@ describe('ExtensionController player access', () => {
 
     const saved = await controller._handlePlayerAccessChange(
       page,
-      'page',
       PLAYER_ACCESS_MODE.SELECTED,
-      ['player-1'],
-      []
+      ['player-1']
     );
 
     expect(saved).toBe(true);
@@ -84,7 +173,7 @@ describe('ExtensionController player access', () => {
       ])
     };
     controller._handlePlayerAccessChange = jest.fn().mockResolvedValue(true);
-    await controller._showPlayerAccessModal(page, 'page');
+    await controller._showPlayerAccessModal(page);
 
     expect(document.querySelector('.player-access-modal.modal__content')).not.toBeNull();
     expect(document.querySelector('#player-access-modal-title').textContent).toBe('Choose players');
@@ -116,7 +205,7 @@ describe('ExtensionController player access', () => {
     save.click();
     await Promise.resolve();
     expect(controller._handlePlayerAccessChange)
-      .toHaveBeenCalledWith(page, 'page', PLAYER_ACCESS_MODE.SELECTED, ['offline'], []);
+      .toHaveBeenCalledWith(page, PLAYER_ACCESS_MODE.SELECTED, ['offline']);
     expect(document.querySelector('#player-access-modal')).toBeNull();
   });
 
@@ -128,7 +217,7 @@ describe('ExtensionController player access', () => {
     const controller = createController(new Config({ pages: [page] }));
     controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([]) };
     controller._handlePlayerAccessChange = jest.fn().mockResolvedValue(true);
-    await controller._showPlayerAccessModal(page, 'page');
+    await controller._showPlayerAccessModal(page);
 
     const everyone = document.querySelector('input[name="player-access-everyone"]');
     const offline = document.querySelector('input[value="offline"]');
@@ -141,14 +230,14 @@ describe('ExtensionController player access', () => {
     document.querySelector('.player-access-actions .btn--primary').click();
     await Promise.resolve();
     expect(controller._handlePlayerAccessChange)
-      .toHaveBeenCalledWith(page, 'page', PLAYER_ACCESS_MODE.EVERYONE, [], []);
+      .toHaveBeenCalledWith(page, PLAYER_ACCESS_MODE.EVERYONE, []);
   });
 
   it('allows Everyone even when no player has joined yet', async () => {
     const page = new Page('Secret', 'https://example.com/secret');
     const controller = createController(new Config({ pages: [page] }));
     controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([]) };
-    await controller._showPlayerAccessModal(page, 'page');
+    await controller._showPlayerAccessModal(page);
 
     const save = document.querySelector('.player-access-actions .btn--primary');
     expect(save.disabled).toBe(true);
@@ -168,11 +257,7 @@ describe('ExtensionController player access', () => {
     const controller = createController(new Config({ categories: [folder] }));
     controller.playerDirectoryService = { listPlayers: jest.fn().mockResolvedValue([]) };
 
-    await controller._showPlayerAccessModal(
-      page,
-      'page',
-      [{ id: folder.id, name: folder.name }]
-    );
+    await controller._showPlayerAccessModal(page);
 
     expect(document.querySelector('.player-access-inherited')).toBeNull();
     expect(document.querySelector('.player-access-audience legend .form__label').textContent)
@@ -187,10 +272,8 @@ describe('ExtensionController player access', () => {
 
     await expect(controller._handlePlayerAccessChange(
       folder,
-      'category',
       PLAYER_ACCESS_MODE.EVERYONE,
-      [],
-      [{ id: folder.id, name: folder.name }]
+      []
     )).resolves.toBe(false);
     expect(controller.storageService.saveLocalConfig).not.toHaveBeenCalled();
   });

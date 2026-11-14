@@ -18,7 +18,6 @@ import {
   canPlayerAccessPage,
   filterConfigForPlayer,
   getPlayerAudienceMode,
-  getPlayerAccessMode,
   isPlayerAccessEnabled,
   setPlayerAccessEnabled,
   normalizePlayerIds
@@ -753,81 +752,73 @@ export class ExtensionController {
   }
 
   /**
-   * Actualiza la visibilidad de una página
-   * @param {Object} page - Página a actualizar
-   * @param {Array} categoryPath - Ruta de categorías
-   * @param {number} pageIndex - Índice de la página
-   * @param {boolean} newVisibility - Nueva visibilidad
+   * Guarda los destinatarios o activa/pausa el acceso desde cualquier control.
+   * Solo actualiza la UI y los tokens cuando se ha guardado el cambio.
    * @private
    */
-  async _updatePageVisibility(page, categoryPath, pageIndex, newVisibility) {
-    if (!this.config || !this.isGM) return false;
+  async _savePageAccess(page, { mode, playerIds = [], enabled } = {}) {
+    if (!page || !this.config || !this.isGM || this.isCoGM) return false;
 
-    log('👁️ Actualizando visibilidad de página:', page.name, '->', newVisibility);
+    const findStoredPage = () => page.id
+      ? this.config.findPageById(page.id)
+      : page.url ? this.config.findPageByUrl(page.url) : null;
+    const storedPage = findStoredPage();
+    if (!storedPage) return false;
 
-    // Navegar a la categoría correcta
-    const currentLevel = this._navigateToCategory(categoryPath);
-    if (!currentLevel) return false;
+    const previous = {
+      visibleToPlayers: storedPage.visibleToPlayers === true,
+      sharedWithPlayerIds: normalizePlayerIds(storedPage.sharedWithPlayerIds),
+      playerAccessEnabled: isPlayerAccessEnabled(storedPage)
+    };
+    const next = { ...previous };
+    if (mode !== undefined) applyPlayerAccess(next, mode, playerIds);
+    if (enabled !== undefined) setPlayerAccessEnabled(next, enabled);
 
-    // Encontrar y actualizar la página (por ID primero, luego por nombre)
-    const pages = currentLevel.pages || [];
-    let pageToUpdate = null;
-    if (page.id) {
-      pageToUpdate = pages.find(p => p.id === page.id);
+    Object.assign(storedPage, next);
+    let saved = false;
+    try {
+      saved = await this.saveConfig(this.config, { render: false });
+    } catch (error) {
+      logError('Error guardando el acceso de la página:', error);
     }
-    if (!pageToUpdate) {
-      pageToUpdate = pages.find(p => p.name === page.name);
-    }
-    
-    if (pageToUpdate) {
-      const previousVisibility = pageToUpdate.visibleToPlayers === true;
-      const previousPlayerIds = normalizePlayerIds(pageToUpdate.sharedWithPlayerIds);
-      const previousAccessEnabled = isPlayerAccessEnabled(pageToUpdate);
-      setPlayerAccessEnabled(pageToUpdate, newVisibility);
-      let saved = false;
+    if (!saved) {
+      // saveConfig reparses the config, so restore the stored page and the
+      // references held by the list, detail view, or dialog.
+      Object.assign(storedPage, previous);
+      Object.assign(page, previous);
+      const rollbackPage = findStoredPage();
+      if (rollbackPage) Object.assign(rollbackPage, previous);
       try {
-        saved = await this.saveConfig(this.config, { render: false });
+        await this.saveConfig(this.config, { render: false });
       } catch (error) {
-        logError('Error guardando la visibilidad de la página:', error);
+        logError('Error restaurando el acceso anterior:', error);
       }
-
-      if (!saved) {
-        pageToUpdate.visibleToPlayers = previousVisibility;
-        pageToUpdate.sharedWithPlayerIds = previousPlayerIds;
-        pageToUpdate.playerAccessEnabled = previousAccessEnabled;
-        const rollbackPage = page.id
-          ? this.config?.findPageById?.(page.id)
-          : this.config?.findPageByName?.(page.name);
-        if (rollbackPage) rollbackPage.visibleToPlayers = previousVisibility;
-        if (rollbackPage) rollbackPage.sharedWithPlayerIds = previousPlayerIds;
-        if (rollbackPage) rollbackPage.playerAccessEnabled = previousAccessEnabled;
-        page.visibleToPlayers = previousVisibility;
-        page.sharedWithPlayerIds = previousPlayerIds;
-        page.playerAccessEnabled = previousAccessEnabled;
-        try {
-          await this.saveConfig(this.config, { render: false });
-        } catch (error) {
-          logError('Error restaurando la visibilidad anterior:', error);
-        }
-        return false;
-      }
-
-      setPlayerAccessEnabled(page, newVisibility);
-
-      if (!newVisibility) {
-        const contentId = pageToUpdate.getNotionPageId?.() || pageToUpdate.id;
-        await this.broadcastService.invalidatePage(contentId);
-      }
-      
-      // Actualizar tokens vinculados a esta página
-      await this._updateLinkedTokensVisibility(page.id, page.url, newVisibility);
-      return true;
-    } else {
-      logError('No se encontró la página:', page.name);
       return false;
     }
+
+    const isRestrictive = previous.playerAccessEnabled && (
+      !next.playerAccessEnabled ||
+      (!next.visibleToPlayers && (
+        previous.visibleToPlayers ||
+        previous.sharedWithPlayerIds.some(id => !next.sharedWithPlayerIds.includes(id))
+      ))
+    );
+    if (isRestrictive) {
+      const contentId = storedPage.getNotionPageId?.() || storedPage.id;
+      try {
+        await this.broadcastService.invalidatePage(contentId);
+      } catch (error) {
+        logError('Error notificando el cambio de acceso:', error);
+      }
+    }
+
+    await this._updateLinkedTokensVisibility(storedPage.id, storedPage.url, next.playerAccessEnabled);
+    Object.assign(page, next);
+    this.uiRenderer?.updatePageVisibility?.(page, next.playerAccessEnabled);
+    this._updateCurrentPageVisibility(page, next.playerAccessEnabled);
+    return true;
   }
-  
+
   /**
    * Actualiza la visibilidad en los tokens vinculados a una página
    * @private
@@ -867,10 +858,8 @@ export class ExtensionController {
       ? 'Could not show this page. Try again.'
       : 'Could not hide this page. Try again.';
     try {
-      const updated = await this._updatePageVisibility(page, categoryPath, pageIndex, visible);
+      const updated = await this._savePageAccess(page, { enabled: visible });
       if (updated) {
-        this.uiRenderer?.updatePageVisibility?.(page, visible);
-        this._updateCurrentPageVisibility(page, visible);
         this.analyticsService.trackVisibilityToggle(page.name, visible);
         this._showFeedback(getVisibilityStatusLabel(page));
       } else {
@@ -894,7 +883,9 @@ export class ExtensionController {
         (this.currentPage?.url || '') === (page?.url || '');
     if (!matchesCurrentPage) return;
 
-    setPlayerAccessEnabled(this.currentPage, visible);
+    this.currentPage.visibleToPlayers = page.visibleToPlayers;
+    this.currentPage.sharedWithPlayerIds = normalizePlayerIds(page.sharedWithPlayerIds);
+    this.currentPage.playerAccessEnabled = visible;
     const visibilityButton = document.getElementById('page-visibility-button-header');
     if (visibilityButton) {
       this.uiRenderer?._setVisibilityButtonState?.(
@@ -905,65 +896,17 @@ export class ExtensionController {
     }
   }
 
-  async _handlePlayerAccessChange(target, targetType, mode, playerIds = [], categoryPath = []) {
-    if (!this.config || !this.isGM || this.isCoGM || targetType !== 'page') return false;
+  async _handlePlayerAccessChange(page, mode, playerIds = []) {
+    const saved = await this._savePageAccess(page, { mode, playerIds });
+    if (!saved) return false;
 
-    const storedTarget = this.config.findPageById(target?.id)
-      || this.config.findPageByUrl(target?.url)
-      || target;
-    if (!storedTarget) return false;
-
-    const previousMode = getPlayerAccessMode(storedTarget);
-    const previousAudienceMode = getPlayerAudienceMode(storedTarget);
-    const previousAccessEnabled = isPlayerAccessEnabled(storedTarget);
-    const previousPlayerIds = normalizePlayerIds(storedTarget.sharedWithPlayerIds);
-    const normalizedIds = normalizePlayerIds(playerIds);
-    const isRestrictive = previousAccessEnabled && previousMode === PLAYER_ACCESS_MODE.EVERYONE
-      ? mode !== PLAYER_ACCESS_MODE.EVERYONE
-      : previousAccessEnabled && previousMode === PLAYER_ACCESS_MODE.SELECTED && (
-        mode === PLAYER_ACCESS_MODE.GM_ONLY ||
-        previousPlayerIds.some(playerId => !normalizedIds.includes(playerId))
-      );
-    applyPlayerAccess(storedTarget, mode, normalizedIds);
-    if (target !== storedTarget) applyPlayerAccess(target, mode, normalizedIds);
-
-    const saved = await this.saveConfig(this.config);
-    if (!saved) {
-      const rollbackTarget = this.config.findPageById(target?.id)
-        || this.config.findPageByUrl(target?.url);
-      applyPlayerAccess(rollbackTarget, previousAudienceMode, previousPlayerIds);
-      setPlayerAccessEnabled(rollbackTarget, previousAccessEnabled);
-      applyPlayerAccess(target, previousAudienceMode, previousPlayerIds);
-      setPlayerAccessEnabled(target, previousAccessEnabled);
-      return false;
-    }
-
-    const savedTarget = this.config.findPageById(target?.id)
-      || this.config.findPageByUrl(target?.url);
-    const affectedPages = [savedTarget].filter(Boolean);
-    if (isRestrictive) {
-      await Promise.all(affectedPages.map((page) => {
-        const contentId = page?.getNotionPageId?.() || page?.id;
-        return contentId ? this.broadcastService.invalidatePage(contentId) : false;
-      }));
-    }
-
-    if (this.currentPage?.id && affectedPages.some(page => page.id === this.currentPage.id)) {
-      const currentStoredPage = this.config.findPageById(this.currentPage.id);
-      if (currentStoredPage) {
-        this.currentPage.visibleToPlayers = currentStoredPage.visibleToPlayers;
-        this.currentPage.sharedWithPlayerIds = normalizePlayerIds(currentStoredPage.sharedWithPlayerIds);
-        this.currentPage.playerAccessEnabled = isPlayerAccessEnabled(currentStoredPage);
-        this._createPageDetailButtons(this.currentPage);
-      }
-    }
-
-    this._showFeedback(getVisibilityStatusLabel(savedTarget || target));
+    await this.render();
+    this._showFeedback(getVisibilityStatusLabel(page));
     return true;
   }
 
-  async _showPlayerAccessModal(target, targetType, categoryPath = []) {
-    if (!target || targetType !== 'page' || !this.playerDirectoryService) return;
+  async _showPlayerAccessModal(target) {
+    if (!target || !this.playerDirectoryService) return;
 
     const selectedIds = new Set(normalizePlayerIds(target.sharedWithPlayerIds));
     const knownPlayers = await this.playerDirectoryService.listPlayers();
@@ -1139,10 +1082,8 @@ export class ExtensionController {
       save.textContent = showPage ? 'Showing…' : 'Saving…';
       const saved = await this._handlePlayerAccessChange(
         target,
-        targetType,
         getMode(),
-        getCheckedIds(),
-        categoryPath
+        getCheckedIds()
       );
       if (saved) close();
       else {
@@ -1233,7 +1174,6 @@ export class ExtensionController {
         pageToUpdate.origin = normalizeContentOrigin(undefined, safeUrl);
       }
       if (newData.blockTypes !== undefined) pageToUpdate.blockTypes = newData.blockTypes;
-      if (newData.visibleToPlayers !== undefined) pageToUpdate.visibleToPlayers = newData.visibleToPlayers;
       if (newData.icon !== undefined) pageToUpdate.icon = newData.icon;
       if (newData.linkedTokenId !== undefined) pageToUpdate.linkedTokenId = newData.linkedTokenId;
       
@@ -3274,7 +3214,7 @@ export class ExtensionController {
         {
           icon: 'img/icon-eye-open.svg',
           text: 'Choose players',
-          action: () => this._showPlayerAccessModal(page, 'page', this.currentCategoryPath)
+          action: () => this._showPlayerAccessModal(page)
         }
       );
     }
@@ -3481,8 +3421,7 @@ export class ExtensionController {
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
       { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
-      { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
-      { name: 'visibleToPlayers', label: 'Available to everyone', type: 'checkbox', value: page.visibleToPlayers }
+      { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' }
     ], async (data) => {
       const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
@@ -3505,7 +3444,6 @@ export class ExtensionController {
         if (data.name !== undefined) page.name = data.name;
         if (data.url !== undefined) page.url = data.url;
         if (data.blockTypes !== undefined) page.blockTypes = data.blockTypes;
-        if (data.visibleToPlayers !== undefined) page.visibleToPlayers = data.visibleToPlayers;
         
         // Mover a la nueva carpeta
         await this._moveItemToFolder(page, this.currentCategoryPath, data.folder, 'page');
@@ -3556,8 +3494,7 @@ export class ExtensionController {
         helpText: 'For OneDrive, use … → Embed → Generate, then paste the iframe or its src URL.'
       },
       { name: 'folder', label: 'Folder', type: 'select', folderPicker: true, value: folderValue, options: folderOptions },
-      { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' },
-      { name: 'visibleToPlayers', label: 'Available to everyone', type: 'checkbox', value: page.visibleToPlayers }
+      { name: 'blockTypes', label: 'Block filter (comma-separated)', type: 'text', value: currentBlockTypes, placeholder: 'e.g., paragraph,heading_1,image' }
     ], async (data) => {
       const safeUrl = normalizePageUrlInput(data.url);
       if (!safeUrl) {
@@ -3580,7 +3517,6 @@ export class ExtensionController {
         if (data.name !== undefined) page.name = data.name;
         if (data.url !== undefined) page.url = data.url;
         if (data.blockTypes !== undefined) page.blockTypes = data.blockTypes;
-        if (data.visibleToPlayers !== undefined) page.visibleToPlayers = data.visibleToPlayers;
         
         // Mover a la nueva carpeta
         await this._moveItemToFolder(page, categoryPath, data.folder, 'page');
@@ -6229,8 +6165,8 @@ export class ExtensionController {
       onPageDuplicate: async (page, categoryPath, pageIndex) => {
         await this._handlePageDuplicate(page, categoryPath, pageIndex);
       },
-      onPageAccessManage: (page, categoryPath) => {
-        this._showPlayerAccessModal(page, 'page', categoryPath);
+      onPageAccessManage: (page) => {
+        this._showPlayerAccessModal(page);
       },
       // Categorías
       onCategoryEdit: async (category, categoryPath) => {
