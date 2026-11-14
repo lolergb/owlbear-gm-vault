@@ -195,6 +195,8 @@ describe('StorageService', () => {
       localStorage.setItem('notion-blocks-cache-page-1', '{}');
       localStorage.setItem('category-collapsed-Test-level-0', 'true');
       localStorage.setItem('other-extension/data', 'keep');
+      localStorage.setItem('gm-vault-beta-recovery-v1:backup:room-1:123', '{"private":"old vault"}');
+      localStorage.setItem('gm-vault-beta-recovery-v1:room-1', '{"outcome":"imported"}');
       sessionStorage.setItem('notion_modal_cache', 'remove');
       sessionStorage.setItem('other-session-data', 'keep');
 
@@ -205,6 +207,8 @@ describe('StorageService', () => {
       expect(localStorage.getItem('notion-pages-json-room-1')).toBeNull();
       expect(localStorage.getItem('notion-blocks-cache-page-1')).toBeNull();
       expect(localStorage.getItem('category-collapsed-Test-level-0')).toBeNull();
+      expect(localStorage.getItem('gm-vault-beta-recovery-v1:backup:room-1:123')).toBeNull();
+      expect(localStorage.getItem('gm-vault-beta-recovery-v1:room-1')).toBe('{"outcome":"imported"}');
       expect(sessionStorage.getItem('notion_modal_cache')).toBeNull();
       expect(sessionStorage.getItem('other-session-data')).toBe('keep');
     });

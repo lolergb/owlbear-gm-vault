@@ -282,7 +282,8 @@ describe('image share background contract', () => {
 
     expect(manifest.background_url).toBe('/html/background.html');
     expect(localManifest.background_url).toBe('/html/background.html');
-    expect(manifest.version).toBe('2.1.1');
+    const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+    expect(manifest.version).toBe(packageJson.version);
     expect(localManifest.version).toBe('2.1.0-beta.2');
   });
 
