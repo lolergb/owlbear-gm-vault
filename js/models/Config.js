@@ -110,7 +110,9 @@ export class Config {
    * @returns {Page[]}
    */
   getVisiblePages() {
-    return this.getAllPages().filter(p => p.visibleToPlayers);
+    return this.getAllPages().filter(p =>
+      p.visibleToPlayers && p.playerAccessEnabled !== false
+    );
   }
 
   /**
@@ -240,7 +242,9 @@ export class Config {
    */
   filterVisible() {
     const filterCategory = (category) => {
-      const filteredPages = category.pages.filter(p => p.visibleToPlayers);
+      const filteredPages = category.pages.filter(p =>
+        p.visibleToPlayers && p.playerAccessEnabled !== false
+      );
       const filteredCategories = category.categories
         .map(filterCategory)
         .filter(c => c.pages.length > 0 || c.categories.length > 0);
@@ -256,7 +260,9 @@ export class Config {
       .map(filterCategory)
       .filter(c => c.pages.length > 0 || c.categories.length > 0);
 
-    const filteredPages = this.pages.filter(page => page.visibleToPlayers);
+    const filteredPages = this.pages.filter(page =>
+      page.visibleToPlayers && page.playerAccessEnabled !== false
+    );
 
     return new Config({
       categories: filteredCategories,

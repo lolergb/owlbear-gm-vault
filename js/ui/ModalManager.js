@@ -6,6 +6,8 @@
 
 import { log } from '../utils/logger.js?v=20260722-4';
 
+let modalId = 0;
+
 /**
  * Gestor de modales de la UI
  */
@@ -17,6 +19,7 @@ export class ModalManager {
     this.container = null;
     // Callback para cuando se cierra un modal
     this.onClose = null;
+    this.previouslyFocusedElement = null;
   }
 
   /**
@@ -244,6 +247,7 @@ export class ModalManager {
    */
   close() {
     if (this.activeModal) {
+      const previouslyFocusedElement = this.previouslyFocusedElement;
       this.activeModal.classList.remove('modal-visible');
       
       setTimeout(() => {
@@ -251,11 +255,13 @@ export class ModalManager {
           this.activeModal.parentNode.removeChild(this.activeModal);
         }
         this.activeModal = null;
+        this.previouslyFocusedElement = null;
         
         if (this.onClose) {
           this.onClose();
           this.onClose = null;
         }
+        if (previouslyFocusedElement?.isConnected) previouslyFocusedElement.focus();
       }, 200);
 
       log('Modal cerrado');
@@ -279,11 +285,15 @@ export class ModalManager {
    * @private
    */
   _createModalBase(title) {
+    const titleId = `gm-vault-modal-title-${++modalId}`;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
     const container = document.createElement('div');
     container.className = 'modal-container';
+    container.setAttribute('role', 'dialog');
+    container.setAttribute('aria-modal', 'true');
+    container.setAttribute('aria-labelledby', titleId);
 
     // Header
     const header = document.createElement('div');
@@ -291,10 +301,13 @@ export class ModalManager {
 
     const titleEl = document.createElement('h3');
     titleEl.className = 'modal-title';
+    titleEl.id = titleId;
     titleEl.textContent = title;
 
     const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
     closeBtn.className = 'modal-close-button';
+    closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.innerHTML = '&times;';
     closeBtn.addEventListener('click', () => this.close());
 
@@ -424,6 +437,9 @@ export class ModalManager {
       this.close();
     }
 
+    this.previouslyFocusedElement = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     this.container.appendChild(modal);
     this.activeModal = modal;
 

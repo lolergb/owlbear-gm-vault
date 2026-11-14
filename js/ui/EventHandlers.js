@@ -202,7 +202,7 @@ export class EventHandlers {
         },
         {
           name: 'visibleToPlayers',
-          label: 'Visible to players',
+          label: 'Available to everyone',
           type: 'checkbox',
           value: false
         }

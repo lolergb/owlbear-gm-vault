@@ -199,6 +199,8 @@ export class ConfigParser {
     return new Page(pageJson.name, pageJson.url || null, {
       id: pageJson.id, // Preservar ID existente (si no hay, Page genera uno nuevo)
       visibleToPlayers: pageJson.visibleToPlayers === true,
+      sharedWithPlayerIds: pageJson.sharedWithPlayerIds,
+      playerAccessEnabled: pageJson.playerAccessEnabled,
       blockTypes: blockTypes?.length ? blockTypes : null,
       icon: pageJson.icon || null,
       linkedTokenId: pageJson.linkedTokenId || null,
@@ -440,6 +442,10 @@ export class ConfigParser {
       errors.push(`${pageLabel} must use true or false for player visibility.`);
     }
 
+    if (hasOwn(page, 'playerAccessEnabled') && typeof page.playerAccessEnabled !== 'boolean') {
+      errors.push(`${pageLabel} must use true or false for player visibility state.`);
+    }
+
     return errors;
   }
 
@@ -517,14 +523,19 @@ export class ConfigParser {
     };
 
     const pageFields = new Set([
-      'type', 'id', 'name', 'url', 'visibleToPlayers', 'blockTypes',
+      'type', 'id', 'name', 'url', 'visibleToPlayers', 'sharedWithPlayerIds',
+      'playerAccessEnabled', 'blockTypes',
       'icon', 'linkedTokenId', 'htmlContent', 'origin'
     ]);
+    // Accept obsolete folder access fields in older backups, but ignore them
+    // when parsing/exporting. Only pages retain audience and visibility state.
     const legacyCategoryFields = new Set([
-      'id', 'name', 'pages', 'categories', 'collapsed', 'order'
+      'id', 'name', 'pages', 'categories', 'collapsed', 'order',
+      'visibleToPlayers', 'sharedWithPlayerIds', 'playerAccessEnabled'
     ]);
     const itemsCategoryFields = new Set([
-      'type', 'id', 'name', 'items', 'collapsed'
+      'type', 'id', 'name', 'items', 'collapsed',
+      'visibleToPlayers', 'sharedWithPlayerIds', 'playerAccessEnabled'
     ]);
 
     const visitPage = (page, path) => collectUnknown(page, pageFields, path);
@@ -731,6 +742,13 @@ export class ConfigParser {
     if (page.url) item.url = page.url;
     if (page.htmlContent) item.htmlContent = page.htmlContent;
     if (page.visibleToPlayers) item.visibleToPlayers = true;
+    if (page.sharedWithPlayerIds?.length > 0) {
+      item.sharedWithPlayerIds = [...page.sharedWithPlayerIds];
+    }
+    if ((page.visibleToPlayers || page.sharedWithPlayerIds?.length > 0) &&
+        page.playerAccessEnabled === false) {
+      item.playerAccessEnabled = false;
+    }
     if (page.blockTypes) item.blockTypes = page.blockTypes;
     if (page.icon) item.icon = page.icon;
     if (page.linkedTokenId) item.linkedTokenId = page.linkedTokenId;
@@ -825,6 +843,13 @@ export class ConfigParser {
     if (item.url) page.url = item.url;
     if (item.htmlContent) page.htmlContent = item.htmlContent;
     if (item.visibleToPlayers) page.visibleToPlayers = true;
+    if (item.sharedWithPlayerIds?.length > 0) {
+      page.sharedWithPlayerIds = [...item.sharedWithPlayerIds];
+    }
+    if ((item.visibleToPlayers || item.sharedWithPlayerIds?.length > 0) &&
+        item.playerAccessEnabled === false) {
+      page.playerAccessEnabled = false;
+    }
     if (item.blockTypes) page.blockTypes = item.blockTypes;
     if (item.icon) page.icon = item.icon;
     if (item.linkedTokenId) page.linkedTokenId = item.linkedTokenId;

@@ -16,3 +16,8 @@ export {
   shareImageWithPlayers
 } from './ImageShareService.js';
 export { ImageCacheService, getImageCacheService } from './ImageCacheService.js';
+export {
+  PlayerDirectoryService,
+  publishCurrentPlayerProfile,
+  setupPlayerProfilePublishing
+} from './PlayerDirectoryService.js';

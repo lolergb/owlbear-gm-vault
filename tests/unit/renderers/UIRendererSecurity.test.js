@@ -44,7 +44,7 @@ describe('UIRenderer HTML security', () => {
       })
     };
 
-    await renderer._loadPageIcon(button, 'page-1', 'Unsafe page', '');
+    await renderer._loadPageIcon(button, 'page-1', { name: 'Unsafe page' }, '');
 
     expect(button.querySelector('.page-icon-emoji').textContent).toBe(
       '<img src=x onerror="globalThis.__xss = true">'
@@ -54,7 +54,7 @@ describe('UIRenderer HTML security', () => {
     renderer.notionService.fetchPageInfo.mockResolvedValue({
       icon: { type: 'external', external: { url: 'javascript:alert(1)' } }
     });
-    await renderer._loadPageIcon(button, 'page-1', 'Unsafe page', '');
+    await renderer._loadPageIcon(button, 'page-1', { name: 'Unsafe page' }, '');
 
     expect(button.querySelector('img')).toBeNull();
   });

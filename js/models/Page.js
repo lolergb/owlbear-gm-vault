@@ -7,6 +7,7 @@
 
 import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
+import { normalizePlayerIds } from '../utils/playerAccess.js';
 
 /**
  * Genera un ID único para páginas
@@ -31,6 +32,8 @@ export class Page {
    * @param {Object} options - Opciones adicionales
    * @param {string} [options.id] - ID único (se genera automáticamente si no se proporciona)
    * @param {boolean} [options.visibleToPlayers=false] - Si está visible para jugadores
+   * @param {string[]} [options.sharedWithPlayerIds=[]] - IDs de jugadores con acceso explícito
+   * @param {boolean} [options.playerAccessEnabled] - Si la audiencia configurada está activa
    * @param {string[]} [options.blockTypes] - Tipos de bloques a filtrar (Notion)
    * @param {Object} [options.icon] - Icono de la página
    * @param {string} [options.linkedTokenId] - ID del token vinculado
@@ -42,6 +45,9 @@ export class Page {
     this.name = name;
     this.url = url;
     this.visibleToPlayers = options.visibleToPlayers || false;
+    this.sharedWithPlayerIds = normalizePlayerIds(options.sharedWithPlayerIds);
+    const hasConfiguredAudience = this.visibleToPlayers || this.sharedWithPlayerIds.length > 0;
+    this.playerAccessEnabled = hasConfiguredAudience && options.playerAccessEnabled !== false;
     this.blockTypes = options.blockTypes || null;
     this.icon = options.icon || null;
     this.linkedTokenId = options.linkedTokenId || null;
@@ -166,6 +172,8 @@ export class Page {
     return new Page(this.name, this.url, {
       id: keepId ? this.id : undefined, // undefined genera nuevo ID
       visibleToPlayers: this.visibleToPlayers,
+      sharedWithPlayerIds: [...this.sharedWithPlayerIds],
+      playerAccessEnabled: this.playerAccessEnabled,
       blockTypes: this.blockTypes ? [...this.blockTypes] : null,
       icon: this.icon ? { ...this.icon } : null,
       linkedTokenId: this.linkedTokenId,
@@ -191,6 +199,14 @@ export class Page {
 
     if (this.visibleToPlayers) {
       json.visibleToPlayers = true;
+    }
+
+    if (this.sharedWithPlayerIds.length > 0) {
+      json.sharedWithPlayerIds = [...this.sharedWithPlayerIds];
+    }
+
+    if ((this.visibleToPlayers || this.sharedWithPlayerIds.length > 0) && !this.playerAccessEnabled) {
+      json.playerAccessEnabled = false;
     }
 
     if (this.blockTypes && this.blockTypes.length > 0) {
@@ -227,6 +243,8 @@ export class Page {
     return new Page(json.name, json.url || null, {
       id: json.id, // Si no existe, el constructor genera uno nuevo
       visibleToPlayers: json.visibleToPlayers,
+      sharedWithPlayerIds: json.sharedWithPlayerIds,
+      playerAccessEnabled: json.playerAccessEnabled,
       blockTypes: json.blockTypes,
       icon: json.icon,
       linkedTokenId: json.linkedTokenId,
