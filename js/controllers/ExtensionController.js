@@ -9,7 +9,8 @@ import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=20260722-
 import {
   BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
-  METADATA_KEY
+  METADATA_KEY,
+  VAULT_OWNER_KEY
 } from '../utils/constants.js?v=20260815-1';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
@@ -38,7 +39,7 @@ import { Category } from '../models/Category.js';
 
 // Services
 import { CacheService } from '../services/CacheService.js?v=20260812-1';
-import { StorageService } from '../services/StorageService.js?v=2.1.1';
+import { StorageService } from '../services/StorageService.js?v=2.1.2';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=20260815-1';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
@@ -67,6 +68,9 @@ import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
+import { BetaVaultMigration } from '../services/BetaVaultMigration.js';
+import { PRODUCTION_ORIGIN, MIGRATION_PREFIX, validRoom } from '../config/betaMigration.js';
+import { chooseBetaVault, betaRecoveryMessage } from '../ui/BetaMigrationDialog.js';
 
 /**
  * Controlador principal de la extensión
@@ -161,6 +165,10 @@ export class ExtensionController {
     
     // Obtener información del jugador y room
     await this._fetchPlayerInfo();
+
+    // Recover only this room, before loading/broadcasting its vault. Failure to
+    // reach beta storage never prevents the existing production vault loading.
+    await this._recoverBetaVault();
     
     // Obtener configuración
     await this._loadConfig();
@@ -2148,6 +2156,7 @@ export class ExtensionController {
    */
   cleanup() {
     log('🧹 Limpiando recursos...');
+    this.betaRecoveryAbort?.abort();
     this.announcementCancelled = true;
     this.betaPromotionCancelled = true;
 
@@ -3548,6 +3557,112 @@ export class ExtensionController {
 
     // Configurar event listeners de settings (solo una vez)
     this._setupSettingsEventListeners();
+    this._setupBetaRecoverySettings();
+  }
+
+  async _canRecoverBetaVault(roomId) {
+    try {
+      if (!this.isGM || this.isCoGM || this.roomId !== roomId || !validRoom(roomId)) return false;
+      const sdk = this.OBR;
+      const actualRoom = sdk.room.id || await sdk.room.getId();
+      if (actualRoom !== roomId || await sdk.player.getRole() !== 'GM') return false;
+      const id = await sdk.player.getId();
+      const connectionId = await sdk.player.getConnectionId();
+      if (id !== this.playerId || connectionId !== this.connectionId) return false;
+      // Read directly: the normal ownership helper intentionally swallows SDK
+      // failures, but migration must fail closed when ownership is unknown.
+      const metadata = await sdk.room.getMetadata();
+      const owner = metadata[VAULT_OWNER_KEY];
+      const players = await sdk.party.getPlayers();
+      const isOwner = owner?.id === id && (!owner.connectionId || owner.connectionId === connectionId);
+      const allowed = !owner?.id || isOwner || !players.some(player => player.role === 'GM' && player.id === owner.id &&
+        (!owner.connectionId || player.connectionId === owner.connectionId));
+      return allowed && this.isGM && !this.isCoGM && this.roomId === roomId;
+    } catch { return false; }
+  }
+
+  async _recoverBetaVault({ manual = false } = {}) {
+    if (window.location.origin !== PRODUCTION_ORIGIN ||
+        new URLSearchParams(window.location.search).get('modal') === 'true') return { status: 'ineligible' };
+    if (this.betaRecoveryPending) return this.betaRecoveryPending;
+    this.betaRecoveryAbort = new AbortController();
+    const migration = new BetaVaultMigration({
+      signal: this.betaRecoveryAbort.signal,
+      verifyContext: roomId => this._canRecoverBetaVault(roomId),
+      choose: () => chooseBetaVault({ signal: this.betaRecoveryAbort.signal })
+    });
+    this.betaRecoveryPending = migration.recover(this.roomId, { manual });
+    try {
+      const result = await this.betaRecoveryPending;
+      this.betaRecoveryResult = result;
+      if (manual && ['imported', 'identical'].includes(result.status)) {
+        await this._loadConfig();
+        this.uiRenderer.setConfig(this.config);
+        await this.render();
+        if (await this._canRecoverBetaVault(this.roomId)) {
+          await this.broadcastService.broadcastVisiblePages(filterVisiblePages(this.config.toJSON()));
+          await this.broadcastService.notifyFullVaultUpdated();
+        }
+      }
+      return result;
+    } finally { this.betaRecoveryPending = null; }
+  }
+
+  _setupBetaRecoverySettings() {
+    document.getElementById('beta-recovery-settings')?.remove();
+    if (!this.isGM || this.isCoGM || window.location.origin !== PRODUCTION_ORIGIN || !validRoom(this.roomId)) return;
+    const backup = document.getElementById('download-json-btn');
+    if (!backup) return;
+    const section = document.createElement('div');
+    section.id = 'beta-recovery-settings';
+    section.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:12px;';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn--ghost';
+    button.textContent = 'Recover beta vault';
+    const status = document.createElement('p');
+    status.className = 'settings__description';
+    status.setAttribute('role', 'status');
+    if (this.betaRecoveryResult && ['imported', 'identical', 'kept'].includes(this.betaRecoveryResult.status)) {
+      status.textContent = betaRecoveryMessage(this.betaRecoveryResult);
+    }
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      status.textContent = 'Checking your beta vault…';
+      try {
+        const result = await this._recoverBetaVault({ manual: true });
+        // Rendering can recreate Settings; rebuild this small section afterward.
+        this._setupBetaRecoverySettings();
+        const currentStatus = document.querySelector('#beta-recovery-settings [role="status"]');
+        if (currentStatus) currentStatus.textContent = betaRecoveryMessage(result);
+      } catch {
+        status.textContent = 'Recovery needs a reload to finish. Your original beta vault is safe.';
+      } finally { button.disabled = false; }
+    });
+    section.append(button, status);
+    try {
+      const prefix = MIGRATION_PREFIX + 'backup:' + this.roomId + ':';
+      const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+      const latest = keys.filter(key => key?.startsWith(prefix)).sort().at(-1);
+      if (latest) {
+        const download = document.createElement('button');
+        download.type = 'button';
+        download.className = 'btn btn--ghost';
+        download.textContent = 'Download vault before beta recovery';
+        download.addEventListener('click', () => {
+          const raw = localStorage.getItem(latest);
+          if (raw === null) return;
+          const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'gm-vault-before-beta-recovery.json';
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+        section.append(download);
+      }
+    } catch { /* The recovery action explains unavailable storage on demand. */ }
+    backup.closest('.form')?.append(section);
   }
 
   /**

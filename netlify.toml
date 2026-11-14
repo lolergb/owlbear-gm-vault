@@ -74,6 +74,13 @@
     Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
 
 # Configuración de build
+[[headers]]
+  for = "/html/beta-migration-bridge.html"
+  [headers.values]
+    Cache-Control = "no-store"
+    Referrer-Policy = "no-referrer"
+    Content-Security-Policy = "default-src 'none'; script-src 'self'; frame-ancestors https://owlbear-gm-vault.netlify.app https://www.owlbear.rodeo https://owlbear.rodeo; base-uri 'none'; form-action 'none'"
+
 # No se necesita build step - los archivos son estáticos
 [build]
   publish = "."

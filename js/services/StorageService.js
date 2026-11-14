@@ -14,6 +14,7 @@ import {
   ROOM_HTML_CACHE_KEY
 } from '../utils/constants.js?v=20260812-1';
 import { log, logError, getUserRole } from '../utils/logger.js?v=20260722-4';
+import { MIGRATION_PREFIX } from '../config/betaMigration.js';
 
 /**
  * Servicio para gestionar el almacenamiento de configuración
@@ -340,6 +341,9 @@ export class StorageService {
         if (key && key !== GLOBAL_TOKEN_KEY) {
           // Solo eliminar claves relacionadas con GM Vault
           if (key.startsWith(STORAGE_KEY_PREFIX) || 
+              // Delete private recovery backups too. Keep the non-content
+              // decision marker so clearing data cannot trigger re-import.
+              key.startsWith(MIGRATION_PREFIX + 'backup:') ||
               key.startsWith('notion_') || 
               key.startsWith('gm_vault_') ||
               key.startsWith('gmvault_') ||
