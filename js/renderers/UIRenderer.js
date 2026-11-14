@@ -53,6 +53,7 @@ export class UIRenderer {
     this.previewPlayerAccess = false;
     // Config para calcular posiciones
     this.config = null;
+    this.pageSearchQuery = '';
   }
 
   /**
@@ -182,6 +183,18 @@ export class UIRenderer {
       }
     }
 
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'input page-search';
+    search.placeholder = 'Search pages...';
+    search.setAttribute('aria-label', 'Search pages by name');
+    search.value = this.pageSearchQuery;
+    container.appendChild(search);
+    const results = document.createElement('div');
+    results.className = 'page-search-results';
+    results.hidden = true;
+    container.appendChild(results);
+
     // Obtener orden combinado del root (páginas + categorías mezcladas)
     const rootPages = config.pages || [];
     
@@ -216,6 +229,49 @@ export class UIRenderer {
         }
       }
     });
+
+    const navigation = Array.from(container.children).filter(element => element !== search && element !== results);
+    const updateSearch = () => {
+      this.pageSearchQuery = search.value;
+      const query = search.value.trim().toLocaleLowerCase();
+      navigation.forEach(element => { element.hidden = Boolean(query); });
+      results.hidden = !query;
+      results.replaceChildren();
+      if (!query) return;
+      let count = 0;
+      const visit = (node, path) => {
+        const pages = node.pages || [];
+        this._getCombinedOrder(node, pages).forEach(item => {
+          if (item.type === 'page') {
+            const page = pages[item.index];
+            if (!this._isPageRenderable(page, this.isGM) || !String(page.name || '').toLocaleLowerCase().includes(query)) return;
+            const result = document.createElement('div');
+            result.className = 'page-search-result';
+            if (path.length) {
+              const location = document.createElement('div');
+              location.className = 'page-search-result__path';
+              location.textContent = path.map(folder => folder.name).join(' / ');
+              result.appendChild(location);
+            }
+            result.appendChild(this._createPageButton(page, roomId, path, item.index, this.isGM));
+            results.appendChild(result);
+            count++;
+          } else if (item.type === 'category') {
+            const folder = (node.categories || [])[item.index];
+            if (folder) visit(folder, [...path, { id: folder.id, name: folder.name }]);
+          }
+        });
+      };
+      visit(config, []);
+      if (!count) {
+        const empty = document.createElement('p');
+        empty.className = 'page-search-empty';
+        empty.textContent = 'No pages found.';
+        results.appendChild(empty);
+      }
+    };
+    search.addEventListener('input', updateSearch);
+    updateSearch();
   }
 
   /**

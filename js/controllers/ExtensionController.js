@@ -65,7 +65,7 @@ import {
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.4';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.4&search=1';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.4';

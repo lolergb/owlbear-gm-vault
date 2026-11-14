@@ -705,6 +705,13 @@
     margin-bottom: 0;
   }
   
+  .page-search { width: 100%; box-sizing: border-box; }
+  .page-search-results:not([hidden]) { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .page-search-result__path, .page-search-empty { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+  .page-search-result__path { margin: 0 0 var(--spacing-sm); }
+  .page-search-result .page { margin-bottom: 0; }
+  .page-list [hidden] { display: none !important; }
+
   /* ==========================================================================
       Page (item de página)
       ========================================================================== */
