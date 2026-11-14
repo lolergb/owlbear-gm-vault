@@ -65,7 +65,7 @@ import {
 
 // Renderers
 import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.4';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.4&search=2';
 
 // Parsers & Builders
 import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.4';
@@ -2469,12 +2469,20 @@ export class ExtensionController {
   }
 
   _showVaultEmptyState() {
-    return this.vaultEmptyState?.show({
+    const shown = this.vaultEmptyState?.show({
       container: this.pagesContainer,
       canShow: () => this._canShowVaultEmptyState(),
       onAddPage: () => this._addPage({ openAfterSave: true }),
       onLoadExamples: () => this._loadExampleVault()
     });
+    if (shown) {
+      const header = document.getElementById('header');
+      header?.querySelector('.page-search-control')?.remove();
+      header?.classList.remove('page-search-active');
+      this.uiRenderer.pageSearchOpen = false;
+      this.uiRenderer.pageSearchQuery = '';
+    }
+    return shown;
   }
 
   /** Fetch and persist the demo only after an explicit choice in an empty vault. */
