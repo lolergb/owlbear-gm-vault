@@ -705,7 +705,16 @@
     margin-bottom: 0;
   }
   
-  .page-search { width: 100%; box-sizing: border-box; }
+  .page-search-control { display: flex; align-items: center; min-width: 0; }
+  .page-search-control .page-search, .page-search-control .page-search-close { display: none; }
+  .page-search-control.is-open { flex: 1; gap: var(--spacing-sm); }
+  .page-search-control.is-open .page-search { display: block; flex: 1; width: 100%; min-width: 0; box-sizing: border-box; }
+  .page-search-control.is-open .page-search-close { display: flex; }
+  .page-search-control.is-open .page-search-open { display: none; }
+  #header.page-search-active:has(+ #page-list:not(.hidden)) #page-title,
+  #header.page-search-active:has(+ #page-list:not(.hidden)) .player-view-toggle,
+  #header.page-search-active:has(+ #page-list:not(.hidden)) .button-container { display: none; }
+  .container:has(> #page-list.hidden) .page-search-control { display: none; }
   .page-search-results:not([hidden]) { display: flex; flex-direction: column; gap: var(--spacing-sm); }
   .page-search-result__path, .page-search-empty { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
   .page-search-result__path { margin: 0 0 var(--spacing-sm); }

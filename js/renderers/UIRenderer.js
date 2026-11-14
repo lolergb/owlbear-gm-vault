@@ -54,6 +54,7 @@ export class UIRenderer {
     // Config para calcular posiciones
     this.config = null;
     this.pageSearchQuery = '';
+    this.pageSearchOpen = false;
   }
 
   /**
@@ -137,6 +138,9 @@ export class UIRenderer {
     }
     
     container.innerHTML = '';
+    const header = container.id === 'page-list' ? document.getElementById('header') : null;
+    header?.querySelector('.page-search-control')?.remove();
+    header?.classList.remove('page-search-active');
 
     // Verificar si hay contenido (páginas o categorías en root)
     const hasRootPages = config?.pages && config.pages.length > 0;
@@ -183,13 +187,32 @@ export class UIRenderer {
       }
     }
 
+    const control = document.createElement('div');
+    control.className = 'page-search-control';
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'icon-button page-search-open';
+    openButton.setAttribute('aria-label', 'Search pages');
+    openButton.setAttribute('aria-expanded', String(this.pageSearchOpen));
+    openButton.innerHTML = '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>';
     const search = document.createElement('input');
     search.type = 'search';
     search.className = 'input page-search';
     search.placeholder = 'Search pages...';
     search.setAttribute('aria-label', 'Search pages by name');
     search.value = this.pageSearchQuery;
-    container.appendChild(search);
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'icon-button page-search-close';
+    closeButton.setAttribute('aria-label', 'Close search');
+    closeButton.innerHTML = '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    control.append(openButton, search, closeButton);
+    if (header) {
+      header.insertBefore(control, header.querySelector('.button-container'));
+      header.classList.toggle('page-search-active', this.pageSearchOpen);
+    } else {
+      container.appendChild(control);
+    }
     const results = document.createElement('div');
     results.className = 'page-search-results';
     results.hidden = true;
@@ -230,7 +253,7 @@ export class UIRenderer {
       }
     });
 
-    const navigation = Array.from(container.children).filter(element => element !== search && element !== results);
+    const navigation = Array.from(container.children).filter(element => element !== control && element !== results);
     const updateSearch = () => {
       this.pageSearchQuery = search.value;
       const query = search.value.trim().toLocaleLowerCase();
@@ -270,7 +293,29 @@ export class UIRenderer {
         results.appendChild(empty);
       }
     };
+    const setSearchOpen = (open) => {
+      this.pageSearchOpen = open;
+      control.classList.toggle('is-open', open);
+      header?.classList.toggle('page-search-active', open);
+      openButton.setAttribute('aria-expanded', String(open));
+      if (open) {
+        search.focus();
+      } else {
+        search.value = '';
+        updateSearch();
+        openButton.focus();
+      }
+    };
+    control.classList.toggle('is-open', this.pageSearchOpen);
+    openButton.addEventListener('click', () => setSearchOpen(true));
+    closeButton.addEventListener('click', () => setSearchOpen(false));
     search.addEventListener('input', updateSearch);
+    search.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSearchOpen(false);
+      }
+    });
     updateSearch();
   }
 

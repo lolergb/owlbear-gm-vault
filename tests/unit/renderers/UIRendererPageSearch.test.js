@@ -35,3 +35,37 @@ test('does not expose pages unavailable to players', () => {
   expect(container.querySelector('.page-search-results').textContent).toContain('No pages found');
   expect(container.querySelector('.page-search-results').textContent).not.toContain('Secret');
 });
+
+test('header search opens, survives rerender and closes with Escape or the close button', () => {
+  document.body.innerHTML = '<div class="container"><header id="header"><h1 id="page-title">GM vault</h1><div class="button-container"></div></header><div id="page-list"></div></div>';
+  const renderer = new UIRenderer();
+  const container = document.getElementById('page-list');
+  const config = { pages: [page('Waterdeep'), page('Neverwinter')], categories: [] };
+  renderer.renderAllCategories(config, container, 'room', true);
+  const header = document.getElementById('header');
+  let toggle = header.querySelector('.page-search-open');
+  toggle.click();
+  let input = header.querySelector('.page-search');
+  expect(document.activeElement).toBe(input);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  input.value = 'water';
+  input.dispatchEvent(new Event('input'));
+  renderer.renderAllCategories(config, container, 'room', true);
+  input = header.querySelector('.page-search');
+  toggle = header.querySelector('.page-search-open');
+  expect(header.classList.contains('page-search-active')).toBe(true);
+  expect(input.value).toBe('water');
+  expect(container.querySelector('.page-search-results').textContent).toContain('Waterdeep');
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(header.classList.contains('page-search-active')).toBe(false);
+  expect(input.value).toBe('');
+  expect(document.activeElement).toBe(toggle);
+  expect(container.querySelector('.page-search-results').hidden).toBe(true);
+  toggle.click();
+  input.value = 'water';
+  input.dispatchEvent(new Event('input'));
+  header.querySelector('.page-search-close').click();
+  expect(input.value).toBe('');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  document.body.innerHTML = '';
+});
