@@ -18,6 +18,7 @@ describe('AnalyticsService beta events', () => {
       json: async () => ({ status: 1 })
     });
     const service = new AnalyticsService();
+    service.setConsent(true);
     service.mixpanelEnabled = true;
     service.mixpanelToken = 'mixpanel-test-token';
     service.mixpanelDistinctId = 'player-1';
@@ -103,7 +104,9 @@ describe('AnalyticsService beta events', () => {
       recipient_count: 4,
       delivered_count: 2,
       failed_count: 1,
-      unresolved_count: 1
+      unresolved_count: 1,
+      operation: 'share_image', error_source: 'handled', error_type: 'unknown',
+      error_code: 'delivery_failed', error_fingerprint: 'share_image:unknown:delivery_failed'
     });
   });
 
@@ -179,6 +182,8 @@ describe('AnalyticsService beta events', () => {
   it('normalizes unexpected values instead of forwarding arbitrary content', () => {
     const service = createService();
 
+    service.setConsent(true);
+    service.mixpanelEnabled = true;
     service.trackVaultImportFailed({
       source: 'https://private.example/vault.json',
       stage: 'custom-stage',
@@ -192,7 +197,8 @@ describe('AnalyticsService beta events', () => {
       stage: 'unknown',
       mode: 'unknown',
       destination_type: 'unknown',
-      error_type: 'TypeError'
+      error_type: 'TypeError', operation: 'import', error_source: 'handled',
+      error_code: 'unknown', error_fingerprint: 'import:TypeError:unknown'
     });
   });
 });

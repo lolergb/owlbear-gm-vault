@@ -7,14 +7,15 @@
  */
 
 import OBR from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
-import { ExtensionController } from './controllers/ExtensionController.js?v=2.1.4&search=2';
+import { ExtensionController } from './controllers/ExtensionController.js?v=2.1.4&search=2&errors=1';
+import { BUILD_VERSION } from './utils/buildVersion.js';
 import { initTheme } from './utils/themeManager.js';
 import { escapeHtml } from './utils/htmlSecurity.js?v=20260722-4';
 
 // Instancia global del controlador
 let extensionController = null;
 
-const BUILD_VERSION = '2.1.4';
+
 console.log('🚀 GM Vault: Cargando módulos... v' + BUILD_VERSION);
 
 // Esperar a que OBR SDK esté listo

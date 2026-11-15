@@ -54,7 +54,7 @@ import { StorageService } from '../services/StorageService.js?v=2.1.4';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=2.1.4';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20260906-9';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20261115-1';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.4';
 import {
@@ -454,6 +454,7 @@ export class ExtensionController {
       this._attachImageHandlers();
     } catch (e) {
       logError('Error cargando contenido en modal:', e);
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: e });
       if (notionContent) {
         notionContent.innerHTML = `
           <div class="empty-state">
@@ -596,6 +597,7 @@ export class ExtensionController {
       this._attachImageHandlers();
     } catch (e) {
       logError('Error al abrir página:', e);
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: e });
       if (notionContent) {
         notionContent.innerHTML = `
           <div class="empty-state">
@@ -2425,6 +2427,7 @@ export class ExtensionController {
     this.betaRecoveryAbort?.abort();
     this.announcementCancelled = true;
     this.betaPromotionCancelled = true;
+    this.analyticsService?.cleanup?.();
 
     clearTimeout(this._pageIconSyncTimer);
     this._pageIconSyncTimer = null;
@@ -3044,11 +3047,13 @@ export class ExtensionController {
         if (result?.success) {
           this._showFeedback('Presented to all players');
         } else if (result?.error !== 'size_limit') {
+          this.analyticsService?.trackClientError?.({ operation: 'share_page', code: 'broadcast_failed' });
           this._showFeedback('❌ Error sharing page');
         }
         return result?.success === true;
       } catch (e) {
         logError('Error compartiendo página con htmlContent:', e);
+        this.analyticsService?.trackClientError?.({ operation: 'share_page', error: e });
         this._showFeedback('❌ Error sharing page');
         return false;
       }
@@ -3102,11 +3107,13 @@ export class ExtensionController {
           if (result?.success) {
             this._showFeedback('Presented to all players');
           } else if (result?.error !== 'size_limit') {
+            this.analyticsService?.trackClientError?.({ operation: 'share_page', code: 'broadcast_failed' });
             this._showFeedback('❌ Error sharing page');
           }
           return result?.success === true;
         } catch (e) {
           logError('Error compartiendo página Notion:', e);
+          this.analyticsService?.trackClientError?.({ operation: 'share_page', error: e });
           this._showFeedback('❌ Error sharing page');
           return false;
         }
@@ -3124,6 +3131,7 @@ export class ExtensionController {
       if (result?.success) {
         this._showFeedback('Presented to all players');
       } else if (result?.error !== 'size_limit') {
+        this.analyticsService?.trackClientError?.({ operation: 'share_page', code: 'broadcast_failed' });
         this._showFeedback('❌ Error sharing content');
       }
       return result?.success === true;
@@ -4320,7 +4328,12 @@ export class ExtensionController {
           return;
         }
         
-        this.storageService.saveUserToken(token);
+        if (this.storageService.saveUserToken(token) === false) {
+          if (tokenInput) tokenInput.value = '';
+          this.analyticsService?.trackClientError?.({ operation: 'token_save', code: 'storage_failed' });
+          this._showFeedback('❌ Error saving token');
+          return;
+        }
         this.analyticsService.trackTokenConfigured();
         
         // Mostrar botón Import from Notion ahora que hay token
@@ -4753,6 +4766,7 @@ export class ExtensionController {
           updateSelectionCount();
         }, selectedPages);
       } catch (e) {
+        this.analyticsService?.trackClientError?.({ operation: 'notion_search', error: e });
         listEl.innerHTML = `<div class="notion-pages-empty">❌ ${escapeHtml(e.message)}</div>`;
       }
     };
@@ -8613,6 +8627,7 @@ export class ExtensionController {
       
     } catch (error) {
       logError('Error recargando contenido del modal:', error);
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: error });
       content.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
@@ -8967,6 +8982,7 @@ export class ExtensionController {
       
     } catch (error) {
       logError('Error cargando página en modal:', error);
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: error });
       content.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
@@ -9103,6 +9119,7 @@ export class ExtensionController {
       return result.loaded > 0;
     } catch (e) {
       logError('Error compartiendo imagen:', e);
+      this.analyticsService?.trackClientError?.({ operation: 'share_image', error: e });
       this._showFeedback('❌ Error sharing image');
       return false;
     }
@@ -9649,6 +9666,7 @@ export class ExtensionController {
         
       } catch (error) {
         logError('Error al vincular página:', error);
+      this.analyticsService?.trackClientError?.({ operation: 'token_link', error: error });
         alert('Error linking page: ' + error.message);
       }
     });

@@ -6,6 +6,7 @@
  * para no estropear las métricas históricas.
  */
 
+import { BUILD_VERSION } from '../utils/buildVersion.js';
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
 import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
@@ -33,6 +34,10 @@ export class AnalyticsService {
     this.vaultAnalyticsStorageKey = null;
     this.vaultAnalyticsState = null;
     this.firstUserContentCreatedTracked = false;
+    this.errorIdentity = this._createAnonymousVaultId();
+    this.recentErrors = new Map();
+    this.seenErrors = new WeakSet();
+    this.errorListenersInstalled = false;
   }
 
   /**
@@ -232,6 +237,7 @@ export class AnalyticsService {
    * Inicializa el servicio de analytics
    */
   init(options = {}) {
+    this._installErrorListeners();
     if (!this.initializationTask) {
       this.initializationTask = this._initialize(options).finally(() => {
         this.initializationTask = null;
@@ -339,8 +345,9 @@ export class AnalyticsService {
       // Consent can be accepted while using the empty state. Preserve events
       // raised while the token and user identity are still loading.
       if (this.initializationTask) await this.initializationTask;
-      if (!this.mixpanelEnabled || !this.mixpanelToken) return;
+      if (!this.mixpanelEnabled || !this.mixpanelToken || this.getConsent() !== true) return;
 
+      const isErrorEvent = eventName === 'client_error' || eventName === 'vault_import_failed' || Boolean(properties.error_source);
       // Obtener rol del usuario
       let userRole = 'unknown';
       try {
@@ -355,16 +362,17 @@ export class AnalyticsService {
         event: eventName,
         properties: {
           token: this.mixpanelToken,
-          distinct_id: this.mixpanelDistinctId,
+          distinct_id: isErrorEvent ? this.errorIdentity : this.mixpanelDistinctId,
           time,
           $insert_id: Math.random().toString(36).substring(2, 15),
-          role: userRole,
-          ...(vaultInstanceId ? { vault_instance_id: vaultInstanceId } : {}),
+          role: isErrorEvent ? this._normalizeEnum(userRole, ['GM', 'PLAYER']) : userRole,
+          ...(!isErrorEvent && vaultInstanceId ? { vault_instance_id: vaultInstanceId } : {}),
           vault_state: vaultState,
           ...properties,
           is_beta: this.isBeta,
           environment: this.environment,
-          deploy_context: this.deployContext
+          deploy_context: this.deployContext,
+          ...(isErrorEvent ? { app_version: BUILD_VERSION } : {})
         }
       };
 
@@ -709,13 +717,77 @@ export class AnalyticsService {
    * Track an import failure using only controlled, non-content properties.
    */
   trackVaultImportFailed({ source, stage, mode, destinationType, errorType } = {}) {
+    const safeStage = this._normalizeEnum(stage, ['read', 'fetch', 'generate', 'save', 'empty']);
+    const details = this._errorProperties({ operation: 'import', errorType, source: 'handled', code: safeStage });
+    if (!this._shouldReportError(details)) return;
     this.trackEvent('vault_import_failed', {
       source: this._normalizeEnum(source, ['notion', 'url', 'file']),
-      stage: this._normalizeEnum(stage, ['read', 'fetch', 'generate', 'save', 'empty']),
+      stage: safeStage,
       mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
       destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
-      error_type: String(errorType || 'unknown').slice(0, 60)
+      ...details
     });
+  }
+
+  _installErrorListeners() {
+    if (this.errorListenersInstalled || typeof window === 'undefined') return;
+    this.errorListenersInstalled = true;
+    this.onGlobalError = event => {
+      // Resource load errors expose URLs and are outside this JavaScript handler.
+      if (event.target !== window) return;
+      this.trackClientError({ operation: 'runtime', source: 'global', error: event.error });
+    };
+    this.onUnhandledRejection = event => {
+      this.trackClientError({ operation: 'runtime', source: 'promise', error: event.reason });
+    };
+    window.addEventListener('error', this.onGlobalError);
+    window.addEventListener('unhandledrejection', this.onUnhandledRejection);
+  }
+
+  cleanup() {
+    if (!this.errorListenersInstalled) return;
+    window.removeEventListener('error', this.onGlobalError);
+    window.removeEventListener('unhandledrejection', this.onUnhandledRejection);
+    this.errorListenersInstalled = false;
+  }
+
+  _errorProperties({ operation, source, errorType, error, code } = {}) {
+    const safeOperation = this._normalizeEnum(operation, ['runtime', 'import', 'load_content', 'token_link', 'token_save', 'share_page', 'share_image', 'notion_search']);
+    const safeSource = this._normalizeEnum(source, ['global', 'promise', 'handled']);
+    const safeType = this._normalizeEnum(errorType || error?.name, ['Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError', 'URIError', 'AbortError', 'NetworkError', 'no_content']);
+    const safeCode = this._normalizeEnum(code, ['read', 'fetch', 'generate', 'save', 'empty', 'storage_failed', 'delivery_failed', 'broadcast_failed']);
+    return {
+      operation: safeOperation,
+      error_type: safeType,
+      error_code: safeCode,
+      error_source: safeSource,
+      error_fingerprint: [safeOperation, safeType, safeCode].join(':')
+    };
+  }
+
+  _shouldReportError(details, error) {
+    if (this.getConsent() !== true || (!this.mixpanelEnabled && !this.initializationTask)) return false;
+    if (error && (typeof error === 'object' || typeof error === 'function')) {
+      if (this.seenErrors.has(error)) return false;
+      this.seenErrors.add(error);
+    }
+    const now = Date.now();
+    const previous = this.recentErrors.get(details.error_fingerprint);
+    if (previous !== undefined && now - previous < 5000) return false;
+    for (const [key, time] of this.recentErrors) {
+      if (now - time >= 5000) this.recentErrors.delete(key);
+    }
+    this.recentErrors.set(details.error_fingerprint, now);
+    return true;
+  }
+
+  trackClientError({ operation, source = 'handled', error, code } = {}) {
+    try {
+      const details = this._errorProperties({ operation, source, error, code });
+      if (this._shouldReportError(details, error)) this.trackEvent('client_error', details);
+    } catch (_error) {
+      // Error reporting must never affect application behavior.
+    }
   }
 
   /**
@@ -970,7 +1042,10 @@ export class AnalyticsService {
       recipient_count: this._normalizeCount(result.total),
       delivered_count: this._normalizeCount(result.loaded),
       failed_count: this._normalizeCount(result.failed),
-      unresolved_count: unresolved
+      unresolved_count: unresolved,
+      ...(result.phase === 'error' || this._normalizeCount(result.failed) > 0 || unresolved > 0
+        ? this._errorProperties({ operation: 'share_image', source: 'handled', code: 'delivery_failed' })
+        : {})
     });
   }
 

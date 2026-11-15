@@ -19,6 +19,7 @@ describe('AnalyticsService beta banner events', () => {
     service.setOBR({
       player: { getRole: jest.fn().mockResolvedValue('GM') }
     });
+    service.setConsent(true);
     service.mixpanelEnabled = true;
     service.mixpanelToken = 'test-token';
     service.mixpanelDistinctId = 'gm-1';
