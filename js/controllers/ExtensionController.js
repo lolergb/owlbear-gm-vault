@@ -616,7 +616,7 @@ export class ExtensionController {
    * @param {Object} [options] - Opciones de persistencia
    * @param {boolean} [options.render=true] - Si debe reconstruir la interfaz
    */
-  async saveConfig(config, { render: shouldRender = true } = {}) {
+  async saveConfig(config, { render: shouldRender = true, notifyStorageLimit = true } = {}) {
     log('💾 Guardando configuración...');
 
     // Parsear el config para convertir formato items[] a formato interno si es necesario
@@ -627,7 +627,8 @@ export class ExtensionController {
 
     // Guardar en localStorage (guardamos el JSON parseado con formato legacy + order)
     const localSaved = this.storageService.saveLocalConfig(
-      this.config.toJSON ? this.config.toJSON() : this.config
+      this.config.toJSON ? this.config.toJSON() : this.config,
+      { notifyStorageLimit }
     );
     let saved = localSaved !== false;
 
@@ -5452,7 +5453,11 @@ export class ExtensionController {
       log(`Saving config with ${finalCategories.length} categories, ${finalPages.length} pages`);
       stage = 'save';
       const previousConfig = this.config;
-      const saved = await this.saveConfig({ categories: finalCategories, pages: finalPages }, { render: false });
+      // Import failures have their own private diagnostic and error dialog.
+      const saved = await this.saveConfig(
+        { categories: finalCategories, pages: finalPages },
+        { render: false, notifyStorageLimit: false }
+      );
       if (!saved) {
         this.config = previousConfig;
         this.configBuilder = new ConfigBuilder(previousConfig);
