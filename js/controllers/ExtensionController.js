@@ -616,7 +616,7 @@ export class ExtensionController {
    * @param {Object} [options] - Opciones de persistencia
    * @param {boolean} [options.render=true] - Si debe reconstruir la interfaz
    */
-  async saveConfig(config, { render: shouldRender = true } = {}) {
+  async saveConfig(config, { render: shouldRender = true, notifyStorageLimit = true } = {}) {
     log('💾 Guardando configuración...');
 
     // Parsear el config para convertir formato items[] a formato interno si es necesario
@@ -627,7 +627,8 @@ export class ExtensionController {
 
     // Guardar en localStorage (guardamos el JSON parseado con formato legacy + order)
     const localSaved = this.storageService.saveLocalConfig(
-      this.config.toJSON ? this.config.toJSON() : this.config
+      this.config.toJSON ? this.config.toJSON() : this.config,
+      { notifyStorageLimit }
     );
     let saved = localSaved !== false;
 
@@ -3985,6 +3986,7 @@ export class ExtensionController {
     const error = new Error(message);
     error.name = cause?.name || (stage === 'parse' ? 'SyntaxError' : 'Error');
     error.importStage = stage;
+    if (stage === 'read') error.importCode = 'file_read_failed';
     error.userTitle = title;
     error.cause = cause || undefined;
     return error;
@@ -4002,6 +4004,7 @@ export class ExtensionController {
       'This backup can’t be imported',
       `GM Vault found ${issueLabel} in this backup. Fix ${issueCount === 1 ? 'it' : 'them'} in the JSON file, then try again.`
     );
+    error.importCode = 'invalid_config';
     error.validationErrors = preflight.errors;
     return error;
   }
@@ -4013,11 +4016,13 @@ export class ExtensionController {
   _prepareJsonImportText(text, source = 'file') {
     const sourceLabel = source === 'url' ? 'The URL response' : 'The selected file';
     if (typeof text !== 'string' || text.trim() === '') {
-      throw this._createJsonImportError(
+      const error = this._createJsonImportError(
         'parse',
         'This file is empty',
         `${sourceLabel} does not contain any data. Choose a GM Vault backup with folders or pages.`
       );
+      error.importCode = 'empty_file';
+      throw error;
     }
 
     let importedConfig;
@@ -4025,17 +4030,29 @@ export class ExtensionController {
       // Algunos editores añaden BOM al principio de los archivos UTF-8.
       importedConfig = JSON.parse(text.replace(/^\uFEFF/, ''));
     } catch (cause) {
-      throw this._createJsonImportError(
+      const error = this._createJsonImportError(
         'parse',
         'This file isn’t valid JSON',
         `GM Vault could not read ${source === 'url' ? 'the downloaded file' : 'this file'}. Check for missing commas, brackets, or quotation marks, then try again.`,
         cause
       );
+      error.importCode = 'invalid_json';
+      throw error;
     }
 
-    const preflight = this.configParser.preflight(importedConfig);
+    let preflight;
+    try {
+      preflight = this.configParser.preflight(importedConfig);
+    } catch (cause) {
+      const error = this._createJsonImportError('validate', 'Could not check backup', 'The backup could not be checked. Choose another backup and try again.', cause);
+      error.importCode = 'invalid_config';
+      throw error;
+    }
     if (!preflight.valid) {
-      throw this._createJsonValidationError(preflight);
+      const error = this._createJsonValidationError(preflight);
+      if (importedConfig && typeof importedConfig === 'object' && !Array.isArray(importedConfig) &&
+          !Object.prototype.hasOwnProperty.call(importedConfig, 'categories')) error.importCode = 'missing_categories';
+      throw error;
     }
 
     if (preflight.summary.categoryCount === 0 && preflight.summary.pageCount === 0) {
@@ -4045,6 +4062,7 @@ export class ExtensionController {
         'There are no folders or pages to import. Choose a backup that contains vault content.'
       );
       error.name = 'EmptyVaultError';
+      error.importCode = 'empty_vault';
       throw error;
     }
 
@@ -4272,12 +4290,18 @@ export class ExtensionController {
    * @private
    */
   _handleJsonImportError(error, source, fallbackStage = 'read', context = {}) {
-    this.analyticsService?.trackVaultImportFailed?.({
-      source,
-      stage: error?.importStage || fallbackStage,
-      errorType: error?.name || 'Error',
-      ...context
-    });
+    try {
+      this.analyticsService?.trackVaultImportFailed?.({
+        source,
+        stage: error?.importStage || fallbackStage,
+        errorType: error?.name || 'Error',
+        errorCode: error?.importCode || (fallbackStage === 'apply' ? 'apply_failed' : fallbackStage),
+        error,
+        ...context
+      });
+    } catch (_error) {
+      // Error reporting must never prevent the import error from being shown.
+    }
     return this._showJsonImportErrorAlert(error);
   }
 
@@ -5315,6 +5339,7 @@ export class ExtensionController {
    * @private
    */
   async _applyJsonImport(importedConfig, importMode, importedPagesCount, destinationId = 'root', source = 'file') {
+    let stage = 'validate';
     try {
       const importPreflight = this.configParser.preflight(importedConfig);
       if (!importPreflight.valid) {
@@ -5327,17 +5352,21 @@ export class ExtensionController {
           'There are no folders or pages to import. Choose a backup that contains vault content.'
         );
         error.name = 'EmptyVaultError';
+        error.importCode = 'empty_vault';
         throw error;
       }
       if (!['append', 'merge', 'replace'].includes(importMode)) {
-        throw this._createJsonImportError(
+        const error = this._createJsonImportError(
           'validate',
           'Invalid import option',
           'Choose how to add the backup and try again.'
         );
+        error.importCode = 'invalid_option';
+        throw error;
       }
       importedPagesCount = importPreflight.summary.pageCount;
 
+      stage = 'apply';
       // Detectar formato del JSON importado
       const format = importPreflight.format;
       log(`_applyJsonImport: detected format="${format}", mode="${importMode}"`);
@@ -5422,22 +5451,42 @@ export class ExtensionController {
       }
 
       log(`Saving config with ${finalCategories.length} categories, ${finalPages.length} pages`);
-      await this.saveConfig({ categories: finalCategories, pages: finalPages });
+      stage = 'save';
+      const previousConfig = this.config;
+      // Import failures have their own private diagnostic and error dialog.
+      const saved = await this.saveConfig(
+        { categories: finalCategories, pages: finalPages },
+        { render: false, notifyStorageLimit: false }
+      );
+      if (!saved) {
+        this.config = previousConfig;
+        this.configBuilder = new ConfigBuilder(previousConfig);
+        this.uiRenderer?.setConfig?.(previousConfig);
+        await this.render();
+        const error = this._createJsonImportError('save', 'Could not save vault', 'The vault could not be saved locally. Check available storage and try again.');
+        error.importCode = 'storage_failed';
+        throw error;
+      }
+      await this.render();
       log('Config saved successfully');
       
       // Track analytics
-      this.analyticsService.trackJSONImported(importedPagesCount);
-      this.analyticsService?.trackVaultImportCompleted?.({
-        source,
-        mode: importMode,
-        destinationType: destinationId === 'root' ? 'root' : 'folder',
-        itemCount: importedPagesCount
-      });
-      this.analyticsService?.trackFirstUserContentCreated?.({
-        creationMethod: source,
-        pageType: 'multiple',
-        contentOrigin: 'import'
-      });
+      try {
+        this.analyticsService?.trackJSONImported?.(importedPagesCount);
+        this.analyticsService?.trackVaultImportCompleted?.({
+          source,
+          mode: importMode,
+          destinationType: destinationId === 'root' ? 'root' : 'folder',
+          itemCount: importedPagesCount
+        });
+        this.analyticsService?.trackFirstUserContentCreated?.({
+          creationMethod: source,
+          pageType: 'multiple',
+          contentOrigin: 'import'
+        });
+      } catch (_error) {
+        // Analytics must not turn a successful import into a failure.
+      }
 
       // Mostrar resultado
       const modeText = importMode === 'append' ? 'added' : importMode === 'merge' ? 'merged' : 'loaded';
@@ -5451,7 +5500,7 @@ export class ExtensionController {
       return true;
     } catch (err) {
       logError('Error applying JSON import:', err);
-      await this._handleJsonImportError(err, source, 'save', {
+      await this._handleJsonImportError(err, source, stage, {
         mode: importMode,
         destinationType: destinationId === 'root' ? 'root' : 'folder'
       });

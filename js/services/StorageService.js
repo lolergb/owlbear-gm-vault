@@ -182,9 +182,10 @@ export class StorageService {
   /**
    * Guarda la configuración en localStorage
    * @param {Object} config - Configuración a guardar
+   * @param {Object} options - Opciones de notificación
    * @returns {boolean}
    */
-  saveLocalConfig(config) {
+  saveLocalConfig(config, { notifyStorageLimit = true } = {}) {
     try {
       const storageKey = this.getStorageKey();
       localStorage.setItem(storageKey, JSON.stringify(config));
@@ -192,7 +193,7 @@ export class StorageService {
       return true;
     } catch (e) {
       logError('Error al guardar configuración local:', e);
-      if (e.name === 'QuotaExceededError' && this.onStorageLimitReached) {
+      if (notifyStorageLimit && e.name === 'QuotaExceededError' && this.onStorageLimitReached) {
         this.onStorageLimitReached('saving configuration');
       }
       return false;

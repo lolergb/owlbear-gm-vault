@@ -298,7 +298,7 @@ describe('ExtensionController JSON import preflight', () => {
     expect(controller.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
       categories: expect.any(Array),
       pages: expect.any(Array)
-    }));
+    }), { render: false, notifyStorageLimit: false });
   });
 
   it('busca una carpeta sin cambiar el destino y confirma su ID al importar', async () => {
