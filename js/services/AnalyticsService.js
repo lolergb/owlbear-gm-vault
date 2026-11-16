@@ -716,17 +716,21 @@ export class AnalyticsService {
   /**
    * Track an import failure using only controlled, non-content properties.
    */
-  trackVaultImportFailed({ source, stage, mode, destinationType, errorType } = {}) {
-    const safeStage = this._normalizeEnum(stage, ['read', 'fetch', 'generate', 'save', 'empty']);
-    const details = this._errorProperties({ operation: 'import', errorType, source: 'handled', code: safeStage });
-    if (!this._shouldReportError(details)) return;
-    this.trackEvent('vault_import_failed', {
-      source: this._normalizeEnum(source, ['notion', 'url', 'file']),
-      stage: safeStage,
-      mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
-      destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
-      ...details
-    });
+  trackVaultImportFailed({ source, stage, mode, destinationType, errorType, errorCode, error } = {}) {
+    try {
+      const safeStage = this._normalizeEnum(stage, ['read', 'parse', 'validate', 'fetch', 'http', 'generate', 'apply', 'save', 'empty']);
+      const details = this._errorProperties({ operation: 'import', errorType, source: 'handled', code: errorCode || safeStage });
+      if (!this._shouldReportError(details, error)) return;
+      this.trackEvent('vault_import_failed', {
+        source: this._normalizeEnum(source, ['notion', 'url', 'file']),
+        stage: safeStage,
+        mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
+        destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
+        ...details
+      });
+    } catch (_error) {
+      // Error reporting must never affect application behavior.
+    }
   }
 
   _installErrorListeners() {
@@ -755,7 +759,7 @@ export class AnalyticsService {
     const safeOperation = this._normalizeEnum(operation, ['runtime', 'import', 'load_content', 'token_link', 'token_save', 'share_page', 'share_image', 'notion_search']);
     const safeSource = this._normalizeEnum(source, ['global', 'promise', 'handled']);
     const safeType = this._normalizeEnum(errorType || error?.name, ['Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError', 'URIError', 'AbortError', 'NetworkError', 'no_content']);
-    const safeCode = this._normalizeEnum(code, ['read', 'fetch', 'generate', 'save', 'empty', 'storage_failed', 'delivery_failed', 'broadcast_failed']);
+    const safeCode = this._normalizeEnum(code, ['read', 'parse', 'validate', 'fetch', 'http', 'generate', 'apply', 'save', 'empty', 'file_read_failed', 'empty_file', 'invalid_json', 'missing_categories', 'invalid_config', 'empty_vault', 'invalid_option', 'storage_failed', 'apply_failed', 'delivery_failed', 'broadcast_failed']);
     return {
       operation: safeOperation,
       error_type: safeType,
