@@ -67,6 +67,18 @@ describe('privacy-safe error analytics', () => {
     expect(JSON.stringify(eventAt(0))).not.toContain('private token');
   });
 
+  it('records only allowlisted load location and stage and keeps distinct stages', async () => {
+    service.trackClientError({ operation: 'load_content', location: 'open_page', stage: 'blocks', error: new Error('secret URL') });
+    service.trackClientError({ operation: 'load_content', location: 'open_page', stage: 'render', error: new Error('secret page') });
+    service.trackClientError({ operation: 'load_content', location: 'private location', stage: 'private stage', error: new Error('secret') });
+    await flush();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(eventAt(0).properties).toMatchObject({ error_location: 'open_page', error_stage: 'blocks', error_fingerprint: 'load_content:Error:unknown', build_ref: 'unknown' });
+    expect(eventAt(1).properties.error_stage).toBe('render');
+    expect(eventAt(2).properties).toMatchObject({ error_location: 'unknown', error_stage: 'unknown' });
+    expect(JSON.stringify([eventAt(0), eventAt(1), eventAt(2)])).not.toMatch(/secret|private location|private stage/);
+  });
+
   it('requires consent and never recursively reports transport failures', async () => {
     service.setConsent(false);
     service.trackClientError({ operation: 'token_link', error: new Error('secret') });

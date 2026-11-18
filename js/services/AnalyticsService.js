@@ -7,6 +7,7 @@
  */
 
 import { BUILD_VERSION } from '../utils/buildVersion.js';
+import { BUILD_REF } from '../utils/buildRef.js';
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
 import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
@@ -372,7 +373,7 @@ export class AnalyticsService {
           is_beta: this.isBeta,
           environment: this.environment,
           deploy_context: this.deployContext,
-          ...(isErrorEvent ? { app_version: BUILD_VERSION } : {})
+          ...(isErrorEvent ? { app_version: BUILD_VERSION, build_ref: BUILD_REF } : {})
         }
       };
 
@@ -755,17 +756,22 @@ export class AnalyticsService {
     this.errorListenersInstalled = false;
   }
 
-  _errorProperties({ operation, source, errorType, error, code } = {}) {
+  _errorProperties({ operation, source, errorType, error, code, location, stage } = {}) {
     const safeOperation = this._normalizeEnum(operation, ['runtime', 'import', 'load_content', 'token_link', 'token_save', 'share_page', 'share_image', 'notion_search']);
     const safeSource = this._normalizeEnum(source, ['global', 'promise', 'handled']);
     const safeType = this._normalizeEnum(errorType || error?.name, ['Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError', 'URIError', 'AbortError', 'NetworkError', 'no_content']);
     const safeCode = this._normalizeEnum(code, ['read', 'parse', 'validate', 'fetch', 'http', 'generate', 'apply', 'save', 'empty', 'file_read_failed', 'empty_file', 'invalid_json', 'missing_categories', 'invalid_config', 'empty_vault', 'invalid_option', 'storage_failed', 'apply_failed', 'delivery_failed', 'broadcast_failed']);
+    const loadDetails = safeOperation === 'load_content' ? {
+      error_location: this._normalizeEnum(location, ['modal_content', 'open_page', 'mention_reload', 'mention_open']),
+      error_stage: this._normalizeEnum(stage, ['page_info', 'blocks', 'render', 'other'])
+    } : {};
     return {
       operation: safeOperation,
       error_type: safeType,
       error_code: safeCode,
       error_source: safeSource,
-      error_fingerprint: [safeOperation, safeType, safeCode].join(':')
+      error_fingerprint: [safeOperation, safeType, safeCode].join(':'),
+      ...loadDetails
     };
   }
 
@@ -776,18 +782,19 @@ export class AnalyticsService {
       this.seenErrors.add(error);
     }
     const now = Date.now();
-    const previous = this.recentErrors.get(details.error_fingerprint);
+    const dedupeKey = [details.error_fingerprint, details.error_location, details.error_stage].join(':');
+    const previous = this.recentErrors.get(dedupeKey);
     if (previous !== undefined && now - previous < 5000) return false;
     for (const [key, time] of this.recentErrors) {
       if (now - time >= 5000) this.recentErrors.delete(key);
     }
-    this.recentErrors.set(details.error_fingerprint, now);
+    this.recentErrors.set(dedupeKey, now);
     return true;
   }
 
-  trackClientError({ operation, source = 'handled', error, code } = {}) {
+  trackClientError({ operation, source = 'handled', error, code, location, stage } = {}) {
     try {
-      const details = this._errorProperties({ operation, source, error, code });
+      const details = this._errorProperties({ operation, source, error, code, location, stage });
       if (this._shouldReportError(details, error)) this.trackEvent('client_error', details);
     } catch (_error) {
       // Error reporting must never affect application behavior.

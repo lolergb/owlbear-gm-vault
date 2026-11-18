@@ -21,6 +21,39 @@ function bareController() {
 }
 
 describe('ExtensionController Notion HTML security boundary', () => {
+  it('reports the failing stage through the modal content catch', async () => {
+    const controller = bareController();
+    const failure = new Error('private content');
+    document.body.innerHTML = '<div id="notion-content"></div>';
+    controller.analyticsService = { trackClientError: jest.fn() };
+    controller._setNotionDisplayMode = jest.fn();
+    controller.notionService = { fetchPageInfo: jest.fn().mockRejectedValue(failure) };
+    controller.notionRenderer = { setDependencies: jest.fn(), setRenderingOptions: jest.fn() };
+    controller._renderNotionPage = (page, id) => controller._renderNotionPageWithToken(page, id, document.getElementById('notion-content'));
+    await controller._loadModalContent('https://www.notion.so/0123456789abcdef0123456789abcdef', 'Private page');
+    expect(controller.analyticsService.trackClientError).toHaveBeenCalledWith({
+      operation: 'load_content', location: 'modal_content', stage: 'page_info', error: failure
+    });
+    expect(document.getElementById('notion-content').textContent).toContain('Error loading content');
+  });
+
+  it('reports the failing Notion stage in mention generation while preserving its null result', async () => {
+    const controller = bareController();
+    const failure = new Error('private page');
+    controller.analyticsService = { trackClientError: jest.fn() };
+    controller.notionService = {
+      fetchPageInfo: jest.fn().mockResolvedValue({}),
+      fetchBlocks: jest.fn().mockRejectedValue(failure)
+    };
+    controller.notionRenderer = { setRenderingOptions: jest.fn(), renderBlocks: jest.fn() };
+    const result = await controller._generateNotionHtmlWithHeader('private-id', { diagnosticLocation: 'mention_open' });
+    expect(result).toBeNull();
+    expect(controller.analyticsService.trackClientError).toHaveBeenCalledWith({
+      operation: 'load_content', location: 'mention_open', stage: 'blocks', error: failure
+    });
+    expect(controller.notionRenderer.renderBlocks).not.toHaveBeenCalled();
+  });
+
   it('escapa el header y sanea incluso HTML inseguro devuelto por el renderer', async () => {
     const controller = bareController();
     controller._repairStoredPageTitle = jest.fn().mockResolvedValue(

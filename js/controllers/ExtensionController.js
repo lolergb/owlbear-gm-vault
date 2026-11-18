@@ -54,7 +54,7 @@ import { StorageService } from '../services/StorageService.js?v=2.1.4';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=2.1.4';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20261115-1';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20261118-1';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.4';
 import {
@@ -83,6 +83,23 @@ import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
 import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.1.4';
 import { PRODUCTION_ORIGIN, MIGRATION_PREFIX, validRoom } from '../config/betaMigration.js';
 import { chooseBetaVault, betaRecoveryMessage } from '../ui/BetaMigrationDialog.js';
+
+// Attach only a controlled stage to the original error without modifying it.
+const contentErrorStages = new WeakMap();
+async function contentStage(stage, work) {
+  try {
+    return await work();
+  } catch (error) {
+    if (error && (typeof error === 'object' || typeof error === 'function')) {
+      contentErrorStages.set(error, stage);
+    }
+    throw error;
+  }
+}
+function getContentErrorStage(error) {
+  return error && (typeof error === 'object' || typeof error === 'function')
+    ? contentErrorStages.get(error) || 'other' : 'other';
+}
 
 /**
  * Controlador principal de la extensión
@@ -454,7 +471,7 @@ export class ExtensionController {
       this._attachImageHandlers();
     } catch (e) {
       logError('Error cargando contenido en modal:', e);
-      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: e });
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', location: 'modal_content', stage: getContentErrorStage(e), error: e });
       if (notionContent) {
         notionContent.innerHTML = `
           <div class="empty-state">
@@ -597,7 +614,7 @@ export class ExtensionController {
       this._attachImageHandlers();
     } catch (e) {
       logError('Error al abrir página:', e);
-      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: e });
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', location: 'open_page', stage: getContentErrorStage(e), error: e });
       if (notionContent) {
         notionContent.innerHTML = `
           <div class="empty-state">
@@ -7297,11 +7314,11 @@ export class ExtensionController {
     
     // Obtener info de la página (cover, título, icono) y bloques
     // Si forceRefresh, no usar caché para ninguno
-    const pageInfo = await this.notionService.fetchPageInfo(pageId, !forceRefresh);
+    const pageInfo = await contentStage('page_info', () => this.notionService.fetchPageInfo(pageId, !forceRefresh));
     const notionTitle = this._extractNotionPageTitle(pageInfo);
     const notionPageTitle = await this._repairStoredPageTitle(page, notionTitle);
-    const blocks = await this.notionService.fetchBlocks(pageId, !forceRefresh);
-    const blocksHtml = await this.notionRenderer.renderBlocks(blocks, page.blockTypes);
+    const blocks = await contentStage('blocks', () => this.notionService.fetchBlocks(pageId, !forceRefresh));
+    const blocksHtml = await contentStage('render', () => this.notionRenderer.renderBlocks(blocks, page.blockTypes));
     
     // Construir HTML con header (cover + título)
     let headerHtml = '';
@@ -7456,15 +7473,16 @@ export class ExtensionController {
       includeShareButtons = false,
       fallbackTitle = PAGE_TITLE_FALLBACK,
       blockTypes = null,
-      useCache = true
+      useCache = true,
+      diagnosticLocation = null
     } = options;
 
     try {
       this.notionRenderer.setRenderingOptions({ useCache });
 
-      const pageInfo = await this.notionService.fetchPageInfo(pageId, useCache);
-      const blocks = await this.notionService.fetchBlocks(pageId, useCache);
-      const blocksHtml = await this.notionRenderer.renderBlocks(blocks, blockTypes);
+      const pageInfo = await contentStage('page_info', () => this.notionService.fetchPageInfo(pageId, useCache));
+      const blocks = await contentStage('blocks', () => this.notionService.fetchBlocks(pageId, useCache));
+      const blocksHtml = await contentStage('render', () => this.notionRenderer.renderBlocks(blocks, blockTypes));
       
       // Construir HTML del header (cover + título)
       let headerHtml = '';
@@ -7537,6 +7555,9 @@ export class ExtensionController {
       };
     } catch (e) {
       logError('Error generando HTML de Notion con header:', e);
+      if (diagnosticLocation) {
+        this.analyticsService?.trackClientError?.({ operation: 'load_content', location: diagnosticLocation, stage: getContentErrorStage(e), error: e });
+      }
       return null;
     }
   }
@@ -8627,7 +8648,8 @@ export class ExtensionController {
         const result = await this._generateNotionHtmlWithHeader(notionPageId, {
           includeShareButtons: true,
           fallbackTitle: displayName,
-          useCache: false // Forzar recarga sin caché
+          useCache: false, // Forzar recarga sin caché
+          diagnosticLocation: 'mention_reload'
         });
         const refreshedTitle = this._extractNotionPageTitle(result?.pageInfo);
         const repairedTitle = await this._repairStoredPageTitle(page, refreshedTitle, displayName);
@@ -8676,7 +8698,7 @@ export class ExtensionController {
       
     } catch (error) {
       logError('Error recargando contenido del modal:', error);
-      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: error });
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', location: 'mention_reload', stage: getContentErrorStage(error), error });
       content.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
@@ -8891,7 +8913,8 @@ export class ExtensionController {
           const result = await this._generateNotionHtmlWithHeader(notionPageId, {
             includeShareButtons: true,
             fallbackTitle: displayName,
-            useCache: true
+            useCache: true,
+            diagnosticLocation: 'mention_open'
           });
           const refreshedTitle = this._extractNotionPageTitle(result?.pageInfo);
           displayName = await this._repairStoredPageTitle(page, refreshedTitle, displayName);
@@ -9031,7 +9054,7 @@ export class ExtensionController {
       
     } catch (error) {
       logError('Error cargando página en modal:', error);
-      this.analyticsService?.trackClientError?.({ operation: 'load_content', error: error });
+      this.analyticsService?.trackClientError?.({ operation: 'load_content', location: 'mention_open', stage: getContentErrorStage(error), error });
       content.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">⚠️</div>
