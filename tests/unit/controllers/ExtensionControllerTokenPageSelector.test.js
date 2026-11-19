@@ -46,7 +46,7 @@ describe('ExtensionController token page selector', () => {
   it('filtra por nombre o ruta sin distinguir mayúsculas ni acentos', async () => {
     const controller = createController();
 
-    await controller._showPageSelectorForToken('token-1');
+    await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
 
     const searchInput = document.querySelector('#field-pageIndex-search');
     const select = document.querySelector('#field-pageIndex');
@@ -91,7 +91,7 @@ describe('ExtensionController token page selector', () => {
     jest.useFakeTimers();
     const controller = createController();
 
-    await controller._showPageSelectorForToken('token-1');
+    await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
     typeSearch(document.querySelector('#field-pageIndex-search'), 'angel');
     await jest.advanceTimersByTimeAsync(500);
 
@@ -131,7 +131,7 @@ describe('ExtensionController token page selector', () => {
       ]
     });
 
-    await controller._showPageSelectorForToken('token-1');
+    await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
 
     const searchInput = document.querySelector('#field-pageIndex-search');
     const listbox = document.querySelector('#field-pageIndex-listbox');
@@ -153,7 +153,7 @@ describe('ExtensionController token page selector', () => {
   it('bloquea el envío sin resultados y restaura la lista al limpiar', async () => {
     const controller = createController();
 
-    await controller._showPageSelectorForToken(['token-1']);
+    await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
 
     const searchInput = document.querySelector('#field-pageIndex-search');
     const select = document.querySelector('#field-pageIndex');
@@ -182,7 +182,7 @@ describe('ExtensionController token page selector', () => {
   it('mueve el foco a los resultados con la flecha abajo', async () => {
     const controller = createController();
 
-    await controller._showPageSelectorForToken('token-1');
+    await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
 
     const searchInput = document.querySelector('#field-pageIndex-search');
     const listbox = document.querySelector('#field-pageIndex-listbox');
@@ -199,7 +199,7 @@ describe('ExtensionController token page selector', () => {
   it('sincroniza click y teclado de la lista visible con el valor del formulario', async () => {
     const controller = createController();
 
-    await controller._showPageSelectorForToken('token-1');
+    await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
 
     const select = document.querySelector('#field-pageIndex');
     const listbox = document.querySelector('#field-pageIndex-listbox');
@@ -225,7 +225,7 @@ describe('ExtensionController token page selector', () => {
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
     try {
-      await controller._showPageSelectorForToken('token-1');
+      await controller._showItemPageSelector([{ id: 'token-1', layer: 'CHARACTER' }]);
 
       const searchInput = document.querySelector('#field-pageIndex-search');
       const listbox = document.querySelector('#field-pageIndex-listbox');

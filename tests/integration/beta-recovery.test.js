@@ -31,7 +31,7 @@ describe('beta recovery with the actual controller role and storage rules', () =
     c._establishVaultOwnership = jest.fn(async () => order.push('owner'));
     c._setupGMBroadcast = jest.fn(() => order.push('broadcast'));
     for (const method of ['_setupServices', '_fetchPlayerInfo', '_setupUI', '_setupEventHandlers', '_startRoleChangeDetection',
-      'render', '_scheduleAnnouncement', '_setupTokenContextMenus', '_setupGlobalRefreshImage']) c[method] = jest.fn();
+      'render', '_scheduleAnnouncement', '_setupItemContextMenus', '_setupGlobalRefreshImage']) c[method] = jest.fn();
     c._canShowVaultEmptyState = () => true;
     c.analyticsService = { setVaultContext: jest.fn(), init: jest.fn() };
     const pending = c.init(c.OBR);

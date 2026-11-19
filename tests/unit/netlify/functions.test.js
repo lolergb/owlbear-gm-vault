@@ -448,8 +448,8 @@ describe('Netlify static asset cache policy', () => {
 
     expect(indexHtml).toContain('href="css/app.css?v=20261115-1"');
     expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${welcomeBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${releaseVersion}&search=2&errors=2"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${releaseVersion}&search=2&errors=2`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${releaseVersion}&search=2&errors=2&maps=1"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${releaseVersion}&search=2&errors=2&maps=1`);
     expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
     expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${appBuildTag}`);
