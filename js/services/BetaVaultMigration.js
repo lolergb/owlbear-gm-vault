@@ -1,4 +1,4 @@
-import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.4';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.5';
 import {
   BETA_ORIGIN, PRODUCTION_ORIGIN, BRIDGE_PATH, MIGRATION_PROTOCOL,
   VAULT_PREFIX, TOKEN_KEY, MIGRATION_PREFIX, MAX_VAULT_LENGTH, MAX_TOKEN_LENGTH, validRoom

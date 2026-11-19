@@ -20,7 +20,7 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 - 📄 **PDF support:** Any publicly accessible PDF file
 - 📁 **Folder management:** Collapse/expand all folders, reorder items
 - ⚙️ **Settings panel:** Unified configuration interface
-- 🎯 **Token integration:** Link pages to scene tokens via context menu
+- 🎯 **Map and token links** open a vault page from a selected map or character token
 - 👥 **Player visibility control:** GM can control which pages are visible to players
 - 🔄 **Content sharing:** GM shares Notion content with players via broadcast (no token required for players)
 - 👁️ **Visibility toggles:** Quick visibility buttons for pages and categories
@@ -190,22 +190,15 @@ Or use the URL provided by the extension developer.
 - **🔄 Button:** Forces reload of a specific page (useful if you updated Notion)
 - **Cache management:** Available in the Settings panel
 
-### Token integration
+<a id="token-integration"></a>
 
-You can link pages directly to tokens/characters in the scene:
+### Map and token links
 
-1. **Right-click on any token** in the scene
-2. Select **"Link page"**
-3. Choose a page from your configuration
-4. The page is now linked to that token
+1. Select a map or character token in the scene. **Double-click a locked map** to select it while keeping it locked.
+2. Open the selection’s context menu (right-click or **⋯**) and choose **Link page**.
+3. Search for a vault page and confirm. In a scene with multiple maps, each map can link to a different page.
 
-**To view a linked page:**
-- Right-click on the token → **"View linked page"**
-
-**To unlink:**
-- Right-click on the token → **"Unlink page"** - GM only
-
-**Note:** Only the GM can link/unlink pages. All players can view linked pages.
+Choose **View linked page** on an item to open its page. The vault’s GM can replace the link with **Link page** or remove it with **Unlink page**. Players who can select the item see **View linked page** when the GM has shared that page with them. Co-GMs can view linked pages.
 
 ### Player visibility and content sharing
 

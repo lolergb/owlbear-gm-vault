@@ -5,23 +5,28 @@
  */
 
 import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-4';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=2.1.4';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=2.1.5';
 import {
   BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
   METADATA_KEY,
   VAULT_OWNER_KEY
-} from '../utils/constants.js?v=2.1.4';
+} from '../utils/constants.js?v=2.1.5';
 import {
   PLAYER_ACCESS_MODE,
   applyPlayerAccess,
   canPlayerAccessPage,
   filterConfigForPlayer,
   getPlayerAudienceMode,
+  hasDirectPlayerAccess,
   isPlayerAccessEnabled,
   setPlayerAccessEnabled,
   normalizePlayerIds
 } from '../utils/playerAccess.js';
+import {
+  clearPageLink, findLinkedPage, gmLinkFilter, hasPageLink, isLinkableItem,
+  linkKeys, playerViewIcons, selectionLabel
+} from '../utils/sceneItemLinks.js';
 import { iconHtml } from '../utils/iconHelper.js';
 import { getVisibilityStatusLabel } from '../utils/playerVisibilityCopy.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
@@ -45,18 +50,18 @@ import {
 } from '../utils/pageTitle.js';
 
 // Models
-import { Page } from '../models/Page.js?v=2.1.4';
-import { Category } from '../models/Category.js?v=2.1.4';
+import { Page } from '../models/Page.js?v=2.1.5';
+import { Category } from '../models/Category.js?v=2.1.5';
 
 // Services
 import { CacheService } from '../services/CacheService.js?v=20260812-1';
-import { StorageService } from '../services/StorageService.js?v=2.1.4';
+import { StorageService } from '../services/StorageService.js?v=2.1.5';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
-import { BroadcastService } from '../services/BroadcastService.js?v=2.1.4';
+import { BroadcastService } from '../services/BroadcastService.js?v=2.1.5';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20261118-1';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
-import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.4';
+import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.5';
 import {
   getVaultState,
   markContentOrigin,
@@ -64,12 +69,12 @@ import {
 } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.4&search=2';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.5';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.5&search=2';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.4';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.1.4';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.5';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.1.5';
 
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
@@ -80,7 +85,7 @@ import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
-import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.1.4';
+import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.1.5';
 import { PRODUCTION_ORIGIN, MIGRATION_PREFIX, validRoom } from '../config/betaMigration.js';
 import { chooseBetaVault, betaRecoveryMessage } from '../ui/BetaMigrationDialog.js';
 
@@ -277,8 +282,7 @@ export class ExtensionController {
       if (!this._canShowVaultEmptyState()) this._scheduleAnnouncement();
     }
     
-    // Configurar menús contextuales para tokens (para todos: GM, Co-GM y Players)
-    await this._setupTokenContextMenus();
+    await this._setupItemContextMenus();
     
     // Exponer función global para refrescar imágenes
     this._setupGlobalRefreshImage();
@@ -832,40 +836,31 @@ export class ExtensionController {
       }
     }
 
-    await this._updateLinkedTokensVisibility(storedPage.id, storedPage.url, next.playerAccessEnabled);
+    await this._updateLegacyLinkVisibility(storedPage.id, storedPage.url, next.playerAccessEnabled);
     Object.assign(page, next);
     this.uiRenderer?.updatePageVisibility?.(page, next.playerAccessEnabled);
     this._updateCurrentPageVisibility(page, next.playerAccessEnabled);
     return true;
   }
 
-  /**
-   * Actualiza la visibilidad en los tokens vinculados a una página
-   * @private
-   */
-  async _updateLinkedTokensVisibility(pageId, pageUrl, newVisibility) {
+  // Older links carry a visibility flag. New ID-only links follow the
+  // player's scoped vault, even when access changes in a different scene.
+  async _updateLegacyLinkVisibility(pageId, pageUrl, newVisibility) {
     try {
-      // Obtener todos los items de la escena
-      const allItems = await this.OBR.scene.items.getItems();
-      
-      // Filtrar tokens que tienen esta página vinculada
-      const linkedTokens = allItems.filter(item => {
-        const tokenPageId = item.metadata?.[`${METADATA_KEY}/pageId`];
-        const tokenPageUrl = item.metadata?.[`${METADATA_KEY}/pageUrl`];
-        return (pageId && tokenPageId === pageId) || (pageUrl && tokenPageUrl === pageUrl);
-      });
-      
-      if (linkedTokens.length > 0) {
-        // Actualizar el metadata de visibilidad en todos los tokens vinculados
-        await this.OBR.scene.items.updateItems(linkedTokens, (updateItems) => {
-          updateItems.forEach(item => {
-            item.metadata[`${METADATA_KEY}/pageVisible`] = newVisibility;
-          });
+      const matches = item => {
+        const metadata = item.metadata;
+        if (!metadata?.[linkKeys.pageUrl] && metadata?.[linkKeys.pageVisible] === undefined) return false;
+        const id = metadata[linkKeys.pageId];
+        return id ? id === pageId : pageUrl && metadata[linkKeys.pageUrl] === pageUrl;
+      };
+      const linked = (await this.OBR.scene.items.getItems()).filter(matches);
+      if (linked.length) {
+        await this.OBR.scene.items.updateItems(linked, drafts => {
+          for (const item of drafts.filter(matches)) item.metadata[linkKeys.pageVisible] = newVisibility;
         });
-        log(`👁️ Actualizada visibilidad en ${linkedTokens.length} token(s) vinculados`);
       }
     } catch (error) {
-      logError('Error actualizando tokens vinculados:', error);
+      logError('Error updating linked item visibility:', error);
     }
   }
 
@@ -6890,6 +6885,7 @@ export class ExtensionController {
       this.cacheService.clearPageCache(currentNotionId || currentId);
       this._goBackToList();
     }
+    if (!this.isGM) await this._setupPlayerItemContextMenu();
     await this.render();
     return true;
   }
@@ -9425,171 +9421,85 @@ export class ExtensionController {
     }
   }
 
-  // ============================================
-  // Token Context Menus - Vincular páginas a tokens
-  // ============================================
-
-  /**
-   * Configura los menús contextuales para tokens de OBR
-   * @private
-   */
-  async _setupTokenContextMenus() {
+  async _setupItemContextMenus() {
     try {
-      log('🎯 Configurando menús contextuales para tokens...');
-      
-      // Obtener la URL base para los iconos
-      const baseUrl = window.location.origin;
-      
-      // Menú: Vincular página (solo GM)
-      await this.OBR.contextMenu.create({
-        id: `${METADATA_KEY}/link-page`,
-        icons: [
-          {
-            icon: `${baseUrl}/img/icon-page.svg`,
-            label: 'Link page',
-            filter: {
-              every: [{ key: 'layer', value: 'CHARACTER' }],
-              roles: ['GM']
-            }
-          }
-        ],
-        onClick: async (context) => {
-          const items = context.items;
-          if (!items || items.length === 0) return;
-          
-          // Obtener los IDs de todos los tokens seleccionados
-          const itemIds = items.map(item => item.id);
-          
-          // Abrir el panel de la extensión
-          await this.OBR.action.open();
-          
-          // Pequeña espera para que el panel se abra
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          // Mostrar selector de páginas
-          await this._showPageSelectorForToken(itemIds);
-        }
+      if (!this.isGM) {
+        await this._setupPlayerItemContextMenu();
+        return;
+      }
+
+      const create = (id, icon, label, filter, onClick) => this.OBR.contextMenu.create({
+        id: `${METADATA_KEY}/${id}`,
+        icons: [{ icon: `/img/${icon}.svg`, label, filter }],
+        onClick
       });
-      
-      // Menú: Ver página vinculada (GM - ve todas las páginas vinculadas)
-      await this.OBR.contextMenu.create({
-        id: `${METADATA_KEY}/view-page-gm`,
-        icons: [
-          {
-            icon: `${baseUrl}/img/icon-view-page.svg`,
-            label: 'View linked page',
-            filter: {
-              every: [
-                { key: 'layer', value: 'CHARACTER' },
-                { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
-              ],
-              roles: ['GM']
-            }
-          }
-        ],
-        onClick: async (context) => {
-          const item = context.items[0];
-          if (!item) return;
-          
-          const pageUrl = item.metadata[`${METADATA_KEY}/pageUrl`];
-          const pageName = item.metadata[`${METADATA_KEY}/pageName`] || 'Linked page';
-          const pageId = item.metadata[`${METADATA_KEY}/pageId`];
-          
-          if (pageUrl || pageId) {
-            await this.OBR.action.open();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            this.analyticsService.trackPageViewedFromToken(pageName);
-            await this._openLinkedPage(pageUrl, pageName, pageId);
-          }
-        }
+      await create('view-page-gm', 'icon-view-page', 'View linked page',
+        { ...gmLinkFilter(true), max: 1 }, ({ items }) => this._viewItemLink(items, 'GM'));
+
+      if (this.isCoGM) return;
+      await create('link-page', 'icon-page', 'Link page', gmLinkFilter(), async ({ items }) => {
+        if (!items?.length || !items.every(isLinkableItem) || !await this._canEditItemLinks()) return;
+        await this.OBR.action.open();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await this._showItemPageSelector(items);
       });
-      
-      // Menú: Ver página vinculada (Players - solo si página es visible)
-      await this.OBR.contextMenu.create({
-        id: `${METADATA_KEY}/view-page-player`,
-        icons: [
-          {
-            icon: `${baseUrl}/img/icon-view-page.svg`,
-            label: 'View linked page',
-            filter: {
-              every: [
-                { key: 'layer', value: 'CHARACTER' },
-                { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' },
-                { key: ['metadata', `${METADATA_KEY}/pageVisible`], value: true }
-              ],
-              roles: ['PLAYER']
-            }
-          }
-        ],
-        onClick: async (context) => {
-          const item = context.items[0];
-          if (!item) return;
-          
-          const pageUrl = item.metadata[`${METADATA_KEY}/pageUrl`];
-          const pageName = item.metadata[`${METADATA_KEY}/pageName`] || 'Linked page';
-          const pageId = item.metadata[`${METADATA_KEY}/pageId`];
-          
-          if (pageUrl || pageId) {
-            await this.OBR.action.open();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            this.analyticsService.trackPageViewedFromToken(pageName);
-            await this._openLinkedPage(pageUrl, pageName, pageId);
-          }
-        }
+      await create('unlink-page', 'icon-trash', 'Unlink page', gmLinkFilter(true), async ({ items }) => {
+        if (!items?.length || !items.every(isLinkableItem) || !await this._canEditItemLinks()) return;
+        const linked = items.filter(hasPageLink);
+        if (!linked.length) return;
+        await this.OBR.scene.items.updateItems(linked.map(item => item.id), drafts => {
+          drafts.filter(isLinkableItem).forEach(clearPageLink);
+        });
+        this._showFeedback(`🔗 Page unlinked from ${selectionLabel(linked)}`);
       });
-      
-      // Menú: Desvincular página (solo GM)
-      await this.OBR.contextMenu.create({
-        id: `${METADATA_KEY}/unlink-page`,
-        icons: [
-          {
-            icon: `${baseUrl}/img/icon-trash.svg`,
-            label: 'Unlink page',
-            filter: {
-              every: [
-                { key: 'layer', value: 'CHARACTER' },
-                { key: ['metadata', `${METADATA_KEY}/pageUrl`], value: undefined, operator: '!=' }
-              ],
-              roles: ['GM']
-            }
-          }
-        ],
-        onClick: async (context) => {
-          const items = context.items;
-          if (!items || items.length === 0) return;
-          
-          // Desvincular todos los tokens seleccionados
-          await this.OBR.scene.items.updateItems(items, (updateItems) => {
-            updateItems.forEach(item => {
-              delete item.metadata[`${METADATA_KEY}/pageUrl`];
-              delete item.metadata[`${METADATA_KEY}/pageName`];
-              delete item.metadata[`${METADATA_KEY}/pageIcon`];
-              delete item.metadata[`${METADATA_KEY}/pageId`];
-              delete item.metadata[`${METADATA_KEY}/pageVisible`];
-            });
-          });
-          
-          const count = items.length;
-          log(`🗑️ Página desvinculada de ${count} token(s)`);
-          this._showFeedback(count === 1 ? '🔗 Page unlinked' : `🔗 Page unlinked from ${count} tokens`);
-        }
-      });
-      
-      log('✅ Menús contextuales para tokens configurados');
-      
     } catch (error) {
-      logError('❌ Error al configurar menús contextuales:', error);
+      logError('Error configuring item context menus:', error);
     }
   }
 
-  /**
-   * Muestra el selector de páginas para vincular a tokens
-   * @param {string[]} itemIds - IDs de los tokens seleccionados
-   * @private
-   */
-  async _showPageSelectorForToken(itemIds) {
-    const tokenIds = Array.isArray(itemIds) ? itemIds : [itemIds];
-    
+  async _canEditItemLinks() {
+    return this.isGM && !this.isCoGM && await this.OBR.player.getRole() === 'GM';
+  }
+
+  async _setupPlayerItemContextMenu() {
+    const pages = this.config.getAllPages().filter(page => hasDirectPlayerAccess(page, this.playerId));
+    await this.OBR.contextMenu.create({
+      id: `${METADATA_KEY}/view-page-player`,
+      icons: playerViewIcons(pages),
+      onClick: ({ items }) => this._viewItemLink(items, 'PLAYER')
+    });
+  }
+
+  async _viewItemLink(items, role) {
+    if (items?.length !== 1 || !isLinkableItem(items[0])) return;
+    if (await this.OBR.player.getRole() !== role || this.isGM !== (role === 'GM')) return;
+
+    const [item] = await this.OBR.scene.items.getItems([items[0].id]);
+    if (!isLinkableItem(item) || !hasPageLink(item)) return;
+    await this.OBR.action.open();
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const metadata = item.metadata;
+    const url = metadata[linkKeys.pageUrl];
+    const pageId = metadata[linkKeys.pageId];
+    const found = findLinkedPage(this.config, pageId, url);
+    const legacyHidden = !pageId && metadata[linkKeys.pageVisible] !== true;
+    if (role === 'PLAYER' && (legacyHidden || !hasDirectPlayerAccess(found?.page, this.playerId))) {
+      this._showFeedback('This page is unavailable.');
+      return;
+    }
+
+    // Preserve the GM's URL fallback for older token links.
+    const page = found?.page || (url && new Page(metadata[linkKeys.pageName] || 'Linked page', url));
+    if (!page) {
+      this._showFeedback('This page is unavailable.');
+      return;
+    }
+    if (item.layer === 'CHARACTER') this.analyticsService.trackPageViewedFromToken(page.name);
+    await this.openPage(page, found?.path || [], found?.index || 0);
+  }
+
+  async _showItemPageSelector(selectedItems) {
     // Verificar que tengamos configuración
     if (!this.config || !this.config.categories) {
       alert('No pages configured. Add pages from the main panel.');
@@ -9602,18 +9512,14 @@ export class ExtensionController {
     const rootPages = this.config.pages || [];
     const hideCommonRoot = rootCategories.length === 1 && rootPages.length === 0;
 
-    const addPageToList = (pageData, path, pageIndex) => {
+    const addPageToList = (pageData, path) => {
       const page = pageData instanceof Page ? pageData : Page.fromJSON(pageData);
       const visiblePath = hideCommonRoot ? path.slice(1) : path;
       allPages.push({
         id: page.id,
         name: page.name,
-        url: page.url,
-        icon: page.icon,
         displayPath: visiblePath.join(' / '),
-        searchPath: path.join(' / '),
-        categoryPath: path,
-        pageIndex
+        searchPath: path.join(' / ')
       });
     };
     
@@ -9629,7 +9535,7 @@ export class ExtensionController {
           collectPagesOrdered(subcategory, currentPath, level + 1);
         } else if (item.type === 'page' && category.pages && category.pages[item.index]) {
           const pageData = category.pages[item.index];
-          addPageToList(pageData, currentPath, item.index);
+          addPageToList(pageData, currentPath);
         }
       });
     };
@@ -9640,7 +9546,7 @@ export class ExtensionController {
       if (item.type === 'category' && this.config.categories && this.config.categories[item.index]) {
         collectPagesOrdered(this.config.categories[item.index], [], 0);
       } else if (item.type === 'page' && this.config.pages && this.config.pages[item.index]) {
-        addPageToList(this.config.pages[item.index], [], item.index);
+        addPageToList(this.config.pages[item.index], []);
       }
     });
     
@@ -9656,11 +9562,8 @@ export class ExtensionController {
       value: index.toString()
     }));
     
-    // Determinar el título del modal
-    const modalTitle = tokenIds.length === 1 
-      ? 'Link page to token' 
-      : `Link page to ${tokenIds.length} tokens`;
-    
+    const modalTitle = `Link page to ${selectionLabel(selectedItems)}`;
+
     // Mostrar modal de selección
     this._showModalForm(modalTitle, [
       {
@@ -9675,6 +9578,7 @@ export class ExtensionController {
         noResultsText: 'No pages found',
         visibleOptions: 7,
         onSearch: ({ queryLength, resultCount, totalCount }) => {
+          if (!selectedItems.every(item => item.layer === 'CHARACTER')) return;
           this.analyticsService?.trackTokenPageSearchUsed?.({
             queryLength,
             resultCount,
@@ -9692,156 +9596,35 @@ export class ExtensionController {
       }
       
       try {
-        // Obtener todos los items seleccionados
-        const items = await this.OBR.scene.items.getItems(tokenIds);
-        if (items.length === 0) {
-          alert('Error: tokens not found');
+        if (!await this._canEditItemLinks()) return;
+        const page = this.config.findPageById(selectedPage.id);
+        if (!page) {
+          this._showFeedback('This page is unavailable.');
           return;
         }
-        
-        // Actualizar metadatos de todos los tokens
-        log(`🔗 Vinculando página a token - ID: ${selectedPage.id}, Name: ${selectedPage.name}`);
-        
-        // Buscar la página completa para obtener el estado efectivo sin
-        // confundirlo con la audiencia configurada.
-        const fullPage = this.config?.findPageById(selectedPage.id);
-        const isVisible = isPlayerAccessEnabled(fullPage);
-        
-        await this.OBR.scene.items.updateItems(items, (updateItems) => {
-          updateItems.forEach(item => {
-            item.metadata[`${METADATA_KEY}/pageUrl`] = selectedPage.url;
-            item.metadata[`${METADATA_KEY}/pageName`] = selectedPage.name;
-            item.metadata[`${METADATA_KEY}/pageIcon`] = selectedPage.icon;
-            item.metadata[`${METADATA_KEY}/pageVisible`] = isVisible;
-            if (selectedPage.id) {
-              item.metadata[`${METADATA_KEY}/pageId`] = selectedPage.id;
-              log(`✅ pageId guardado en token: ${selectedPage.id}, visible: ${isVisible}`);
-            } else {
-              log(`⚠️ selectedPage no tiene id:`, selectedPage);
-            }
-          });
+        const ids = selectedItems.map(item => item.id);
+        const items = (await this.OBR.scene.items.getItems(ids)).filter(isLinkableItem);
+        if (!items.length) {
+          this._showFeedback('The selected items are no longer available.');
+          return;
+        }
+
+        await this.OBR.scene.items.updateItems(items.map(item => item.id), drafts => {
+          for (const item of drafts.filter(isLinkableItem)) {
+            clearPageLink(item);
+            item.metadata[linkKeys.pageId] = page.id;
+          }
         });
-        
-        // Registrar y mostrar mensaje de confirmación
-        const tokenCount = items.length;
-        log(`✅ Página "${selectedPage.name}" vinculada a ${tokenCount} token(s)`);
-        
-        // Trackear para cada token
-        tokenIds.forEach(itemId => {
-          this.analyticsService.trackPageLinkedToToken(selectedPage.name, itemId);
-        });
-        
-        const successMessage = tokenCount === 1
-          ? `✅ Page "${selectedPage.name}" linked to token`
-          : `✅ Page "${selectedPage.name}" linked to ${tokenCount} tokens`;
-        this._showFeedback(successMessage);
-        
+        for (const item of items) {
+          if (item.layer === 'CHARACTER') this.analyticsService.trackPageLinkedToToken(page.name, item.id);
+        }
+        this._showFeedback(`✅ Page "${page.name}" linked to ${selectionLabel(items)}`);
       } catch (error) {
         logError('Error al vincular página:', error);
-      this.analyticsService?.trackClientError?.({ operation: 'token_link', error: error });
+        this.analyticsService?.trackClientError?.({ operation: 'token_link', error });
         alert('Error linking page: ' + error.message);
       }
     });
-  }
-
-  /**
-   * Abre una página vinculada desde un token
-   * @param {string} url - URL de la página (puede ser null para páginas de Obsidian)
-   * @param {string} name - Nombre de la página
-   * @param {string} pageId - ID de la página (prioritario para búsqueda)
-   * @private
-   */
-  async _openLinkedPage(url, name, pageId = null) {
-    // Buscar la página en la configuración para obtener todos sus datos
-    let foundPage = null;
-    let foundCategoryPath = [];
-    let foundPageIndex = 0;
-    
-    // Si tenemos pageId, buscar directamente por ID (más confiable)
-    if (pageId && this.config) {
-      foundPage = this.config.findPageById(pageId);
-      log(`🔍 Buscando página por ID: ${pageId} - ${foundPage ? '✅ Encontrada' : '❌ No encontrada'}`);
-    }
-    
-    // Buscar por URL o nombre, rastreando la ruta de la carpeta
-    const findPage = (category, path) => {
-      if (!category || foundPage) return;
-      
-      // Buscar en páginas de esta categoría
-      const pages = category.pages || [];
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        // Convertir a instancia de Page si es necesario
-        const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
-        
-        const matchById = pageId && pageInstance.id === pageId;
-        const matchByUrl = !foundPage && url && pageInstance.url === url;
-        const matchByName = !foundPage && !url && pageInstance.name === name;
-        
-        if (matchById || matchByUrl || matchByName) {
-          foundPage = pageInstance;
-          foundCategoryPath = path;
-          foundPageIndex = i;
-          return;
-        }
-      }
-      
-      // Buscar en subcategorías
-      const subcategories = category.categories || [];
-      for (const subcat of subcategories) {
-        findPage(subcat, [...path, subcat.name]);
-      }
-    };
-    
-    // Si ya encontramos por ID, igual necesitamos la ruta
-    // Buscar en todas las categorías raíz para obtener path e index
-    if (this.config && this.config.categories) {
-      // Resetear foundPage si solo lo encontramos por ID (sin ruta)
-      const pageById = foundPage;
-      foundPage = null;
-      
-      for (const cat of this.config.categories) {
-        findPage(cat, [cat.name]);
-        if (foundPage) break;
-      }
-      
-      // Si no lo encontramos por búsqueda recursiva pero sí por ID, usar el de ID
-      if (!foundPage && pageById) {
-        foundPage = pageById;
-        foundCategoryPath = [];
-        foundPageIndex = 0;
-      }
-    }
-    
-    // También buscar en páginas raíz (sin carpeta)
-    if (!foundPage && this.config && this.config.pages) {
-      for (let i = 0; i < this.config.pages.length; i++) {
-        const page = this.config.pages[i];
-        const pageInstance = page instanceof Page ? page : Page.fromJSON(page);
-        const matchById = pageId && pageInstance.id === pageId;
-        const matchByUrl = url && pageInstance.url === url;
-        const matchByName = !url && pageInstance.name === name;
-        
-        if (matchById || matchByUrl || matchByName) {
-          foundPage = pageInstance;
-          foundCategoryPath = [];
-          foundPageIndex = i;
-          break;
-        }
-      }
-    }
-    
-    // Si encontramos la página, usarla; sino crear una básica
-    if (foundPage) {
-      log(`📖 Abriendo página encontrada: ${foundPage.name} (ID: ${foundPage.id}) en carpeta: [${foundCategoryPath.join('/')}]`);
-      // Convertir a instancia de Page si es necesario
-      const pageInstance = foundPage instanceof Page ? foundPage : Page.fromJSON(foundPage);
-      await this.openPage(pageInstance, foundCategoryPath, foundPageIndex);
-    } else {
-      log(`⚠️ Página no encontrada, creando básica: ${name}`);
-      const page = new Page(name, url || null, { visibleToPlayers: false, blockTypes: null });
-      await this.openPage(page, [], 0);
-    }
   }
 
   /**

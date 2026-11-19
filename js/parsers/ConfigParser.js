@@ -4,9 +4,9 @@
  * Parsea y valida configuraciones JSON del vault.
  */
 
-import { Config } from '../models/Config.js?v=2.1.4';
-import { Category } from '../models/Category.js?v=2.1.4';
-import { Page } from '../models/Page.js?v=2.1.4';
+import { Config } from '../models/Config.js?v=2.1.5';
+import { Category } from '../models/Category.js?v=2.1.5';
+import { Page } from '../models/Page.js?v=2.1.5';
 import { log, logWarn, logError } from '../utils/logger.js?v=20260722-4';
 
 const isObjectRecord = (value) => (

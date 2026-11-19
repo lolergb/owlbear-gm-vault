@@ -10,7 +10,7 @@ This document lists all the features available to users from the interface, what
 3. [Folder Management](#folder-management)
 4. [Settings Panel](#settings-panel)
 5. [Page Viewing Features](#page-viewing-features)
-6. [Token Integration](#token-integration)
+6. [Map and token links](#map-and-token-links)
 7. [Player Visibility Controls](#player-visibility-controls)
 8. [Content Sharing](#content-sharing)
 
@@ -132,15 +132,17 @@ This document lists all the features available to users from the interface, what
 
 ---
 
-## Token Integration
+<a id="token-integration"></a>
 
-### Right-Click Menu on Tokens
-- **Location:** Right-click on any token/character in the Owlbear scene
-- **What it does:** Shows context menu options:
-  - **Link page:** (GM only) Links a page from your configuration to the token
-  - **View linked page:** Opens the page linked to this token
-  - **Unlink page:** (GM only) Removes the link between token and page
-- **Documentation:** Explained in [README.md - Token integration](../README.md#token-integration)
+## Map and token links
+
+Select the map or character token to use. For a locked map, double-click it, then open the **⋯** menu.
+
+- **Link page** lets the vault’s GM choose or replace the page on the selected items.
+- **View linked page** opens the selected item’s page for GMs and players with access to that page.
+- **Unlink page** lets the vault’s GM remove the link.
+
+[Map and token links in the user guide](../README.md#map-and-token-links)
 
 ---
 
@@ -232,7 +234,7 @@ This document lists all the features available to users from the interface, what
 | Edit page/folder | ⋯ menu on item | [Manage your pages](../README.md#manage-your-pages) |
 | Toggle visibility | 👁️ button on item | [Player visibility](../README.md#player-visibility-and-content-sharing) |
 | Reload page | 🔄 button when viewing | [Update content](../README.md#update-content) |
-| Link to token | Right-click token → Link page | [Token integration](../README.md#token-integration) |
+| Link a map or token | Select item → ⋯ → Link page | [Map and token links](../README.md#map-and-token-links) |
 | View image full-size | Click any image | [Features](../README.md#-features) |
 
 ---

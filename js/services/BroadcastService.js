@@ -19,7 +19,7 @@ import {
   BROADCAST_CHANNEL_PLAYER_VAULT_UPDATED,
   BROADCAST_MESSAGE_SIZE_LIMIT,
   BROADCAST_CONTENT_CHUNK_SIZE
-} from '../utils/constants.js?v=2.1.4';
+} from '../utils/constants.js?v=2.1.5';
 import { log, logWarn, getUserRole } from '../utils/logger.js?v=20260722-4';
 import { sanitizeNotionHtml } from '../utils/htmlSecurity.js?v=20260722-4';
 import {

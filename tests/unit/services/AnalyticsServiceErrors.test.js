@@ -36,7 +36,7 @@ describe('privacy-safe error analytics', () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
     const first = eventAt();
     expect(first.event).toBe('client_error');
-    expect(first.properties).toMatchObject({ operation: 'runtime', error_type: 'TypeError', error_code: 'unknown', error_source: 'global', error_fingerprint: 'runtime:TypeError:unknown', app_version: '2.1.4', environment: 'beta', deploy_context: 'deploy-preview', role: 'GM', vault_state: 'configured' });
+    expect(first.properties).toMatchObject({ operation: 'runtime', error_type: 'TypeError', error_code: 'unknown', error_source: 'global', error_fingerprint: 'runtime:TypeError:unknown', app_version: '2.1.5', environment: 'beta', deploy_context: 'deploy-preview', role: 'GM', vault_state: 'configured' });
     expect(eventAt(1).properties).toMatchObject({ error_source: 'promise', error_type: 'RangeError' });
     const sent = JSON.stringify([first, eventAt(1)]);
     for (const secret of ['private.test', 'super-secret-token-value', 'Room name', 'private-player-id', 'private-vault-id', 'private player']) expect(sent).not.toContain(secret);
