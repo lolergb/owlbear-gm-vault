@@ -1,4 +1,4 @@
-import { METADATA_KEY } from './constants.js?v=2.1.4';
+import { METADATA_KEY } from './constants.js?v=2.1.5';
 
 const layers = ['CHARACTER', 'MAP'];
 export const linkKeys = Object.fromEntries(

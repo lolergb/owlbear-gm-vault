@@ -5,9 +5,9 @@
  * Este modelo es independiente del framework y puede ser serializado a JSON.
  */
 
-import { Category } from './Category.js?v=2.1.4';
-import { Page } from './Page.js?v=2.1.4';
-import { formatAsUUID } from '../utils/helpers.js?v=2.1.4';
+import { Category } from './Category.js?v=2.1.5';
+import { Page } from './Page.js?v=2.1.5';
+import { formatAsUUID } from '../utils/helpers.js?v=2.1.5';
 
 /**
  * Clase que representa la configuración completa del vault

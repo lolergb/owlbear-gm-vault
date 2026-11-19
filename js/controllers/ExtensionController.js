@@ -5,13 +5,13 @@
  */
 
 import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-4';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=2.1.4';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=2.1.5';
 import {
   BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
   METADATA_KEY,
   VAULT_OWNER_KEY
-} from '../utils/constants.js?v=2.1.4';
+} from '../utils/constants.js?v=2.1.5';
 import {
   PLAYER_ACCESS_MODE,
   applyPlayerAccess,
@@ -50,18 +50,18 @@ import {
 } from '../utils/pageTitle.js';
 
 // Models
-import { Page } from '../models/Page.js?v=2.1.4';
-import { Category } from '../models/Category.js?v=2.1.4';
+import { Page } from '../models/Page.js?v=2.1.5';
+import { Category } from '../models/Category.js?v=2.1.5';
 
 // Services
 import { CacheService } from '../services/CacheService.js?v=20260812-1';
-import { StorageService } from '../services/StorageService.js?v=2.1.4';
+import { StorageService } from '../services/StorageService.js?v=2.1.5';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
-import { BroadcastService } from '../services/BroadcastService.js?v=2.1.4';
+import { BroadcastService } from '../services/BroadcastService.js?v=2.1.5';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20261118-1';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
-import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.4';
+import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.5';
 import {
   getVaultState,
   markContentOrigin,
@@ -69,12 +69,12 @@ import {
 } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.4';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.4&search=2';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.5';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.5&search=2';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.4';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.1.4';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.5';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.1.5';
 
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
@@ -85,7 +85,7 @@ import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
-import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.1.4';
+import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.1.5';
 import { PRODUCTION_ORIGIN, MIGRATION_PREFIX, validRoom } from '../config/betaMigration.js';
 import { chooseBetaVault, betaRecoveryMessage } from '../ui/BetaMigrationDialog.js';
 

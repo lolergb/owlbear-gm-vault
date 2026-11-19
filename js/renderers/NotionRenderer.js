@@ -5,7 +5,7 @@
  */
 
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
-import { extractNotionPageId } from '../utils/helpers.js?v=2.1.4';
+import { extractNotionPageId } from '../utils/helpers.js?v=2.1.5';
 import { resolvePageTitle } from '../utils/pageTitle.js';
 import { escapeHtml, sanitizeHttpUrl, sanitizeLinkUrl } from '../utils/htmlSecurity.js?v=20260722-4';
 
