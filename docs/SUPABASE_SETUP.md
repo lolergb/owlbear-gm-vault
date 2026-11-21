@@ -34,6 +34,8 @@ Configurar una caducidad de 10 minutos para Email OTP y un intervalo de reenvío
 
 Configurar **Custom SMTP** con el proveedor y remitente elegidos y verificar SPF, DKIM y DMARC del dominio. Las credenciales SMTP se introducen únicamente en Supabase. Su servicio de envío predeterminado está limitado a destinatarios del equipo y no es suficiente para probar con buzones externos. Documentación: [Email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless) y [Custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
+El usuario eligió Resend Free y autorizó su alta y los tres registros nuevos de envío de `auth.bynewroman.com`. La cuenta ya está creada y GoDaddy confirmó el guardado del TXT `resend._domainkey.auth` y los CNAME `rsend.auth` y `send.auth`; también se comprobó que resuelven en DNS público. Se conservaron los registros anteriores del dominio. Resend está completando la verificación en la región de Irlanda, con seguimiento de aperturas y clics desactivado. Se preparó en Supabase el remitente `GM Vault <codes@auth.bynewroman.com>`, host `smtp.resend.com`, puerto `465` y usuario `resend`. Esta configuración aún no está guardada: faltan la clave privada de solo envío, su introducción por el usuario y la confirmación de SMTP. No guardar esa clave en el repositorio, Netlify ni el chat.
+
 La Site URL puede apuntar al origen del preview para identificar el entorno. Este flujo por código no necesita añadir una ruta callback ni permitir redirecciones comodín. Mantener habilitado el método de acceso passwordless por email: OTP comparte su implementación con Magic Link, aunque el mensaje muestre únicamente el código.
 
 ## Variables de Netlify
