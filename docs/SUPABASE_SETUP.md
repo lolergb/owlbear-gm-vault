@@ -8,7 +8,7 @@ Instalarlo en una sala de pruebas. El dominio del preview tiene almacenamiento l
 
 ## Estado del proyecto abierto
 
-El 21 de noviembre de 2026 el navegador mostraba el proyecto `gm-vault-production`, referencia `wtrgjhfmakecotdygkqz`, en estado **paused**. No se aplicaron cambios a ese proyecto desde esta implementación. Para utilizarlo hay que reanudarlo y revisar su estado antes de configurar Auth o ejecutar SQL. Para mantener separados preview y producción, usar preferentemente un proyecto de pruebas distinto.
+Durante la implementación del 21 de noviembre de 2026, el proyecto `gm-vault-production`, referencia `wtrgjhfmakecotdygkqz`, estaba pausado. En la configuración posterior solicitada por el usuario ya aparecía activo y saludable, y la tabla con las políticas de la migración ya estaba creada. Se comprobó ese esquema sin repetir la migración y se ajustó Email OTP a 600 segundos. Para mantener separados preview y producción, usar preferentemente un proyecto de pruebas distinto.
 
 ## Base de datos
 
@@ -28,6 +28,8 @@ En el proyecto nuevo de pruebas, configurar mensajes propios que muestren **`{{ 
 
 Si se reutiliza un proyecto con templates existentes, conservarlos y autorizar cualquier sustitución de forma expresa antes de editar esos templates. La implementación no modifica templates remotos.
 
+El usuario autorizó expresamente sustituir únicamente **Confirm sign up** y **Magic link or OTP** por los mensajes de [alta](../supabase/emails/signup-otp.html) y [acceso](../supabase/emails/login-otp.html), con asunto `Your GM Vault sign-in code`. Son archivos nuevos; su instalación en Supabase queda pendiente de configurar SMTP. El panel del plan gratuito actual no permite editar el contenido de los emails predeterminados sin SMTP propio.
+
 Configurar una caducidad de 10 minutos para Email OTP y un intervalo de reenvío de al menos 60 segundos. La interfaz admite códigos numéricos de entre 6 y 10 dígitos para ajustarse a la longitud del proyecto. Los límites del servidor y del proveedor siguen siendo los efectivos.
 
 Configurar **Custom SMTP** con el proveedor y remitente elegidos y verificar SPF, DKIM y DMARC del dominio. Las credenciales SMTP se introducen únicamente en Supabase. Su servicio de envío predeterminado está limitado a destinatarios del equipo y no es suficiente para probar con buzones externos. Documentación: [Email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless) y [Custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
@@ -36,7 +38,7 @@ La Site URL puede apuntar al origen del preview para identificar el entorno. Est
 
 ## Variables de Netlify
 
-En el proyecto Netlify `owlbear-gm-vault`, añadir estas variables **con alcance Functions y contexto Deploy Previews**:
+En el proyecto Netlify `owlbear-gm-vault`, añadir estas variables **en contexto Deploy Previews**, con alcance Functions cuando el plan permita elegirlo. En el plan actual solo está disponible All scopes; los valores de URL y clave pública siguen limitados a Deploy Previews:
 
 | Variable | Valor |
 | --- | --- |
@@ -45,6 +47,8 @@ En el proyecto Netlify `owlbear-gm-vault`, añadir estas variables **con alcance
 | `GM_VAULT_SUPABASE_PUBLISHABLE_KEY` | Clave pública publishable del mismo proyecto; también se admite una clave pública `anon` anterior |
 
 Las tres variables pertenecen al mismo proyecto y contexto. No configurar una clave `secret` ni `service_role`: el endpoint las rechaza. No introducir credenciales de SMTP o base de datos en Netlify para esta función. Las claves públicas se pueden exponer al navegador porque las políticas de la base de datos exigen la sesión individual del usuario. Véase [API keys](https://supabase.com/docs/guides/getting-started/api-keys).
+
+En la configuración del 21 de noviembre se guardaron las tres variables para Deploy Previews y se fijó `GM_VAULT_CLOUD_ENABLED=false` en Production. El redespliegue de la PR #26 terminó correctamente y su endpoint público devolvió `enabled: true`. La lectura directa de copias con la clave pública y sin sesión fue rechazada con HTTP 401 y `permission denied`, como corresponde.
 
 Volver a desplegar la PR después de cambiar variables. Comprobar `/.netlify/functions/get-cloud-config` en el preview: devuelve `enabled: true`, la URL y la clave pública. Sin configuración válida devuelve solo `enabled: false` y las acciones explican que las copias privadas no están configuradas. El arranque local no consulta ese endpoint.
 
@@ -78,4 +82,4 @@ En esta implementación se verificaron las pruebas de regresión y de los nuevos
 
 La revisión del navegador recorrió acceso, código incorrecto, primera copia, sesión reutilizada, restauración y Undo en dos sesiones lógicas de QA, con email simulado, usando temas claro y oscuro y panel estrecho. La ruta local `/__dev/cloud?state=configured&profile=a` sirve exclusivamente para estas pruebas mediante `npm run dev`; su código simulado es `123456` y no envía emails. La extensión instalada desde el manifest siempre utiliza el servicio Supabase real cuando está configurado.
 
-La entrega real de OTP, el aislamiento en el proyecto alojado y la prueba final con dos perfiles reales dentro de Owlbear quedan pendientes de activar y configurar el entorno. El proyecto encontrado estaba pausado; las pruebas simuladas no acreditan esos pasos externos.
+La entrega real de OTP y la prueba final con dos perfiles reales dentro de Owlbear quedan pendientes de configurar SMTP y los dos mensajes autorizados. El proyecto ya está activo, su tabla y políticas se han comprobado y la preview tiene conexión. Las pruebas simuladas no acreditan el envío real de códigos ni el ciclo completo con sesiones del servicio alojado.
