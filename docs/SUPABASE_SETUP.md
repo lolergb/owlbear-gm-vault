@@ -4,11 +4,13 @@ El candidato de la PR #26 incorpora guardado y restauración manual de una sola 
 
 https://deploy-preview-26--owlbear-gm-vault.netlify.app/manifest.json
 
+**Preview configurada y lista para probar.** El 21 de noviembre de 2026 se completó el ciclo real por email, guardado, sustitución y recuperación en dos salas de Owlbear con Supabase alojado. La nube sigue desactivada en el despliegue de producción.
+
 Instalarlo en una sala de pruebas. El dominio del preview tiene almacenamiento local independiente de producción: que aparezca vacío no significa que se haya perdido el vault de producción. Para llevar un vault al preview, exportar su JSON e importarlo allí. La copia privada excluye el token de Notion.
 
 ## Estado del proyecto abierto
 
-Durante la implementación del 21 de noviembre de 2026, el proyecto `gm-vault-production`, referencia `wtrgjhfmakecotdygkqz`, estaba pausado. En la configuración posterior solicitada por el usuario ya aparecía activo y saludable, y la tabla con las políticas de la migración ya estaba creada. Se comprobó ese esquema sin repetir la migración y se ajustó Email OTP a 600 segundos. Para mantener separados preview y producción, usar preferentemente un proyecto de pruebas distinto.
+El proyecto configurado es `gm-vault-production`, referencia `wtrgjhfmakecotdygkqz`, activo y saludable. Su tabla y políticas ya estaban creadas y se comprobaron sin repetir la migración. Email OTP está ajustado a 600 segundos, con códigos de 8 dígitos. La comprobación posterior al segundo guardado encontró una sola copia para la cuenta de prueba, con revisión `2` y versión de esquema `1`. Para mantener separados preview y producción en futuros cambios, usar preferentemente un proyecto de pruebas distinto.
 
 ## Base de datos
 
@@ -34,7 +36,7 @@ Configurar una caducidad de 10 minutos para Email OTP y un intervalo de reenvío
 
 Configurar **Custom SMTP** con el proveedor y remitente elegidos y verificar SPF, DKIM y DMARC del dominio. Las credenciales SMTP se introducen únicamente en Supabase. Su servicio de envío predeterminado está limitado a destinatarios del equipo y no es suficiente para probar con buzones externos. Documentación: [Email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless) y [Custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
-El usuario eligió Resend Free y autorizó su alta y los tres registros nuevos de envío de `auth.bynewroman.com`. La cuenta ya está creada y GoDaddy confirmó el guardado del TXT `resend._domainkey.auth` y los CNAME `rsend.auth` y `send.auth`; también se comprobó que resuelven en DNS público. Se conservaron los registros anteriores del dominio. Resend confirmó el dominio como **Verified / Ready**, en la región de Irlanda, con seguimiento de aperturas y clics desactivado. La configuración prevista es el remitente `GM Vault <codes@auth.bynewroman.com>`, host `smtp.resend.com`, puerto `465` y usuario `resend`. El usuario creó una clave de solo envío restringida al subdominio y guardó SMTP; el panel confirmó que estaba activado y tenía una contraseña almacenada. La primera solicitud real de OTP falló con `535 Authentication credentials invalid` en los logs de Auth. El segundo intento de la extensión tampoco pudo enviar el código. Queda pendiente corregir la credencial SMTP mediante pegado y guardado por el usuario y volver a comprobar la entrega. No guardar esa clave en el repositorio, Netlify ni el chat.
+El usuario eligió Resend Free y autorizó su alta y los tres registros nuevos de envío de `auth.bynewroman.com`. La cuenta ya está creada y GoDaddy confirmó el guardado del TXT `resend._domainkey.auth` y los CNAME `rsend.auth` y `send.auth`; también se comprobó que resuelven en DNS público. Se conservaron los registros anteriores del dominio. Resend confirmó el dominio como **Verified / Ready**, en la región de Irlanda, con seguimiento de aperturas y clics desactivado. SMTP quedó configurado con el remitente `GM Vault <codes@auth.bynewroman.com>`, host `smtp.resend.com`, puerto `465` y usuario `resend`. El usuario creó y guardó una clave de solo envío restringida al subdominio. El error inicial de credenciales SMTP se resolvió al volver a pegarla y guardarla: se recibieron y verificaron dos códigos reales en el buzón autorizado durante la prueba. No guardar esa clave en el repositorio, Netlify ni el chat.
 
 La Site URL puede apuntar al origen del preview para identificar el entorno. Este flujo por código no necesita añadir una ruta callback ni permitir redirecciones comodín. Mantener habilitado el método de acceso passwordless por email: OTP comparte su implementación con Magic Link, aunque el mensaje muestre únicamente el código.
 
@@ -84,4 +86,14 @@ En esta implementación se verificaron las pruebas de regresión y de los nuevos
 
 La revisión del navegador recorrió acceso, código incorrecto, primera copia, sesión reutilizada, restauración y Undo en dos sesiones lógicas de QA, con email simulado, usando temas claro y oscuro y panel estrecho. La ruta local `/__dev/cloud?state=configured&profile=a` sirve exclusivamente para estas pruebas mediante `npm run dev`; su código simulado es `123456` y no envía emails. La extensión instalada desde el manifest siempre utiliza el servicio Supabase real cuando está configurado.
 
-La preview 2.2.0 también se instaló dentro de una sala nueva de Owlbear, `GM Vault 2.2.0 backup test`. El arranque local, la carga de una instancia del vault de ejemplo, los controles de GM y el formulario real de acceso de Supabase funcionaron. Se hicieron dos solicitudes reales de OTP que no pudieron enviar el código; la primera quedó registrada con el error SMTP indicado arriba. Los dos mensajes autorizados ya están instalados. La entrega real de OTP y la prueba final con dos perfiles reales dentro de Owlbear quedan pendientes de resolver las credenciales SMTP. El proyecto ya está activo, su tabla y políticas se han comprobado y la preview tiene conexión. Las pruebas simuladas no acreditan el envío real de códigos ni el ciclo completo con sesiones del servicio alojado.
+La preview 2.2.0 se instaló dentro de dos salas nuevas de Owlbear, `GM Vault 2.2.0 backup test` y `GM Vault 2.2.0 restore test`, usando el SDK y el servicio Supabase reales:
+
+- Se recibió un código real por email, se verificó y se guardó la primera copia de 12 páginas y 6 carpetas del vault de ejemplo.
+- La segunda sala empezó vacía. Reutilizó la sesión, leyó la copia remota y conservó su estado vacío al cancelar la revisión.
+- Al confirmar, recuperó el mismo contenido y orden mostrados en la primera sala. Los 12 controles de acceso de jugadores quedaron desactivados.
+- **Undo restore** devolvió la segunda sala a su estado vacío anterior.
+- Se activó el acceso de jugadores de una página de prueba en la primera sala y se sustituyó la copia usando la sesión existente.
+- Después de cerrar sesión en la segunda sala se solicitó y verificó un segundo código real. La copia actualizada se recuperó correctamente y los 12 controles de acceso de jugadores volvieron a quedar desactivados, incluida la página compartida.
+- Una consulta de solo lectura confirmó una sola fila para esa cuenta, revisión `2` y esquema `1`.
+
+Estas pruebas reales se hicieron con una cuenta y dos salas en el mismo navegador. La prueba adicional desde otro dispositivo y la comprobación alojada con una segunda cuenta permanecen como QA recomendado; el aislamiento entre cuentas se comprobó en PostgreSQL embebido y el acceso alojado sin sesión fue rechazado. No se publicaron cambios en el despliegue de producción.
