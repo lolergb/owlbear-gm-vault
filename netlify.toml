@@ -96,3 +96,8 @@
 # GM_VAULT_DEFAULT_CONFIG_V2: credencial de una integración de Notion dedicada.
 #   - Debe tener acceso de solo lectura exclusivamente a las páginas demo.
 #   - Se usa únicamente dentro de las Netlify Functions y nunca se devuelve al cliente.
+# Private backups (scope these separately to Deploy Previews / Production):
+# GM_VAULT_CLOUD_ENABLED: "true" enables explicitly requested cloud actions.
+# GM_VAULT_SUPABASE_URL: HTTPS project URL.
+# GM_VAULT_SUPABASE_PUBLISHABLE_KEY: public publishable or legacy anon key only.
+# Never configure service_role or SMTP credentials for this endpoint.

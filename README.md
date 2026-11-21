@@ -8,6 +8,7 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 - 📝 Page management by folders from the interface
 - 🎨 Clean and dark interface
 - 💾 Persistent cache for fast loading
+- ☁️ Manual private backup across devices with email codes, when Supabase is configured
 - 🏠 Independent configuration per Owlbear room
 - 🖼️ Full-size image viewing in modal
 - 📥 Import/Export JSON configuration
@@ -26,6 +27,8 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 - 👁️ **Visibility toggles:** Quick visibility buttons for pages and categories
 
 ## 🚀 Installation
+
+GM Vault 2.2.0 adds one private backup per account. Configure the service using the [Supabase setup and testing guide](docs/SUPABASE_SETUP.md). Local vaults and JSON backups work without an account.
 
 The extension can be installed manually by pasting the manifest URL below in the "Add Extension" dialog.
 

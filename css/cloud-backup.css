@@ -1,0 +1,30 @@
+.cloud-backup-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: calc(100% - 32px);
+  max-width: 460px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  border: 0;
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface);
+}
+.cloud-backup-dialog::backdrop { background: var(--color-bg-overlay); }
+.cloud-backup-copy { margin: 0 0 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.cloud-backup-dialog .form__label { display: block; margin-bottom: 8px; }
+.cloud-backup-dialog .input { width: 100%; box-sizing: border-box; }
+.cloud-backup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.cloud-backup-actions .btn { flex: 1 1 auto; }
+.cloud-backup-error { color: var(--color-error-text); line-height: 1.5; margin: 16px 0 0; }
+.cloud-backup-dialog :focus-visible { outline: 2px solid var(--button-focus-ring); outline-offset: 3px; }
+.cloud-backup-dialog input { caret-color: var(--color-accent-primary-light); }
+.cloud-backup-dialog ::selection { background: var(--color-accent-primary); color: var(--color-accent-primary-contrast); }
+.cloud-backup-status { margin: 12px 0 0; color: var(--color-text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
+.cloud-backup-settings { margin-top: 24px; }
+.cloud-backup-settings[hidden], .cloud-backup-settings button[hidden] { display: none; }
+.cloud-backup-settings .form__actions { flex-wrap: wrap; }
+@media (max-width: 380px) {
+  .cloud-backup-actions { flex-direction: column; }
+}

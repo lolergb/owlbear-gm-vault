@@ -11,16 +11,18 @@ const userId = 'local-preview-gm';
 const controller = new ExtensionController();
 controller.roomId = roomId;
 controller.playerId = userId;
+controller.connectionId = 'local-preview-connection';
 controller.isGM = params.get('role') !== 'player';
 controller.isCoGM = params.get('role') === 'cogm';
 controller.OBR = {
   player: {
     getId: async () => userId,
+    getConnectionId: async () => controller.connectionId,
     getRole: async () => controller.isGM ? 'GM' : 'PLAYER'
   },
   party: { getPlayers: async () => [] },
   broadcast: { sendMessage: async () => {} },
-  room: { getMetadata: async () => ({}) },
+  room: { id: roomId, getId: async () => roomId, getMetadata: async () => ({}) },
   modal: { open: async ({ url }) => window.open(url, '_blank', 'noopener') }
 };
 controller._setupServices();

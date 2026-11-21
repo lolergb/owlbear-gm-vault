@@ -284,7 +284,7 @@ describe('image share background contract', () => {
     expect(localManifest.background_url).toBe('/html/background.html');
     const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
     expect(manifest.version).toBe(packageJson.version);
-    expect(localManifest.version).toBe('2.1.0-beta.2');
+    expect(localManifest.version).toBe(packageJson.version);
   });
 
   it('delega la recepción al listener único de background', () => {

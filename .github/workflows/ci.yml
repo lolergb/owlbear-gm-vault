@@ -29,3 +29,6 @@ jobs:
 
       - name: Run complete test suite
         run: npm test -- --runInBand
+
+      - name: Verify PostgreSQL backup isolation
+        run: npm run test:cloud-db
