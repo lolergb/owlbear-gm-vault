@@ -22,15 +22,17 @@ Las comprobaciones de PostgreSQL se ejecutan con `npm run test:cloud-db`. Usan l
 
 ## Acceso por código y entrega de email
 
-En Authentication, habilitar el proveedor **Email** y permitir el alta de nuevos usuarios si cualquier GM debe poder crear su primera copia. El cliente utiliza `signInWithOtp` y `verifyOtp` con tipo `email`; no utiliza contraseña ni una redirección de acceso.
+En Authentication, habilitar el proveedor **Email** y permitir el alta de nuevos usuarios si cualquier GM debe poder crear su primera copia. Mantener la confirmación de email activada. El cliente utiliza `signInWithOtp` y `verifyOtp` con tipo `email`; no utiliza contraseña ni una redirección de acceso.
 
-En el proyecto nuevo de pruebas, configurar un mensaje de acceso propio que muestre **`{{ .Token }}`** como código. El mensaje debe indicar que hay que introducirlo en GM Vault y que se ignore si no se solicitó. Si se reutiliza un proyecto con templates existentes, conservarlos y autorizar cualquier sustitución de forma expresa antes de editar esos templates. La implementación no modifica templates remotos.
+En el proyecto nuevo de pruebas, configurar mensajes propios que muestren **`{{ .Token }}`** como código en los dos casos: **Confirm sign up**, para una cuenta nueva, y **Magic link or OTP**, para usos posteriores. El mensaje debe indicar que hay que introducirlo en GM Vault y que se ignore si no se solicitó. Supabase tramita el primer acceso como un alta; comprobar ambos mensajes evita que solo las cuentas existentes reciban un código. Véanse [Email Templates](https://supabase.com/docs/guides/auth/auth-email-templates) y [el flujo de alta de Supabase Auth](https://github.com/supabase/auth/blob/master/internal/api/magic_link.go).
+
+Si se reutiliza un proyecto con templates existentes, conservarlos y autorizar cualquier sustitución de forma expresa antes de editar esos templates. La implementación no modifica templates remotos.
 
 Configurar una caducidad de 10 minutos para Email OTP y un intervalo de reenvío de al menos 60 segundos. La interfaz admite códigos numéricos de entre 6 y 10 dígitos para ajustarse a la longitud del proyecto. Los límites del servidor y del proveedor siguen siendo los efectivos.
 
 Configurar **Custom SMTP** con el proveedor y remitente elegidos y verificar SPF, DKIM y DMARC del dominio. Las credenciales SMTP se introducen únicamente en Supabase. Su servicio de envío predeterminado está limitado a destinatarios del equipo y no es suficiente para probar con buzones externos. Documentación: [Email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless) y [Custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
-La Site URL puede apuntar al origen del preview para identificar el entorno. Este flujo por código no necesita añadir una ruta callback ni permitir redirecciones comodín. No habilitar enlaces mágicos como sustituto del código en esta prueba.
+La Site URL puede apuntar al origen del preview para identificar el entorno. Este flujo por código no necesita añadir una ruta callback ni permitir redirecciones comodín. Mantener habilitado el método de acceso passwordless por email: OTP comparte su implementación con Magic Link, aunque el mensaje muestre únicamente el código.
 
 ## Variables de Netlify
 
