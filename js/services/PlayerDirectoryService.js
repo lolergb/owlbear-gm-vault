@@ -1,7 +1,7 @@
 import {
   PLAYER_DIRECTORY_STORAGE_PREFIX,
   PLAYER_PROFILE_METADATA_KEY
-} from '../utils/constants.js?v=2.1.5';
+} from '../utils/constants.js?v=2.2.0';
 
 const PROFILE_VERSION = 1;
 const MAX_NAME_LENGTH = 80;

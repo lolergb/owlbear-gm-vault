@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handler as notionApiHandler } from '../netlify/functions/notion-api.js';
+import { handler as cloudConfigHandler } from '../netlify/functions/get-cloud-config.js';
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT || 8000);
@@ -54,6 +55,13 @@ function sendText(response, status, message) {
 
 const server = http.createServer(async (request, response) => {
   setDevelopmentHeaders(response, request);
+
+  if ((request.url || '').split('?')[0] === '/.netlify/functions/get-cloud-config') {
+    const result = await cloudConfigHandler({ httpMethod: request.method });
+    response.writeHead(result.statusCode, result.headers);
+    response.end(result.body);
+    return;
+  }
 
   // Mirror the Netlify function locally so the Owlbear extension can use the
   // same Notion import flow during development.
@@ -111,12 +119,12 @@ const server = http.createServer(async (request, response) => {
     const requestUrl = new URL(request.url || '/', `http://${HOST}:${PORT}`);
     let pathname = decodeURIComponent(requestUrl.pathname);
     // Local-only preview: real UI/controllers, with an isolated Owlbear stand-in.
-    if (pathname === '/__dev/welcome' || pathname === '/__dev/start') {
+    if (pathname === '/__dev/welcome' || pathname === '/__dev/start' || pathname === '/__dev/cloud') {
       const source = await readFile(resolve(ROOT, 'index.html'), 'utf8');
       const preview = source
         .replace('<head>', '<head><base href="/">')
         .replace(/<script type="module" src="js\/main\.js[^\"]*"><\/script>/,
-          '<script type="module" src="/scripts/welcome-preview.js"></script>');
+          `<script type="module" src="/scripts/${pathname === '/__dev/cloud' ? 'cloud-backup-preview' : 'welcome-preview'}.js"></script>`);
       response.statusCode = 200;
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end(preview);

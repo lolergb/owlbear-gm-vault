@@ -4,9 +4,9 @@
  * Construye y modifica configuraciones del vault.
  */
 
-import { Config } from '../models/Config.js?v=2.1.5';
-import { Category } from '../models/Category.js?v=2.1.5';
-import { Page } from '../models/Page.js?v=2.1.5';
+import { Config } from '../models/Config.js?v=2.2.0';
+import { Category } from '../models/Category.js?v=2.2.0';
+import { Page } from '../models/Page.js?v=2.2.0';
 import { log } from '../utils/logger.js?v=20260722-4';
 import { setPlayerAccessEnabled } from '../utils/playerAccess.js';
 

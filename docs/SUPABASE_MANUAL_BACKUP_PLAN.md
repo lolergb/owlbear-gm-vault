@@ -1,6 +1,6 @@
 # Plan de copia privada manual con Supabase para GM Vault
 
-Estado: propuesta para revisión. Fecha: 21 de noviembre de 2026.
+Estado: implementado como candidato 2.2.0 en la PR #26. Fecha: 21 de noviembre de 2026. La base y el diseño siguientes documentan el alcance aprobado; consultar [configuración y pruebas](SUPABASE_SETUP.md) para preparar Supabase y Netlify.
 
 Añadir dos acciones en Settings, **Save private backup** y **Restore private backup**, para conservar una sola copia remota por cuenta. El email y el código de un solo uso se piden al elegir una acción cuando no hay sesión válida. Los usos posteriores aprovechan la sesión. La edición y persistencia local por sala siguen siendo el funcionamiento habitual.
 
@@ -119,7 +119,7 @@ El filtro del cliente mejora la consulta, pero la separación se exige en la bas
 
 Fijar una versión explícita del SDK ESM compatible con el proyecto estático actual. Resolver errores de importación del módulo dentro de la acción de nube para que un proveedor o CDN inaccesible no impidan el uso local. Las nuevas claves de sesión y recuperación tendrán prefijos propios; revisar expresamente su relación con **Clear local data**. Limpiar datos locales no borra la nube ni dispara una restauración automática; el cierre de sesión tiene su control independiente.
 
-Preview y producción usarán proyectos y claves de sesión separados. La configuración pública incluirá un interruptor de disponibilidad; desactivarlo detiene nuevas operaciones remotas y conserva el uso local y la recuperación local pendiente. Antes de publicar, repetir la comprobación del commit de producción, registrar el rollback y ejecutar el checklist existente. Esta entrega inicial contiene únicamente el plan; la implementación y la publicación son pasos posteriores.
+Preview y producción usarán proyectos y claves de sesión separados. La configuración pública incluye un interruptor de disponibilidad; desactivarlo detiene nuevas operaciones remotas y conserva el uso local y la recuperación local pendiente. Antes de publicar en producción, repetir la comprobación del commit desplegado, registrar el rollback y ejecutar el checklist existente. La implementación 2.2.0 se mantiene en la PR para probarla antes de su publicación estable.
 
 ## Errores y mensajes
 
@@ -169,6 +169,6 @@ Las pruebas siguientes pertenecen a la implementación. La verificación realiza
 
 Usar salas y datos de prueba. Para recuperar en la misma sala desde otro dispositivo, liberar antes el ownership mediante el comportamiento existente; esta función no añade un mecanismo de toma de control. Registrar navegador, perfil, cuenta de prueba, entorno, commit, resultado y evidencia sin secretos. Aceptar el candidato solo cuando pasen el aislamiento real entre cuentas, la entrega real de OTP y la restauración dentro de Owlbear.
 
-## Decisiones propuestas para revisión
+## Decisiones adoptadas
 
-Confirmar este alcance de una copia única, acceso por OTP bajo demanda y operaciones manuales, junto con tres decisiones de producto: excluir el token de Notion, reactivar el acceso de jugadores manualmente tras recuperar y limitar inicialmente la copia a 2 MiB. La implementación deberá concretar el proyecto Supabase, el remitente SMTP y sus límites efectivos en el entorno de pruebas antes de publicar un candidato.
+La implementación conserva una copia única, acceso por OTP bajo demanda y operaciones manuales. Excluye el token de Notion, requiere reactivar el acceso de jugadores manualmente tras recuperar y limita inicialmente la copia a 2 MiB. El proyecto Supabase activo, el remitente SMTP y sus límites efectivos deben configurarse antes de probar el servicio alojado.

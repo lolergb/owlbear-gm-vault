@@ -5,13 +5,13 @@
  */
 
 import { log, logError, logWarn, setOBRReference, initDebugMode, getUserRole, isDebugMode } from '../utils/logger.js?v=20260722-4';
-import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=2.1.5';
+import { filterVisiblePages, isNotionUrl } from '../utils/helpers.js?v=2.2.0';
 import {
   BROADCAST_CHANNEL_FULL_VAULT_UPDATED,
   BROADCAST_CHANNEL_REQUEST_FULL_VAULT,
   METADATA_KEY,
   VAULT_OWNER_KEY
-} from '../utils/constants.js?v=2.1.5';
+} from '../utils/constants.js?v=2.2.0';
 import {
   PLAYER_ACCESS_MODE,
   applyPlayerAccess,
@@ -50,18 +50,18 @@ import {
 } from '../utils/pageTitle.js';
 
 // Models
-import { Page } from '../models/Page.js?v=2.1.5';
-import { Category } from '../models/Category.js?v=2.1.5';
+import { Page } from '../models/Page.js?v=2.2.0';
+import { Category } from '../models/Category.js?v=2.2.0';
 
 // Services
 import { CacheService } from '../services/CacheService.js?v=20260812-1';
-import { StorageService } from '../services/StorageService.js?v=2.1.5';
+import { StorageService } from '../services/StorageService.js?v=2.2.0';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
-import { BroadcastService } from '../services/BroadcastService.js?v=2.1.5';
+import { BroadcastService } from '../services/BroadcastService.js?v=2.2.0';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20261118-1';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
-import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.1.5';
+import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.2.0';
 import {
   getVaultState,
   markContentOrigin,
@@ -69,12 +69,12 @@ import {
 } from '../utils/activationAnalytics.js?v=20260816-1';
 
 // Renderers
-import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.1.5';
-import { UIRenderer } from '../renderers/UIRenderer.js?v=2.1.5&search=2';
+import { NotionRenderer } from '../renderers/NotionRenderer.js?v=2.2.0';
+import { UIRenderer } from '../renderers/UIRenderer.js?v=2.2.0&search=2';
 
 // Parsers & Builders
-import { ConfigParser } from '../parsers/ConfigParser.js?v=2.1.5';
-import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.1.5';
+import { ConfigParser } from '../parsers/ConfigParser.js?v=2.2.0';
+import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.2.0';
 
 // UI
 import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
@@ -85,9 +85,10 @@ import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
-import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.1.5';
+import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.2.0';
 import { PRODUCTION_ORIGIN, MIGRATION_PREFIX, validRoom } from '../config/betaMigration.js';
 import { chooseBetaVault, betaRecoveryMessage } from '../ui/BetaMigrationDialog.js';
+import { BackupError } from '../utils/cloudBackup.js';
 
 // Attach only a controlled stage to the original error without modifying it.
 const contentErrorStages = new WeakMap();
@@ -202,6 +203,9 @@ export class ExtensionController {
     
     // Obtener información del jugador y room
     await this._fetchPlayerInfo();
+
+    // A local restore journal can be recovered without loading Supabase.
+    await this._recoverInterruptedCloudRestore();
 
     // Recover only this room, before loading/broadcasting its vault. Failure to
     // reach beta storage never prevents the existing production vault loading.
@@ -638,6 +642,7 @@ export class ExtensionController {
    * @param {boolean} [options.render=true] - Si debe reconstruir la interfaz
    */
   async saveConfig(config, { render: shouldRender = true, notifyStorageLimit = true } = {}) {
+    if (this._cloudCommit) return false;
     log('💾 Guardando configuración...');
 
     // Parsear el config para convertir formato items[] a formato interno si es necesario
@@ -2436,6 +2441,7 @@ export class ExtensionController {
    * Limpia recursos al cerrar
    */
   cleanup() {
+    this._cloudDialog?.close();
     log('🧹 Limpiando recursos...');
     this.betaRecoveryAbort?.abort();
     this.announcementCancelled = true;
@@ -3862,6 +3868,63 @@ export class ExtensionController {
     // Configurar event listeners de settings (solo una vez)
     this._setupSettingsEventListeners();
     this._setupBetaRecoverySettings();
+    this._setupCloudSettings();
+  }
+
+  _setupCloudSettings() {
+    const vaultForm = document.getElementById('download-json-btn')?.closest('.form');
+    if (!vaultForm) return;
+    let section = document.getElementById('cloud-backup-settings');
+    if (!section) {
+      section = document.createElement('section');
+      section.id = 'cloud-backup-settings';
+      section.className = 'cloud-backup-settings';
+      const heading = document.createElement('h4');
+      heading.className = 'form__title';
+      heading.textContent = 'Private backup';
+      const description = document.createElement('p');
+      description.className = 'settings__description';
+      description.textContent = 'Keep one private copy across devices. Save and restore manually using an email code. Your Notion token stays on this device.';
+      const actions = document.createElement('div');
+      actions.className = 'form__actions';
+      for (const [id, text, operation] of [
+        ['cloud-save-btn', 'Save private backup', 'save'], ['cloud-restore-btn', 'Restore private backup', 'restore'],
+        ['cloud-signout-btn', 'Sign out', 'signout'], ['cloud-undo-btn', 'Undo restore', 'undo']
+      ]) {
+        const button = document.createElement('button');
+        button.id = id; button.type = 'button'; button.className = 'btn btn--ghost btn--flex'; button.textContent = text;
+        button.addEventListener('click', () => this._runCloudAction(operation));
+        actions.append(button);
+      }
+      section.append(heading, description, actions);
+      vaultForm.append(section);
+    }
+    const allowed = this.isGM && !this.isCoGM && new URLSearchParams(location.search).get('modal') !== 'true';
+    section.hidden = !allowed;
+    const undo = document.getElementById('cloud-undo-btn');
+    try { undo.hidden = !localStorage.getItem('gm-vault-cloud-recovery-v1:' + this.roomId); }
+    catch { undo.hidden = true; }
+  }
+
+  async _runCloudAction(operation) {
+    if (!this.isGM || this.isCoGM || this._cloudFlowRunning) return;
+    try {
+      const flow = await import('../services/CloudBackupFlow.js?v=2.2.0');
+      if (operation === 'undo') await flow.undoLocalRestore(this);
+      else await flow.runCloudBackup(this, operation);
+    } catch (error) {
+      this.uiRenderer?.showErrorToast('Private backup unavailable', error instanceof BackupError ? error.message : 'The action could not finish. Your local recovery copy has been kept. Check your connection and browser storage, then try again.');
+    }
+  }
+
+  async _recoverInterruptedCloudRestore() {
+    if (!this.isGM || this.isCoGM) return;
+    let pending;
+    try { pending = JSON.parse(localStorage.getItem('gm-vault-cloud-recovery-v1:' + this.roomId) || 'null'); }
+    catch { return; }
+    if (pending?.state !== 'pending') return;
+    const { undoLocalRestore } = await import('../services/CloudBackupFlow.js?v=2.2.0');
+    await undoLocalRestore(this, { startup: true });
   }
 
   async _canRecoverBetaVault(roomId) {
