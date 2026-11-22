@@ -3646,7 +3646,7 @@ export class ExtensionController {
       heading.append(' ', badge);
       const description = document.createElement('p');
       description.className = 'settings__description';
-      description.textContent = 'Keep named private backups across devices. Choose which copy to restore using an email code. Your Notion token stays on this device.';
+      description.textContent = 'Keep named private backups across devices (up to 2 MiB per backup). Choose which copy to restore using an email code. Your Notion token stays on this device.';
       const actions = document.createElement('div');
       actions.className = 'cloud-backup-actions';
       for (const [id, text, operation] of [
