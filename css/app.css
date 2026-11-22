@@ -41,7 +41,7 @@
     --button-primary-hover-bg: color-mix(in srgb, var(--color-accent-primary-light) 90%, white);
     --button-primary-active-bg: color-mix(in srgb, var(--color-accent-primary-light) 88%, black);
     --button-secondary-text: var(--color-text-muted);
-    --button-secondary-border: var(--color-text-secondary);
+    --button-secondary-border: var(--color-text-muted);
     --button-secondary-active-bg: var(--color-bg-active);
     --button-focus-ring: var(--color-text-primary);
     /* Colores de acento (secondary) */
@@ -277,10 +277,11 @@
     --button-border: var(--button-secondary-border);
     --button-hover-bg: var(--button-secondary-hover-bg);
     --button-active-bg: var(--button-secondary-active-bg);
+    appearance: none;
     background: var(--button-bg);
     color: var(--button-text);
     border: 1px solid var(--button-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     font-weight: var(--font-weight-bold);
     text-decoration: none;
     cursor: pointer;

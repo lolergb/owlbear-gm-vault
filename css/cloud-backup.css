@@ -3,13 +3,11 @@
   display: grid;
   gap: var(--spacing-sm);
   margin-block-start: var(--spacing-sm);
-  margin-inline-start: var(--spacing-lg);
 }
 
 .cloud-backup-settings h4 {
   margin: 0;
   font: var(--ui-font-body);
-  font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
 }
 
