@@ -385,7 +385,10 @@ export class UIRenderer {
         }
       });
 
-      titleContainer.appendChild(contextMenuButton);
+      const tools = document.createElement('div');
+      tools.className = 'list-row-tools';
+      tools.appendChild(contextMenuButton);
+      titleContainer.appendChild(tools);
     }
 
     categoryDiv.appendChild(titleContainer);
@@ -604,8 +607,8 @@ export class UIRenderer {
       <div class="page-button-inner">
         ${pageIconHtml || `<div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>`}
         <div class="page-name-text">${escapeHtml(page.name)}</div>
-        ${linkIconHtml}
       </div>
+      <div class="list-row-tools">${linkIconHtml}</div>
     `;
 
     // Contenedor de acciones. Players pueden abrir contenido, pero solo los
@@ -733,7 +736,7 @@ export class UIRenderer {
         actionsContainer.appendChild(contextMenuButton);
     }
     
-    button.appendChild(actionsContainer);
+    button.querySelector('.list-row-tools').appendChild(actionsContainer);
 
     // Click para abrir página
     button.addEventListener('click', (e) => {
@@ -748,7 +751,7 @@ export class UIRenderer {
     // Only GM views refresh metadata; actual players use the shared icon.
     const pageId = extractNotionPageId(page.url);
     if (pageId && this.notionService && (isGM || this.previewPlayerAccess)) {
-      this._loadPageIcon(button, pageId, page, linkIconHtml);
+      this._loadPageIcon(button, pageId, page);
     }
 
     return button;
@@ -852,7 +855,7 @@ export class UIRenderer {
    * Carga el icono real de una página de Notion
    * @private
    */
-  async _loadPageIcon(button, pageId, page, linkIconHtml) {
+  async _loadPageIcon(button, pageId, page) {
     const sourceUrl = page.url;
     try {
       const pageInfo = await this.notionService.fetchPageInfo(pageId);
@@ -864,7 +867,6 @@ export class UIRenderer {
           inner.innerHTML = `
             ${iconHtml}
             <div class="page-name-text">${escapeHtml(page.name)}</div>
-            ${linkIconHtml}
           `;
         }
         this.onPageIconLoaded?.(page, pageInfo.icon);

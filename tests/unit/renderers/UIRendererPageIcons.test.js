@@ -51,9 +51,27 @@ describe('saved page icons', () => {
       fetchPageInfo: jest.fn().mockResolvedValue({ icon: null })
     } });
     renderer.onPageIconLoaded = jest.fn();
-    await renderer._loadPageIcon(row, 'page-id', page, '');
+    await renderer._loadPageIcon(row, 'page-id', page);
     expect(row.querySelector('.page-icon-emoji').textContent).toBe('⚖️');
     expect(renderer.onPageIconLoaded).not.toHaveBeenCalled();
+  });
+
+  it('keeps the type icon and action buttons in place when a page icon loads', async () => {
+    const renderer = new UIRenderer();
+    const page = new Page('Page', PAGE_URL);
+    const row = renderer._createPageButton(page, 'room', [], 0, true);
+    const controls = row.querySelector('.list-row-tools');
+    const typeIcon = controls.querySelector('.page-link-icon');
+    const options = controls.querySelector('.page-context-menu-button');
+    renderer.setDependencies({ notionService: {
+      fetchPageInfo: jest.fn().mockResolvedValue({ icon: { type: 'emoji', emoji: '📖' } })
+    } });
+
+    await renderer._loadPageIcon(row, 'page-id', page);
+
+    expect(row.querySelector('.page-icon-emoji').textContent).toBe('📖');
+    expect([...row.querySelectorAll('.page-link-icon')]).toEqual([typeIcon]);
+    expect(row.querySelector('.page-context-menu-button')).toBe(options);
   });
 
   it('ignores an icon that arrives after the page URL was edited', async () => {
@@ -65,7 +83,7 @@ describe('saved page icons', () => {
       fetchPageInfo: () => new Promise(resolve => { finishFetch = resolve; })
     } });
     renderer.onPageIconLoaded = jest.fn();
-    const loading = renderer._loadPageIcon(row, 'page-id', page, '');
+    const loading = renderer._loadPageIcon(row, 'page-id', page);
     page.url = 'https://example.com/replacement';
     finishFetch({ icon: { type: 'emoji', emoji: '⚖️' } });
     await loading;

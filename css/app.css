@@ -701,16 +701,6 @@
     overflow-y: auto;
   }
 
-  /* The action icons repaint over solid rows; the gutters still show the map. */
-  .embedded-action .page-list {
-    --list-row-base: var(--color-bg-default);
-  }
-
-  .embedded-action .page-list .category-title-container {
-    background-color: var(--list-row-base);
-    border-radius: var(--radius-lg);
-  }
-
   .container .page-list > * {
     margin-bottom: 0;
   }
@@ -911,12 +901,31 @@
   .category-title {letter-spacing: 0.5px;margin: 0;flex: 1;}
   .category-content { display: block; margin-left: 32px; }
   .category-pages { display: block; margin-left: 32px; }
+  /* Put the changing icons on a separate transparent layer over the static row tint. */
+  .list-row-tools {
+    position: relative;
+    flex: none;
+    margin-left: auto;
+    pointer-events: none;
+  }
+
+  .embedded-action .list-row-tools {
+    will-change: transform;
+  }
+
+  .category-title-container > .list-row-tools {
+    position: absolute;
+    right: var(--spacing-sm);
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
   /* Contenedor de botones de acción en page-button */
   .page-button-actions {
     display: flex;
     align-items: center;
     gap: var(--button-group-gap-sm);
-    margin-left: auto;
+    pointer-events: auto;
     visibility: hidden;
     position: relative;
     z-index: 10; /* Por encima del page-link-icon */
@@ -972,7 +981,7 @@
     .page-open-modal-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])),
     .page-visibility-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])),
     .page-context-menu-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
-      background: var(--button-secondary-hover-bg);
+      color: var(--color-text-primary);
     }
   }
 
@@ -1031,13 +1040,20 @@
   }
   
   @media (hover: hover) {
-    .category-context-menu-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])),
+    .category-title-container .category-context-menu-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
+      background-color: transparent;
+      color: var(--color-text-primary);
+    }
+
     .category-visibility-button:hover:where(:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"])) {
       background: var(--button-secondary-hover-bg);
     }
   }
   
   .category-title-container .category-context-menu-button {
+    position: static;
+    transform: none;
+    pointer-events: auto;
     visibility: hidden;
     opacity: 1;
   }
@@ -1050,7 +1066,7 @@
   /* Mantener el hover visible en el padre cuando el menú está activo */
   .page-button.context-menu-open {
     display: flex;
-    --page-row-tint: var(--color-bg-hover);
+    background: var(--color-bg-hover);
     border: 1px solid var(--color-border-active);
   }
   
@@ -1728,12 +1744,10 @@
   
   /* Compatibility aliases for page-button */
   .page-button {
-    --page-row-tint: var(--color-bg-primary);
     display: flex;
     align-items: center;
     border: 1px solid var(--color-border-primary);
-    background-color: var(--list-row-base, transparent);
-    background-image: linear-gradient(var(--page-row-tint), var(--page-row-tint));
+    background-color: var(--color-bg-primary);
     border-radius: var(--radius-lg);
     padding: var(--spacing-md) var(--spacing-lg);
     color: var(--color-text-secondary);
@@ -1748,7 +1762,7 @@
   }
   
   .page-button:active {
-    --page-row-tint: var(--color-bg-active);
+    background-color: var(--color-bg-active);
     border-color: var(--color-border-active);
   }
   
@@ -1784,7 +1798,7 @@
   
   .page-link-icon {
     position: absolute;
-    right: var(--spacing-lg);
+    right: 0;
     top: 50%;
     transform: translateY(-50%);
     width: var(--icon-size-lg);
@@ -3479,12 +3493,11 @@
 
 /* Highlight específico para carpetas */
 .category-group.highlight-new-item > .category-title-container {
-  background-color: var(--list-row-base, transparent);
-  background-image: linear-gradient(rgba(var(--color-accent-primary-rgb), 0.15), rgba(var(--color-accent-primary-rgb), 0.15));
+  background: rgba(var(--color-accent-primary-rgb, 139, 92, 246), 0.15);
   border-radius: var(--radius-md);
 }
 
 /* Highlight específico para páginas */
 .page-button.highlight-new-item {
-  --page-row-tint: rgba(var(--color-accent-primary-rgb, 139, 92, 246), 0.15);
+  background: rgba(var(--color-accent-primary-rgb, 139, 92, 246), 0.15) !important;
 }
