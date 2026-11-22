@@ -151,15 +151,9 @@
     overflow-x: hidden;
   }
 
-  /* Composite the panel tint once, behind the scrolling list and its hover controls. */
-  html::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
+  /* Owlbear's action surface already supplies the tinted, blurred background. */
+  html:not(.embedded-action) {
     background-color: var(--color-bg-overlay);
-    pointer-events: none;
-    transform: translateZ(0);
   }
   
   /* Reset: los botones heredan color del padre (evita el negro del user-agent) */
@@ -917,42 +911,34 @@
     align-items: center;
     gap: var(--button-group-gap-sm);
     margin-left: auto;
-    opacity: 0;
-    transition: opacity var(--transition-fast);
+    visibility: hidden;
     position: relative;
     z-index: 10; /* Por encima del page-link-icon */
   }
   
   .page-button:hover .page-button-actions,
   .page-button:focus-within .page-button-actions,
-  .page-button.share-state-visible .page-button-actions {
-    opacity: 1;
-  }
-  
+  .page-button.share-state-visible .page-button-actions,
   .page-button.context-menu-open .page-button-actions {
-    opacity: 1;
+    visibility: visible;
   }
 
   /* Mantener visible el estado; las acciones secundarias siguen apareciendo
      al interactuar con la fila. */
   .page-button-actions--has-visibility {
-    opacity: 1;
+    visibility: visible;
   }
 
-  .page-button-actions--has-visibility > :not(.page-visibility-button) {
-    opacity: 0;
-    transition: opacity var(--transition-fast), background var(--transition-fast);
-  }
-
+  .page-button-actions--has-visibility > :not(.page-visibility-button),
   .page-button-actions--has-visibility > .page-visibility-button--no-access {
-    opacity: 0;
+    visibility: hidden;
   }
 
   .page-button:hover .page-button-actions--has-visibility > *,
   .page-button:focus-within .page-button-actions--has-visibility > *,
   .page-button.context-menu-open .page-button-actions--has-visibility > *,
   .page-button.share-state-visible .page-button-actions--has-visibility > * {
-    opacity: 1;
+    visibility: visible;
   }
   
   /* Estilos base para botones de acción */
@@ -1045,9 +1031,14 @@
     }
   }
   
-  .category-context-menu-button.context-menu-active,
-  .category-title-container.context-menu-open .category-context-menu-button {
+  .category-title-container .category-context-menu-button {
+    visibility: hidden;
     opacity: 1;
+  }
+  .category-title-container:hover .category-context-menu-button,
+  .category-title-container:focus-within .category-context-menu-button,
+  .category-title-container.context-menu-open .category-context-menu-button {
+    visibility: visible;
   }
   
   /* Mantener el hover visible en el padre cuando el menú está activo */
@@ -1790,17 +1781,15 @@
     transform: translateY(-50%);
     width: var(--icon-size-lg);
     height: var(--icon-size-lg);
-    opacity: 1;
-    transition: opacity var(--transition-fast);
     z-index: 1; /* Por debajo de page-button-actions (z-index: 10) */
     pointer-events: none; /* No interfiere con clicks */
   }
   
-  .page-button.context-menu-open .page-link-icon {
-    opacity: 0;
-  }
+  .page-button.context-menu-open .page-link-icon,
+  .page-button.share-state-visible .page-link-icon,
+  .page-button:focus-within .page-link-icon,
   .page-button:hover .page-link-icon {
-    opacity: 0;
+    visibility: hidden;
   }
   
   .page-icon-emoji {

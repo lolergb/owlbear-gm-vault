@@ -27,6 +27,8 @@
       if (params.get('modal') === 'true') {
         // Marcar que estamos en modo modal
         document.documentElement.classList.add('modal-mode');
+      } else if (window.self !== window.top) {
+        document.documentElement.classList.add('embedded-action');
       }
     })();
   </script>

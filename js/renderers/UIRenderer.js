@@ -372,19 +372,6 @@ export class UIRenderer {
       contextMenuButton.className = 'category-context-menu-button icon-button';
       contextMenuButton.innerHTML = iconHtml('img/icon-contextualmenu.svg', { className: 'icon-button-icon', alt: 'Menu' });
       contextMenuButton.title = 'Folder options';
-      contextMenuButton.style.opacity = '0';
-
-      // Mostrar/ocultar en hover
-      titleContainer.addEventListener('mouseenter', () => {
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '1';
-        }
-      });
-      titleContainer.addEventListener('mouseleave', (e) => {
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '0';
-        }
-      });
 
       contextMenuButton.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1228,7 +1215,6 @@ export class UIRenderer {
       const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
         button.classList.remove('context-menu-active');
         titleContainer.classList.remove('context-menu-open');
-        button.style.opacity = '0';
       });
       
       if (!menu) {
