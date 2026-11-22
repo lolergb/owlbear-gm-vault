@@ -3632,7 +3632,8 @@ export class ExtensionController {
       section.id = 'cloud-backup-settings';
       section.className = 'cloud-backup-settings';
       const heading = document.createElement('h4');
-      heading.className = 'form__title';
+      heading.id = 'cloud-backup-settings-title';
+      section.setAttribute('aria-labelledby', heading.id);
       heading.textContent = 'Private backup';
       const description = document.createElement('p');
       description.className = 'settings__description';

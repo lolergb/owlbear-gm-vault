@@ -1,4 +1,21 @@
 .cloud-backup-status { margin: 12px 0 0; color: var(--color-text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
-.cloud-backup-settings { margin-top: 24px; }
+.cloud-backup-settings {
+  display: grid;
+  gap: var(--spacing-sm);
+  margin-block-start: var(--spacing-sm);
+  margin-inline-start: var(--spacing-lg);
+}
+
+.cloud-backup-settings h4 {
+  margin: 0;
+  font: var(--ui-font-body);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+}
+
+.cloud-backup-settings .form__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .cloud-backup-settings[hidden], .cloud-backup-settings button[hidden] { display: none; }
-.cloud-backup-settings .form__actions { flex-wrap: wrap; }
