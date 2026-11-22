@@ -11,6 +11,7 @@ import { BUILD_REF } from '../utils/buildRef.js';
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
 import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
+import { IMPORT_ERROR_CODES, normalizeImportDiagnostic } from '../utils/importDiagnostics.js';
 
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
@@ -338,6 +339,7 @@ export class AnalyticsService {
    * @param {Object} properties - Propiedades adicionales
    */
   async trackEvent(eventName, properties = {}) {
+    if (this.getConsent() !== true) return;
     const time = Math.floor(Date.now() / 1000);
     const vaultState = this.vaultState;
     const vaultInstanceId = this.vaultInstanceId;
@@ -357,6 +359,9 @@ export class AnalyticsService {
           userRole = role;
         }
       } catch (e) {}
+
+      // Consent may change while initialization or role lookup is pending.
+      if (this.getConsent() !== true) return;
 
       // Construir payload del evento (formato Mixpanel)
       const eventData = {
@@ -407,6 +412,7 @@ export class AnalyticsService {
           throw new Error('HTTP error');
         }
       } catch (fetchError) {
+        if (this.getConsent() !== true) return;
         // Fallback: usar image pixel (más confiable con CORS)
         log(`📊 Using image pixel fallback for: ${eventName}`);
         const img = new Image();
@@ -719,12 +725,14 @@ export class AnalyticsService {
    */
   trackVaultImportFailed({ source, stage, mode, destinationType, errorType, errorCode, error } = {}) {
     try {
-      const safeStage = this._normalizeEnum(stage, ['read', 'parse', 'validate', 'fetch', 'http', 'generate', 'apply', 'save', 'empty']);
-      const details = this._errorProperties({ operation: 'import', errorType, source: 'handled', code: errorCode || safeStage });
+      const safeSource = this._normalizeEnum(source, ['notion', 'url', 'file']);
+      const diagnostic = normalizeImportDiagnostic(stage, errorCode, safeSource);
+      const details = this._errorProperties({ operation: 'import', errorType, source: 'handled', code: diagnostic.code });
+      details.error_fingerprint = ['import', safeSource, diagnostic.stage, details.error_type, details.error_code].join(':');
       if (!this._shouldReportError(details, error)) return;
       this.trackEvent('vault_import_failed', {
-        source: this._normalizeEnum(source, ['notion', 'url', 'file']),
-        stage: safeStage,
+        source: safeSource,
+        stage: diagnostic.stage,
         mode: this._normalizeEnum(mode, ['append', 'merge', 'replace']),
         destination_type: this._normalizeEnum(destinationType, ['root', 'folder']),
         ...details
@@ -760,7 +768,7 @@ export class AnalyticsService {
     const safeOperation = this._normalizeEnum(operation, ['runtime', 'import', 'load_content', 'token_link', 'token_save', 'share_page', 'share_image', 'notion_search']);
     const safeSource = this._normalizeEnum(source, ['global', 'promise', 'handled']);
     const safeType = this._normalizeEnum(errorType || error?.name, ['Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError', 'URIError', 'AbortError', 'NetworkError', 'no_content']);
-    const safeCode = this._normalizeEnum(code, ['read', 'parse', 'validate', 'fetch', 'http', 'generate', 'apply', 'save', 'empty', 'file_read_failed', 'empty_file', 'invalid_json', 'missing_categories', 'invalid_config', 'empty_vault', 'invalid_option', 'storage_failed', 'apply_failed', 'delivery_failed', 'broadcast_failed']);
+    const safeCode = this._normalizeEnum(code, ['read', 'parse', 'validate', 'fetch', 'http', 'generate', 'apply', 'save', 'empty', ...Object.values(IMPORT_ERROR_CODES).flat(), 'delivery_failed', 'broadcast_failed']);
     const loadDetails = safeOperation === 'load_content' ? {
       error_location: this._normalizeEnum(location, ['modal_content', 'open_page', 'mention_reload', 'mention_open']),
       error_stage: this._normalizeEnum(stage, ['page_info', 'blocks', 'render', 'other'])
@@ -1018,18 +1026,10 @@ export class AnalyticsService {
   }
 
   /**
-   * Track load from URL clicked
-   * @param {string} url - URL cargada
+   * Track the action without collecting any part of the URL.
    */
-  trackLoadFromUrlClicked(url) {
-    let urlDomain = 'invalid';
-    try {
-      urlDomain = url ? new URL(url).hostname : 'unknown';
-    } catch (_error) {}
-
-    this.trackEvent('load_from_url_clicked', {
-      url_domain: urlDomain
-    });
+  trackLoadFromUrlClicked() {
+    this.trackEvent('load_from_url_clicked');
   }
 
   /**
