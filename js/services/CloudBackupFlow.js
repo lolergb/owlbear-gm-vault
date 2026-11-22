@@ -1,4 +1,4 @@
-import { BackupError, prepareBackup } from '../utils/cloudBackup.js';
+import { BackupError, prepareBackup, backupName, MAX_BACKUP_NAME_LENGTH } from '../utils/cloudBackup.js';
 import { LocalVaultRecovery } from './LocalVaultRecovery.js';
 import { ConfigBuilder } from '../builders/ConfigBuilder.js?v=2.2.0';
 import { filterVisiblePages } from '../utils/helpers.js?v=2.2.0';
@@ -72,8 +72,8 @@ async function authenticate(service, dialog) {
   let resendAt = 0;
   while (!session && !dialog.closed) {
     const entered = await dialog.choose({
-      title: 'Your private backup',
-      paragraphs: ['Enter your email to save or restore your one private backup. We will send a one-time sign-in code. Your local vault works without signing in.'],
+      title: 'Your private backups',
+      paragraphs: ['Enter your email to save or restore your named private backups. We will send a one-time sign-in code. Your local vault works without signing in.'],
       error, field: { label: 'Email', type: 'email', autocomplete: 'email', value: email },
       actions: [{ id: 'send', label: 'Send code', primary: true }]
     });
@@ -105,6 +105,48 @@ async function authenticate(service, dialog) {
   return dialog.closed ? null : session;
 }
 
+async function chooseNamedBackup(service, dialog, session, operation, localPrepared, preferredName) {
+  const userId = session.user.id;
+  const rows = await service.list(userId);
+  if (dialog.closed) return null;
+  const accountAction = { id: 'account', label: 'Sign out / change account' };
+  if (operation === 'save') {
+    let name = preferredName || `Backup ${new Date().toLocaleString()}`;
+    let error = '';
+    while (!dialog.closed) {
+      const entered = await dialog.choose({
+        title: 'Name your backup',
+        paragraphs: [`Account: ${session.user.email || 'Signed in'}`, `Saving: ${backupSummary(localPrepared.summary)} (${Math.ceil(localPrepared.bytes / 1024)} KiB).`, 'A new name keeps a separate copy. Reusing a name asks you to confirm replacing only that copy.'],
+        field: { label: 'Backup name', value: name, maxLength: MAX_BACKUP_NAME_LENGTH, suggestions: rows.map(row => row.name) },
+        error, actions: [accountAction, { id: 'continue', label: 'Review backup', primary: true }]
+      });
+      if (!entered || entered.action === 'account') return entered;
+      name = entered.value;
+      try { name = backupName(name); }
+      catch (cause) { error = cause.message; continue; }
+      const existing = rows.find(row => row.name === name);
+      if (existing) dialog.loading('Loading your private backup');
+      const row = existing ? await service.read(userId, existing.id) : null;
+      if (existing && !row) throw new BackupError('missing');
+      return { row, name };
+    }
+    return null;
+  }
+  if (!rows.length) {
+    return dialog.choose({ title: 'No private backups found', paragraphs: ['This account has no saved copies. Your local vault is unchanged.'], actions: [accountAction, { id: 'done', label: 'Done', primary: true }] });
+  }
+  const selected = await dialog.choose({
+    title: 'Choose a backup to restore', paragraphs: [`Account: ${session.user.email || 'Signed in'}`, 'Choose a saved copy. You will review its contents before replacing your local vault.'],
+    field: { label: 'Saved backup', options: rows.map(row => ({ value: row.id, label: `${row.name} — ${new Date(row.updated_at).toLocaleString()}` })) },
+    actions: [accountAction, { id: 'review', label: 'Review backup', primary: true }]
+  });
+  if (!selected || selected.action === 'account') return selected;
+  dialog.loading('Loading your private backup');
+  const row = await service.read(userId, selected.value);
+  if (!row) throw new BackupError('missing');
+  return { row, name: row.name };
+}
+
 export async function runCloudBackup(controller, operation) {
   if (controller._cloudFlowRunning) return;
   controller._cloudFlowRunning = true;
@@ -120,9 +162,10 @@ export async function runCloudBackup(controller, operation) {
       controller._cloudService = await CloudBackupService.create();
     }
     const service = controller._cloudService;
+    let chosenName = '';
     if (operation === 'signout') {
       await service.signOut();
-      if (!dialog.closed) await dialog.choose({ title: 'Signed out on this device', paragraphs: ['Your local vault and private backup have been kept.'], actions: [{ id: 'done', label: 'Done', primary: true }] });
+      if (!dialog.closed) await dialog.choose({ title: 'Signed out on this device', paragraphs: ['Your local vault and private backups have been kept.'], actions: [{ id: 'done', label: 'Done', primary: true }] });
       return;
     }
     while (!dialog.closed) {
@@ -138,6 +181,7 @@ export async function runCloudBackup(controller, operation) {
       dialog.loading('Checking your private backup');
       if (service.pendingWrite && service.pendingWrite.userId !== userId) service.pendingWrite = null;
       if (service.pendingWrite) {
+        chosenName = service.pendingWrite.name || chosenName;
         const choice = await dialog.choose({ title: 'Check the previous save', paragraphs: [new BackupError('uncertain').message], actions: [{ id: 'check', label: 'Check backup', primary: true }] });
         if (!choice) return;
         const result = await service.checkWrite(userId);
@@ -149,28 +193,26 @@ export async function runCloudBackup(controller, operation) {
         // save may exist. Require a new review before any further write.
         service.pendingWrite = null;
       }
-      const row = await service.read(userId);
+      const target = await chooseNamedBackup(service, dialog, session, operation, localPrepared, chosenName);
       if (dialog.closed) return;
-      if (operation === 'restore' && !row) {
-        await dialog.choose({ title: 'No private backup found', paragraphs: ['This account has no saved copy. Your local vault is unchanged.'], actions: [{ id: 'account', label: 'Change account' }, { id: 'done', label: 'Done', primary: true }] }).then(async choice => {
-          if (choice?.action === 'account') { await service.signOut(); session = null; }
-        });
-        if (session) return;
-        continue;
-      }
+      if (!target || target.action === 'done') return;
+      if (target.action === 'account') { await service.signOut(); chosenName = ''; continue; }
+      const { row, name } = target;
+      chosenName = name;
       const remote = row ? prepareBackup(row.payload, controller.configParser, { schema: row.schema_version, restoring: operation === 'restore' }) : null;
       const actionLabel = operation === 'restore' ? 'Restore private backup' : row ? 'Replace private backup' : 'Save private backup';
       const paragraphs = [
         `Account: ${session.user.email || 'Signed in'}`,
+        `Backup: ${name}`,
         !service.storage?.persistent ? 'This browser cannot remember your session. You will need a new code next time.' : '',
         row ? `Private copy: ${backupSummary(remote.summary)}. Saved ${new Date(row.updated_at).toLocaleString()}.` : 'No private copy exists yet.',
         operation === 'save' ? `Saving: ${backupSummary(localPrepared.summary)} (${Math.ceil(localPrepared.bytes / 1024)} KiB).` : `Local vault: ${backupSummary(controller.configParser.preflight(JSON.parse(context.model)).summary)}. This replaces the local vault in the current Owlbear room. The previous local copy will be kept for Undo restore.`,
-        operation === 'save' ? 'There is one private copy for your account across all rooms. Saving replaces that copy; no remote history is kept.' : 'Player access will be turned off until you review and enable it. Your Notion token stays on this device and is not included in the backup.',
+        operation === 'save' ? (row ? 'Only this named copy will be replaced. Your other saved copies are kept.' : 'This creates a separate named copy. Your other saved copies are kept.') : 'Player access will be turned off until you review and enable it. Your Notion token stays on this device and is not included in the backup.',
         ...(operation === 'restore' ? remote.warnings : localPrepared.warnings)
       ];
-      const choice = await dialog.choose({ title: actionLabel, paragraphs, actions: [{ id: 'account', label: 'Sign out / change account' }, { id: 'confirm', label: actionLabel, primary: true }] });
+      const choice = await dialog.choose({ title: actionLabel, paragraphs, actions: [{ id: 'back', label: operation === 'save' ? 'Change name' : 'Choose another backup' }, { id: 'confirm', label: actionLabel, primary: true }] });
       if (!choice) return;
-      if (choice.action === 'account') { await service.signOut(); continue; }
+      if (choice.action === 'back') continue;
       dialog.loading(operation === 'save' ? 'Saving your private backup' : 'Restoring your vault', { committing: true });
       await service.assertUser(userId);
       await assertBackupContext(controller, context);
@@ -179,9 +221,9 @@ export async function runCloudBackup(controller, operation) {
         await service.save(userId, localPrepared.payload, row, async () => {
           await assertBackupContext(controller, context);
           if (dialog.closed) throw new BackupError('changed');
-        });
+        }, { name });
         if (dialog.closed) return;
-        await dialog.choose({ title: 'Private backup saved', paragraphs: ['Your private copy is saved. Local edits will be backed up only when you choose Save private backup again.'], actions: [{ id: 'done', label: 'Done', primary: true }] });
+        await dialog.choose({ title: 'Private backup saved', paragraphs: [`“${name}” is saved. Local edits will be backed up only when you choose Save private backup again.`], actions: [{ id: 'done', label: 'Done', primary: true }] });
       } else {
         const synced = await applyLocalRestore(controller, context, remote.payload, { authorize: async () => {
           await service.assertUser(userId);

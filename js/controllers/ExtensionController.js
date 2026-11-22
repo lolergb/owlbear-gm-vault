@@ -3884,7 +3884,7 @@ export class ExtensionController {
       heading.textContent = 'Private backup';
       const description = document.createElement('p');
       description.className = 'settings__description';
-      description.textContent = 'Keep one private copy across devices. Save and restore manually using an email code. Your Notion token stays on this device.';
+      description.textContent = 'Keep named private backups across devices. Choose which copy to restore using an email code. Your Notion token stays on this device.';
       const actions = document.createElement('div');
       actions.className = 'form__actions';
       for (const [id, text, operation] of [
@@ -3909,7 +3909,7 @@ export class ExtensionController {
   async _runCloudAction(operation) {
     if (!this.isGM || this.isCoGM || this._cloudFlowRunning) return;
     try {
-      const flow = await import('../services/CloudBackupFlow.js?v=2.2.0');
+      const flow = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=2');
       if (operation === 'undo') await flow.undoLocalRestore(this);
       else await flow.runCloudBackup(this, operation);
     } catch (error) {
@@ -3923,7 +3923,7 @@ export class ExtensionController {
     try { pending = JSON.parse(localStorage.getItem('gm-vault-cloud-recovery-v1:' + this.roomId) || 'null'); }
     catch { return; }
     if (pending?.state !== 'pending') return;
-    const { undoLocalRestore } = await import('../services/CloudBackupFlow.js?v=2.2.0');
+    const { undoLocalRestore } = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=2');
     await undoLocalRestore(this, { startup: true });
   }
 

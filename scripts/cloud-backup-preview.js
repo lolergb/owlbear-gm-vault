@@ -11,6 +11,13 @@ const sessionKey = `cloud-qa-session-${profile}`;
 const readSession = () => JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
 const copyKey = userId => `cloud-qa-copy-${userId}`;
 const readCopy = userId => JSON.parse(localStorage.getItem(copyKey(userId)) || 'null');
+const copiesKey = userId => `cloud-qa-copies-v2-${userId}`;
+const readCopies = userId => {
+  const saved = localStorage.getItem(copiesKey(userId));
+  if (saved) return JSON.parse(saved);
+  const legacy = readCopy(userId);
+  return legacy ? [{ ...legacy, id: 'previous-copy', name: 'Previous backup', created_at: legacy.updated_at }] : [];
+};
 controller._cloudService = {
   storage: { persistent: true }, pendingWrite: null,
   session: async () => readSession(),
@@ -23,13 +30,18 @@ controller._cloudService = {
     return session;
   },
   async signOut() { sessionStorage.removeItem(sessionKey); },
-  async read(id) { await this.assertUser(id); return readCopy(id); },
-  async save(id, payload, previous, authorize) {
+  async list(id) {
+    await this.assertUser(id);
+    return readCopies(id).map(({ payload, ...metadata }) => metadata).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async read(id, backupId) { await this.assertUser(id); return readCopies(id).find(row => row.id === backupId) || null; },
+  async save(id, payload, previous, authorize, { name }) {
     await this.assertUser(id); await authorize?.();
-    const current = readCopy(id);
-    if ((previous?.revision ?? null) !== (current?.revision ?? null)) throw new BackupError('conflict');
-    const row = { user_id: id, schema_version: 1, payload, revision: (current?.revision || 0) + 1, updated_at: new Date().toISOString() };
-    localStorage.setItem(copyKey(id), JSON.stringify(row));
+    const copies = readCopies(id);
+    const current = previous ? copies.find(row => row.id === previous.id) : null;
+    if (previous ? !current || previous.revision !== current.revision : copies.some(row => row.name === name)) throw new BackupError('conflict');
+    const row = { id: current?.id || crypto.randomUUID(), name, user_id: id, schema_version: 1, payload, revision: (current?.revision || 0) + 1, created_at: current?.created_at || new Date().toISOString(), updated_at: new Date().toISOString() };
+    localStorage.setItem(copiesKey(id), JSON.stringify([...copies.filter(copy => copy.id !== row.id), row]));
     return row;
   }
 };

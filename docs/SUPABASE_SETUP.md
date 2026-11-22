@@ -1,26 +1,31 @@
 # Configurar copias privadas de GM Vault 2.2.0
 
-El candidato de la PR #26 incorpora guardado y restauración manual de una sola copia por cuenta. El manifest de pruebas es:
+El candidato de la PR #26 incorpora guardado y restauración manual de varias copias con nombre por cuenta. Un nombre nuevo crea una copia independiente. Repetir el mismo nombre pide confirmar la sustitución de esa copia; las demás se conservan. El manifest de pruebas es:
 
 https://deploy-preview-26--owlbear-gm-vault.netlify.app/manifest.json
 
-**Preview configurada y lista para probar.** El 21 de noviembre de 2026 se completó el ciclo real por email, guardado, sustitución y recuperación en dos salas de Owlbear con Supabase alojado. La nube sigue desactivada en el despliegue de producción.
+**Actualización del 22 de noviembre de 2026:** la segunda migración ya está aplicada en el proyecto configurado. Se comprobó que `Previous backup` conserva contenido, revisión y fecha, con RLS y tres políticas activas; las escrituras del cliente antiguo quedan deshabilitadas. El ciclo de copia única anterior se verificó el 21 de noviembre en dos salas de Owlbear con Supabase alojado. La nube sigue desactivada en el despliegue de producción.
 
 Instalarlo en una sala de pruebas. El dominio del preview tiene almacenamiento local independiente de producción: que aparezca vacío no significa que se haya perdido el vault de producción. Para llevar un vault al preview, exportar su JSON e importarlo allí. La copia privada excluye el token de Notion.
 
 ## Estado del proyecto abierto
 
-El proyecto configurado es `gm-vault-production`, referencia `wtrgjhfmakecotdygkqz`, activo y saludable. Su tabla y políticas ya estaban creadas y se comprobaron sin repetir la migración. Email OTP está ajustado a 600 segundos, con códigos de 8 dígitos. La comprobación posterior al segundo guardado encontró una sola copia para la cuenta de prueba, con revisión `2` y versión de esquema `1`. Para mantener separados preview y producción en futuros cambios, usar preferentemente un proyecto de pruebas distinto.
+El proyecto configurado es `gm-vault-production`, referencia `wtrgjhfmakecotdygkqz`, activo y saludable. Su tabla inicial y políticas ya estaban creadas y se comprobaron sin repetir la primera migración. Email OTP está ajustado a 600 segundos, con códigos de 8 dígitos. La comprobación anterior a la ampliación encontró una copia para la cuenta de prueba, con revisión `2` y versión de esquema `1`; la segunda migración la conserva con el nombre `Previous backup`. Para mantener separados preview y producción en futuros cambios, usar preferentemente un proyecto de pruebas distinto.
 
 ## Base de datos
 
-En el SQL Editor del proyecto destinado a pruebas, ejecutar una sola vez el contenido completo de [la migración](../supabase/migrations/202611210001_private_vault_backups.sql). También puede aplicarse mediante Supabase CLI al proyecto correcto.
+En un proyecto nuevo, aplicar una sola vez y en este orden:
 
-La migración crea `public.private_vault_backups`, permisos por columnas, RLS y el trigger de revisión y fecha. Si la tabla ya existe, revisar qué migración la creó antes de continuar; no borrar ni sustituir una tabla existente para resolver el error.
+1. [Migración inicial](../supabase/migrations/202611210001_private_vault_backups.sql).
+2. [Migración de copias con nombre](../supabase/migrations/202611220001_named_private_vault_backups.sql).
 
-Cada fila pertenece al UUID de Authentication, no al email ni al usuario de Owlbear. El usuario puede leer, crear y actualizar únicamente su fila. No habilitar autenticación anónima para este flujo. No hacen falta buckets de Storage ni Realtime.
+En el proyecto ya configurado, aplicar solo la segunda. También pueden aplicarse mediante Supabase CLI al proyecto correcto. Ejecutar la segunda migración **antes** de desplegar el cliente con nombres y recargar las pestañas de la preview después del despliegue.
 
-Las comprobaciones de PostgreSQL se ejecutan con `npm run test:cloud-db`. Usan la misma migración en PostgreSQL embebido y comprueban aislamiento, permisos, metadatos del servidor, límites y conflictos; no se conectan a tu proyecto alojado.
+La segunda migración crea `public.private_vault_backup_entries`: UUID de copia, propietario, nombre único dentro de la cuenta, fechas, payload y revisión. Copia las filas anteriores como `Previous backup` conservando contenido, revisión y fecha. La tabla original `public.private_vault_backups` queda como respaldo de solo lectura. Sus permisos de escritura se retiran para que una pestaña antigua no guarde fuera del catálogo nuevo. No borrar ninguna de las dos tablas ni volver a ejecutar una migración ya aplicada.
+
+Cada fila pertenece al UUID de Authentication, no al email ni al usuario de Owlbear. El usuario puede leer, crear y actualizar únicamente sus copias. El nombre admite de 1 a 80 caracteres, se recortan espacios exteriores y no se permiten controles. Los nombres distinguen mayúsculas; un nombre idéntico identifica la misma copia. Una sustitución filtra propietario, UUID de copia y revisión. No se ofrecen borrado ni renombrado remoto. No habilitar autenticación anónima para este flujo. No hacen falta buckets de Storage ni Realtime.
+
+Las 59 comprobaciones de PostgreSQL se ejecutan con `npm run test:cloud-db`. Aplican ambas migraciones en PostgreSQL embebido y comprueban conservación de la copia anterior, varias copias por cuenta, aislamiento, permisos, nombres, metadatos del servidor, límites y conflictos; no se conectan a tu proyecto alojado.
 
 ## Acceso por código y entrega de email
 
@@ -61,12 +66,12 @@ Para desarrollo con `npm run dev`, definir las mismas variables en el entorno de
 ## Prueba con dos perfiles dentro de Owlbear
 
 1. En el perfil A, abrir una sala de pruebas como GM y añadir dos páginas, una carpeta y una página compartida. Verificar que el arranque y la carga de ejemplos funcionan sin cuenta de nube.
-2. Abrir Settings y **Save private backup**. Introducir email A y el código recibido. Revisar el resumen y confirmar. En Authentication → Users debe aparecer el usuario verificado y en la tabla una fila con su `user_id`.
-3. Cerrar y reabrir el panel. Editar una página y guardar de nuevo. Debe reutilizar la sesión, avisar de sustitución y aumentar `revision` en la misma fila, conservando una sola copia. Usar otra sala no crea una segunda fila.
-4. En el perfil B o en otro dispositivo, entrar como GM autorizado, elegir **Restore private backup** y verificar el mismo email A con un código nuevo. Cancelar la revisión primero: el vault local debe seguir intacto. Reabrir y confirmar: comprobar contenido, orden e IDs.
+2. Abrir Settings y **Save private backup**. Introducir email A y el código recibido. Escribir `Session A`, revisar el resumen y confirmar. Guardar otra instantánea como `Session B`; deben quedar ambas en `private_vault_backup_entries` con su `user_id` y UUIDs distintos.
+3. Cerrar y reabrir el panel. Editar una página y guardar otra vez como `Session A`. Debe reutilizar la sesión, avisar de sustitución y aumentar solo la revisión de A, manteniendo B intacta. Un nombre nuevo conserva otra copia incluso desde otra sala.
+4. En el perfil B o en otro dispositivo, entrar como GM autorizado, elegir **Restore private backup** y verificar el mismo email A con un código nuevo. Seleccionar `Session A` por nombre y fecha. Cancelar la revisión primero: el vault local debe seguir intacto. Reabrir, elegir `Session B` y confirmar: comprobar que se recupera exactamente B, con su contenido, orden e IDs. La lista solicita solo metadatos y el payload se lee únicamente al elegir una copia.
 5. La restauración deja el acceso de jugadores desactivado. Reactivarlo expresamente desde los controles existentes y comprobarlo como Player. Los Players y Co-GMs no tienen controles de nube. El token de Notion de otro dispositivo se configura por separado.
 6. En Settings, **Undo restore** debe devolver la copia local anterior. Si se hicieron ediciones después de restaurar, la reversión se detiene para protegerlas; conservar una exportación JSON antes de cualquier recuperación manual.
-7. Abrir una revisión de guardado en A y otra en B. Confirmar en A y luego en B. La segunda debe mostrar conflicto y conservar la copia de A.
+7. Abrir dos revisiones de sustitución del mismo nombre. Confirmar una y después la otra. La segunda debe mostrar conflicto y conservar la versión más reciente. Sustituir un nombre no modifica otro; dos altas simultáneas del mismo nombre tampoco crean dos filas.
 8. Usar **Sign out** en B y acceder con email B. No debe aparecer la copia de A. Guardar con B crea su propia fila. Verificar el aislamiento también con peticiones directas a la Data API, nunca con `service_role`.
 9. Probar código erróneo, caducado y reenvío; interrupción de red; espacio local insuficiente; cierre del panel durante una lectura; cambio de rol/sala durante revisión. Tras un timeout de guardado, usar **Check backup** antes de volver a escribir.
 
@@ -82,11 +87,11 @@ La copia es privada mediante controles de acceso, no cifrado de extremo a extrem
 
 ## Validación del candidato
 
-En esta implementación se verificaron las pruebas de regresión y de los nuevos servicios y diálogos, 24 comprobaciones de PostgreSQL con la migración real y una comprobación de interoperabilidad con el SDK oficial 2.119.2 mediante 15 peticiones HTTP simuladas. La CI ejecuta la suite completa y las comprobaciones de PostgreSQL.
+En esta implementación se verificaron las pruebas de regresión y de los nuevos servicios y diálogos y 59 comprobaciones de PostgreSQL con ambas migraciones reales. La comprobación inicial de interoperabilidad con el SDK oficial 2.119.2 usó 15 peticiones HTTP simuladas. La CI ejecuta la suite completa y las comprobaciones de PostgreSQL. El flujo con nombres añade pruebas de listado paginado sin payloads, selección por UUID, nombres no válidos, cancelación durante la lectura y conservación de otras copias.
 
 La revisión del navegador recorrió acceso, código incorrecto, primera copia, sesión reutilizada, restauración y Undo en dos sesiones lógicas de QA, con email simulado, usando temas claro y oscuro y panel estrecho. La ruta local `/__dev/cloud?state=configured&profile=a` sirve exclusivamente para estas pruebas mediante `npm run dev`; su código simulado es `123456` y no envía emails. La extensión instalada desde el manifest siempre utiliza el servicio Supabase real cuando está configurado.
 
-La preview 2.2.0 se instaló dentro de dos salas nuevas de Owlbear, `GM Vault 2.2.0 backup test` y `GM Vault 2.2.0 restore test`, usando el SDK y el servicio Supabase reales:
+Antes de ampliar a varias copias, la preview 2.2.0 se instaló dentro de dos salas nuevas de Owlbear, `GM Vault 2.2.0 backup test` y `GM Vault 2.2.0 restore test`, usando el SDK y el servicio Supabase reales:
 
 - Se recibió un código real por email, se verificó y se guardó la primera copia de 12 páginas y 6 carpetas del vault de ejemplo.
 - La segunda sala empezó vacía. Reutilizó la sesión, leyó la copia remota y conservó su estado vacío al cancelar la revisión.

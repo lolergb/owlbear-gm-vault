@@ -1,8 +1,8 @@
-# Plan de copia privada manual con Supabase para GM Vault
+# Plan de copias privadas con nombre para GM Vault
 
-Estado: implementado como candidato 2.2.0 en la PR #26. Fecha: 21 de noviembre de 2026. La base y el diseño siguientes documentan el alcance aprobado; consultar [configuración y pruebas](SUPABASE_SETUP.md) para preparar Supabase y Netlify.
+Estado: implementado como candidato 2.2.0 en la PR #26; ampliado a copias con nombre por petición del usuario el 22 de noviembre de 2026. La base y el diseño siguientes documentan el alcance aprobado; consultar [configuración y pruebas](SUPABASE_SETUP.md) para preparar Supabase y Netlify.
 
-Añadir dos acciones en Settings, **Save private backup** y **Restore private backup**, para conservar una sola copia remota por cuenta. El email y el código de un solo uso se piden al elegir una acción cuando no hay sesión válida. Los usos posteriores aprovechan la sesión. La edición y persistencia local por sala siguen siendo el funcionamiento habitual.
+Añadir dos acciones en Settings, **Save private backup** y **Restore private backup**, para conservar varias copias remotas con nombre por cuenta y elegir cuál recuperar. El email y el código de un solo uso se piden al elegir una acción cuando no hay sesión válida. Los usos posteriores aprovechan la sesión. La edición y persistencia local por sala siguen siendo el funcionamiento habitual.
 
 ## Base publicada verificada
 
@@ -20,14 +20,14 @@ La base de implementación será **`4703cad5ec50c10476ab9b65ce1e980a8c5dd8db`**,
 
 ## Alcance y comportamiento local
 
-- Una cuenta Supabase tiene un único espacio de copia. Guardar desde cualquier sala actualiza ese mismo espacio, con confirmación si ya existe una copia. La interfaz explicará que las salas comparten esa única copia.
+- Las salas de una cuenta comparten un catálogo privado de copias con nombre. Un nombre nuevo crea otra instantánea. Repetir el mismo nombre exige revisar y confirmar la sustitución de esa copia concreta; las demás se conservan. Los nombres son únicos dentro de la cuenta, distinguen mayúsculas y admiten de 1 a 80 caracteres sin controles. Recuperar muestra un selector por nombre y fecha, seguido de la revisión del destino.
 - Las acciones están disponibles para el GM que puede gestionar el vault activo. Players, Co-GMs y visores auxiliares quedan fuera de esta primera entrega. La cuenta Supabase es independiente de la identidad de Owlbear y del token de Notion.
 - Guardar y recuperar son acciones manuales. Abrir la extensión, iniciar sesión, editar páginas, cambiar de sala o recuperar una copia no guardan ni descargan el vault automáticamente.
 - El arranque conserva la secuencia actual: recuperación beta existente, copia local de sala, fallback antiguo `notion-pages-json-default` cuando corresponda y estado inicial. En 2.1.5 el primer uso abre vacío y **Load example vault** carga los ejemplos bajo demanda. Ambas opciones siguen disponibles sin cuenta Supabase.
 - Un vault vacío guardado localmente sigue siendo válido. Un vault local ilegible conserva su error y sus bytes originales; no se sustituye por ejemplos ni por una copia remota.
 - Importación, exportación JSON, acceso de jugadores y enlaces a mapas/tokens mantienen sus rutas actuales. Los originales de ejemplos y templates permanecen intactos.
 
-Fuera de alcance: sincronización automática, catálogo de vaults, historial remoto, colaboración en nube, compartir copias por URL, nuevas políticas de ownership de Owlbear y migración de datos del prototipo multivault. Mantener `codex/cloud-vaults-p0` y cualquier trabajo multivault en sus ramas y entornos; no incorporarlos a esta PR ni usarlos como base de implementación.
+Fuera de alcance: sincronización automática, gestión de varios vaults activos, historial automático por copia, borrado o renombrado remoto, colaboración en nube, compartir copias por URL, nuevas políticas de ownership de Owlbear y migración de datos del prototipo multivault. El selector gestiona instantáneas manuales. Mantener `codex/cloud-vaults-p0` y el prototipo multivault en sus ramas y entornos; no incorporarlos a esta PR ni usarlos como base de implementación.
 
 ## Contenido de la copia
 
@@ -63,24 +63,24 @@ El mensaje será exclusivamente de acceso, con código, caducidad y la indicaci�
 ### Primera copia
 
 1. Comprobar que el contexto actual es un GM autorizado, con sala conocida y vault válido. Preparar una instantánea sin credenciales.
-2. Resolver el acceso y consultar la fila del usuario. La ausencia de fila se distingue de un error de consulta.
-3. Mostrar cuenta, número de páginas y carpetas, tamaño y aviso de copia única. Confirmar con **Save private backup**.
+2. Resolver el acceso y listar los metadatos de las copias propias, paginados y sin descargar payloads. Pedir un nombre; distinguir ausencia de copia y error de consulta.
+3. Mostrar cuenta, nombre, número de páginas y carpetas, tamaño y aviso de creación independiente. Confirmar con **Save private backup**. Si el nombre ya existe, pasar a la revisión de sustitución.
 4. Volver a comprobar usuario, sala, rol y cambios locales durante el acceso o la revisión. Si cambiaron, cancelar o reconstruir la revisión.
-5. Crear mediante `INSERT`. Si otra sesión ya creó la fila, volver al flujo de actualización y pedir revisión; no usar un `upsert` que la sustituya silenciosamente.
+5. Crear mediante `INSERT` con UUID de copia y nombre. Si otra sesión ya creó el mismo nombre, mostrar conflicto y pedir revisión; no usar un `upsert` que la sustituya silenciosamente.
 6. Confirmar únicamente cuando el servidor devuelve la fila guardada y su revisión. El vault local permanece como estaba.
 
 ### Actualización de una copia existente
 
-1. Leer la revisión y fecha de la copia actual. Mostrar **Replace private backup**, la cuenta y los resúmenes de la copia existente y de la nueva instantánea. Advertir que no hay historial remoto.
-2. Tras confirmar, actualizar solo si la revisión sigue siendo la leída: `UPDATE ... WHERE user_id = auth.uid() AND revision = expected_revision`.
+1. Leer por UUID la revisión y fecha de la copia con ese nombre. Mostrar **Replace private backup**, nombre, cuenta y los resúmenes existente y nuevo. Explicar que solo se sustituye esa copia y no hay historial automático por nombre.
+2. Tras confirmar, actualizar solo si la revisión sigue siendo la leída: `UPDATE ... WHERE user_id = auth.uid() AND id = selected_backup_id AND revision = expected_revision`.
 3. Cero filas actualizadas significa conflicto. Leer el estado actual y volver a pedir revisión. Nunca resolverlo con sustitución automática por la última escritura.
-4. Ante timeout tras enviar, consultar el identificador de escritura de la operación. Si coincide, confirmar el guardado; si no puede determinarse, mostrar **Could not confirm backup** y permitir comprobar de nuevo. No repetir a ciegas una escritura.
+4. Ante timeout tras enviar, consultar por usuario y UUID de copia el identificador de escritura de la operación. Si coincide, confirmar el guardado; si no puede determinarse, permitir comprobar de nuevo. Conservar el nombre propuesto al volver a la revisión y no repetir a ciegas una escritura.
 
 ## Restauración segura en otro dispositivo
 
 1. Abrir Owlbear como GM autorizado y elegir **Restore private backup**. Pedir email y código si hace falta; no intentar recuperar nada durante el arranque.
-2. Descargar solo la fila propia. Validar versión del contrato, tamaño, estructura y preflight con `ConfigParser` antes de tocar almacenamiento o UI. Rechazar una versión futura incompatible; los avisos de pérdida deben mostrarse y aceptarse expresamente.
-3. Mostrar fecha y resumen remoto, cuenta y sala de destino, junto al resumen local. La única operación inicial será reemplazar el vault de esa sala; conservar las opciones de combinar o añadir en la importación JSON existente.
+2. Listar solo metadatos propios y elegir una copia por nombre y fecha. Descargar únicamente el UUID elegido, filtrado también por propietario. Mostrar carga y permitir cancelar mientras se lee. Validar versión, tamaño, estructura y preflight con `ConfigParser` antes de tocar almacenamiento o UI; una copia incompatible no impide elegir otra al reabrir.
+3. Mostrar nombre, fecha y resumen remoto, cuenta y sala de destino, junto al resumen local. Permitir elegir otra copia antes de confirmar. La operación reemplaza el vault de esa sala; conservar combinar o añadir en la importación JSON existente.
 4. Informar de que el token de Notion no viene incluido. Conservar el token local si existe y permitir configurar uno después. Restaurar la estructura no debe depender de tener un token válido.
 5. Preparar una copia local de recuperación del estado anterior, incluidos los bytes originales y la distinción entre clave ausente y vault vacío. Verificar esa escritura antes de reemplazar. Si no hay espacio para conservarla, abortar conservando el vault actual.
 6. Revalidar identidad, rol, ownership y sala. Bloquear cambios del vault en esta instancia durante el commit y detectar cambios locales mientras la revisión estaba abierta. Si el destino cambió, exigir una revisión nueva. No reclamar automáticamente el ownership a otro GM activo.
@@ -92,15 +92,17 @@ Si falla la escritura, conservar o recuperar los bytes originales y no emitir br
 
 ## Datos y aislamiento por usuario
 
-Usar Supabase Auth y una tabla Postgres `private_vault_backups`; no hacen falta Storage, Realtime ni un proxy de vaults en Netlify para este alcance.
+Usar Supabase Auth y `private_vault_backup_entries`; no hacen falta Storage, Realtime ni un proxy de vaults en Netlify para este alcance. Aplicar primero la migración inicial y después `202611220001_named_private_vault_backups.sql`, antes de desplegar el cliente con nombres. La segunda conserva cada copia previa como `Previous backup`, incluidos payload, revisión y fecha. La tabla inicial `private_vault_backups` se conserva en solo lectura; una pestaña antigua debe recargarse para guardar y nunca puede sustituir varias copias por un filtro antiguo de propietario.
 
 | Campo | Contrato propuesto |
 | --- | --- |
-| `user_id` | UUID, clave primaria, referencia a `auth.users(id)` con borrado en cascada; un único registro por usuario |
+| `id` | UUID de copia, clave primaria |
+| `user_id` | UUID propietario, referencia a `auth.users(id)` con borrado en cascada; varias copias por cuenta |
+| `name` | Nombre de 1 a 80 caracteres; único junto al propietario |
 | `schema_version` | Versión del formato de copia, inicialmente `1` |
 | `payload` | JSONB del vault, con comprobaciones de estructura y tamaño |
 | `revision` | Entero creciente, inicializado e incrementado por el servidor |
-| `updated_at` | Fecha asignada por el servidor |
+| `created_at`, `updated_at` | Fechas asignadas por el servidor; la creación se conserva al sustituir |
 | `last_write_id` | UUID de la operación para comprobar respuestas de escritura perdidas |
 
 La migración crea conjuntamente permisos, RLS, restricciones y trigger de metadatos. Revocar permisos por defecto y dar a `authenticated` solo `SELECT`, `INSERT` y `UPDATE` necesarios; `anon` no accede. Las políticas de lectura y actualización usan `auth.uid() = user_id`; inserción y actualización incluyen `WITH CHECK` con esa condición. Impedir cambiar el propietario y fijar la revisión y fecha en servidor, aunque el cliente intente enviarlas. No habilitar autenticación anónima para esta función.
@@ -149,7 +151,7 @@ Las pruebas siguientes pertenecen a la implementación. La verificación realiza
 - Probar los servicios nuevos: cuenta nueva y sesión reutilizada, cancelación, cambio de cuenta durante petición, doble clic, expiración, conflictos entre dispositivos y timeout con resultado incierto.
 - Probar ida y vuelta de páginas raíz, carpetas y orden mixto, IDs, HTML embebido y audiencias. Confirmar ausencia de credenciales en payload y logs y acceso desactivado tras restaurar.
 - Simular cuota, fallo de escritura y lectura posterior, interrupción entre fases, cambio de sala/rol y cambios locales durante la revisión. Comprobar bytes anteriores, modelo y ausencia de broadcasts antes del commit; verificar **Undo restore** y reapertura con operación pendiente.
-- Ejecutar `supabase test db`: anónimo rechazado; A y B pueden operar solo su fila; A no lee ni escribe la fila B ni cambia su propietario; dos inserciones no crean dos copias; dos actualizaciones con la misma revisión no triunfan ambas; metadatos y límites se aplican en servidor.
+- Ejecutar `npm run test:cloud-db`: ambas migraciones conservan la copia inicial; varias copias por cuenta; anónimo rechazado; A y B operan solo sus filas; no se puede cambiar propietario, UUID, nombre ni metadatos desde el cliente; dos inserciones del mismo nombre no crean dos filas; una sustitución solo afecta a su UUID y dos actualizaciones con la misma revisión no triunfan ambas.
 - Verificar que arrancar, editar o limpiar datos locales no dispara operaciones de backup, y que el fallo de carga del SDK afecta solo a la acción remota.
 
 ### Dos perfiles y Owlbear real
@@ -171,4 +173,4 @@ Usar salas y datos de prueba. Para recuperar en la misma sala desde otro disposi
 
 ## Decisiones adoptadas
 
-La implementación conserva una copia única, acceso por OTP bajo demanda y operaciones manuales. Excluye el token de Notion, requiere reactivar el acceso de jugadores manualmente tras recuperar y limita inicialmente la copia a 2 MiB. El proyecto Supabase activo, el remitente SMTP y sus límites efectivos deben configurarse antes de probar el servicio alojado.
+La implementación admite varias instantáneas con nombre, acceso por OTP bajo demanda y operaciones manuales. Un nombre nuevo conserva otra copia; reutilizarlo exige confirmación y revisión de conflicto por UUID. Excluye el token de Notion, requiere reactivar el acceso de jugadores manualmente tras recuperar y limita cada copia a 2 MiB. Conserva la copia única anterior mediante una migración adicional, sin modificar la migración ya aplicada ni reutilizar el prototipo multivault. El proyecto y SMTP existentes se mantienen; solo hace falta aplicar la migración adicional y recargar la preview.

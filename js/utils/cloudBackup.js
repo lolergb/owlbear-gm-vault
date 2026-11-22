@@ -2,6 +2,13 @@
 export const BACKUP_SCHEMA = 1;
 export const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 export const RECOVERY_PREFIX = 'gm-vault-cloud-recovery-v1:';
+export const MAX_BACKUP_NAME_LENGTH = 80;
+
+export function backupName(value) {
+  const name = typeof value === 'string' ? value.trim().normalize('NFC') : '';
+  if (!name || [...name].length > MAX_BACKUP_NAME_LENGTH || /[\u0000-\u001f\u007f-\u009f]/.test(name)) throw new BackupError('name');
+  return name;
+}
 
 const messages = {
   unavailable: 'Private backups are not configured for this deployment. You can keep using your local vault and JSON backups.',
@@ -9,6 +16,8 @@ const messages = {
   auth: 'Your session is no longer valid. Close this dialog and sign in again.',
   changed: 'The account, room, or local vault changed. Close this dialog and review the operation again.',
   conflict: 'The private backup changed on another device. Close this dialog and review the latest copy before replacing it.',
+  name: 'Enter a backup name of 1 to 80 characters, without control characters.',
+  missing: 'This backup is no longer available. Close this dialog and choose another saved copy.',
   uncertain: 'The request was sent, but saving could not be confirmed. Use Check backup before trying to save again.',
   invalid: 'This backup could not be validated. Both your local vault and private backup have been kept.',
   version: 'This backup needs a newer GM Vault version. Update the extension before restoring it.',

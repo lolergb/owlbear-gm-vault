@@ -66,11 +66,32 @@ export class CloudBackupDialog {
       label.className = 'form__label';
       label.htmlFor = 'cloud-backup-input';
       label.textContent = field.label;
-      input = document.createElement('input');
+      input = document.createElement(field.options ? 'select' : 'input');
       input.id = label.htmlFor;
       input.className = 'input';
-      input.type = field.type || 'text';
-      input.autocomplete = field.autocomplete || 'off';
+      if (field.options) {
+        for (const item of [{ value: '', label: field.placeholder || 'Choose a backup…' }, ...field.options]) {
+          const option = document.createElement('option');
+          option.value = item.value;
+          option.textContent = item.label;
+          input.append(option);
+        }
+      } else {
+        input.type = field.type || 'text';
+        input.autocomplete = field.autocomplete || 'off';
+        if (field.maxLength) input.maxLength = field.maxLength;
+        if (field.suggestions?.length) {
+          const suggestions = document.createElement('datalist');
+          suggestions.id = 'cloud-backup-names';
+          for (const name of field.suggestions) {
+            const option = document.createElement('option');
+            option.value = name;
+            suggestions.append(option);
+          }
+          input.setAttribute('list', suggestions.id);
+          form.append(suggestions);
+        }
+      }
       input.value = field.value || '';
       input.required = true;
       if (field.code) { input.inputMode = 'numeric'; input.pattern = '[0-9]{6,10}'; input.maxLength = 10; }
@@ -118,7 +139,15 @@ export class CloudBackupDialog {
     });
     form.append(buttons);
     this.dialog.append(form);
-    (input || buttons.querySelector('.btn--primary') || cancel).focus();
+    let focusTarget = input || buttons.querySelector('.btn--primary') || cancel;
+    if (!input && this.dialog.scrollHeight > this.dialog.clientHeight) {
+      // Start a long review at its name and summary, not scrolled down to the
+      // destructive confirmation. The heading remains outside the tab order.
+      focusTarget = this.dialog.querySelector('h2');
+      focusTarget.tabIndex = -1;
+    }
+    focusTarget.focus({ preventScroll: true });
+    this.dialog.scrollTop = 0;
     return promise;
   }
 }
