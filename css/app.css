@@ -149,6 +149,7 @@
     height: 100%;
     max-width: 100%;
     overflow-x: hidden;
+    background-color: var(--color-bg-default);
   }
   
   /* Reset: los botones heredan color del padre (evita el negro del user-agent) */
@@ -171,7 +172,6 @@
     flex-direction: column;
     overflow-x: hidden;
     overflow-y: auto;
-    background-color: var(--color-bg-overlay);
     transition: width 0.3s ease;
     box-sizing: border-box;
   }
