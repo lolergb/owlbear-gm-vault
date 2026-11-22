@@ -83,6 +83,7 @@ import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-9';
 import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-9';
 import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
+import { watchListPanelBackdrop } from '../ui/ListPanelBackdrop.js';
 import { ACTIVE_ANNOUNCEMENT_CAMPAIGN } from '../config/announcementCampaign.js?v=20260819-1';
 import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
 import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.2.0';
@@ -2470,6 +2471,7 @@ export class ExtensionController {
     this.announcementBanner.remove();
     this.vaultEmptyState?.remove();
     this.stopResponsiveButtonGroups?.();
+    this.stopListPanelBackdrop?.();
     this.betaPromotionBanner.remove();
     
     log('✅ Recursos limpiados');
@@ -2721,6 +2723,8 @@ export class ExtensionController {
     this.modalManager.init(document.body);
     this.stopResponsiveButtonGroups?.();
     this.stopResponsiveButtonGroups = watchResponsiveButtonGroups(document.body);
+    this.stopListPanelBackdrop?.();
+    this.stopListPanelBackdrop = watchListPanelBackdrop(this.pagesContainer);
 
     // Configurar botón back
     this._setupBackButton();

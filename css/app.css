@@ -151,6 +151,26 @@
     overflow-x: hidden;
     background-color: var(--color-bg-overlay);
   }
+
+  html.embedded-action {
+    background-color: transparent;
+  }
+
+  /* Recompose the whole translucent panel when the hovered controls change.
+     Mirroring a uniform tint changes its layer transform but not its pixels. */
+  .embedded-action::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--color-bg-overlay);
+    will-change: transform;
+  }
+
+  .embedded-action.refresh-list-backdrop::before {
+    transform: scaleX(-1);
+  }
   
   /* Reset: los botones heredan color del padre (evita el negro del user-agent) */
   button {
@@ -901,7 +921,6 @@
   .category-title {letter-spacing: 0.5px;margin: 0;flex: 1;}
   .category-content { display: block; margin-left: 32px; }
   .category-pages { display: block; margin-left: 32px; }
-  /* Put the changing icons on a separate transparent layer over the static row tint. */
   .list-row-tools {
     position: relative;
     flex: none;
@@ -909,8 +928,8 @@
     pointer-events: none;
   }
 
-  .embedded-action .list-row-tools {
-    will-change: transform;
+  .embedded-action .list-row-tools button {
+    transition: none;
   }
 
   .category-title-container > .list-row-tools {
