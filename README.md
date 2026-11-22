@@ -325,6 +325,7 @@ We track the following events to measure usage and identify popular features:
 - `vault_import_completed` - When an import finishes (source, mode, root/folder destination and item count; no file, URL or folder names)
 - `vault_import_failed` - When an import fails (source, stage and technical error type; no content values)
 - `json_exported` - When you export JSON configuration (includes item count)
+- `private_backup_flow` - Steps and outcomes of a GM's private save or restore attempt, including explicit cancellations and controlled error codes. [Event fields and beta verification](docs/PRIVATE_BACKUP_UI.md#checking-private-backup-events-in-mixpanel).
 
 **Sharing & Integration:**
 - `image_shared` - When GM shares an image with players
@@ -349,7 +350,7 @@ Each event includes:
 - **User role** - Whether you're a GM or Player
 - **Environment** - Whether the event came from beta or production
 - **Deploy context** - Production, deploy preview or branch deploy
-- **Distinct ID** - A unique identifier (your Owlbear player ID or an anonymous ID)
+- **Distinct ID** - An Owlbear player ID or an anonymous ID, depending on the event. Private backup events use a temporary anonymous identity and a fresh ID for each attempt.
 - **Timestamp** - When the event occurred
 - **Event-specific properties** - Relevant context (e.g., page name, page type)
 

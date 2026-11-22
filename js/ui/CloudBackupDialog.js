@@ -3,13 +3,21 @@ import { createModalShell } from './ModalShell.js';
 
 // Native dialog supplies focus containment and Escape handling inside Owlbear.
 export class CloudBackupDialog {
-  constructor() {
+  constructor(onDismiss, onInvalidInput) {
+    this.onDismiss = onDismiss;
+    this.onInvalidInput = onInvalidInput;
     this.previousFocus = document.activeElement;
     this.dialog = createModalShell('cloud-backup-title', { native: true }).root;
     this.dialog.classList.add('cloud-backup-dialog');
-    this.dialog.addEventListener('cancel', event => { event.preventDefault(); this.close(); });
+    this.dialog.addEventListener('cancel', event => { event.preventDefault(); this.dismiss(); });
     document.body.append(this.dialog);
     this.dialog.showModal();
+  }
+
+  dismiss() {
+    if (this.closed) return;
+    this.onDismiss?.();
+    this.close();
   }
 
   close() {
@@ -58,7 +66,7 @@ export class CloudBackupDialog {
     status.textContent = committing ? 'Please wait. The operation may finish if you close this dialog.' : 'Please wait…';
     this.dialog.append(status);
     const cancel = this.button(committing ? 'Close' : 'Cancel');
-    cancel.addEventListener('click', () => this.close());
+    cancel.addEventListener('click', () => this.dismiss());
     const actions = document.createElement('div');
     actions.className = 'form__actions';
     actions.append(cancel);
@@ -94,6 +102,7 @@ export class CloudBackupDialog {
       }
       input.value = field.value || '';
       input.required = true;
+      input.addEventListener('invalid', () => this.onInvalidInput?.());
       if (field.code) { input.inputMode = 'numeric'; input.pattern = '[0-9]{6,10}'; input.maxLength = 10; }
       const group = document.createElement('div');
       group.className = 'form__field';
@@ -112,7 +121,7 @@ export class CloudBackupDialog {
     const utilities = document.createElement('div');
     utilities.className = 'modal__utilities';
     const cancel = this.button('Cancel');
-    cancel.addEventListener('click', () => this.close());
+    cancel.addEventListener('click', () => this.dismiss());
     if (!(actions.length === 1 && actions[0].id === 'done')) buttons.append(cancel);
     const promise = new Promise(resolve => { this.resolve = resolve; });
     const finish = action => {

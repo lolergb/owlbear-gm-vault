@@ -11,11 +11,20 @@ import { BUILD_REF } from '../utils/buildRef.js';
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
 import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
+import { safeBackupErrorCode } from '../utils/cloudBackup.js';
 
 // Storage key para consent de analytics
 const ANALYTICS_CONSENT_KEY = 'analytics_consent';
 const VAULT_ANALYTICS_KEY_PREFIX = 'gm_vault_analytics_';
 const PRODUCTION_HOSTNAME = 'owlbear-gm-vault.netlify.app';
+const BACKUP_STEPS = [
+  'open', 'prepare', 'connect', 'session', 'email', 'send_code', 'enter_code', 'verify_code',
+  'list', 'name', 'select', 'read', 'review', 'authorize', 'save', 'restore_local',
+  'sync_room', 'retry_sync', 'check_save', 'change_account', 'no_backups'
+];
+const BACKUP_OUTCOMES = [
+  'started', 'entered', 'cancelled', 'failed', 'completed', 'local_only', 'no_backups', 'previous_save_confirmed'
+];
 
 /**
  * Servicio de Analytics
@@ -35,7 +44,7 @@ export class AnalyticsService {
     this.vaultAnalyticsStorageKey = null;
     this.vaultAnalyticsState = null;
     this.firstUserContentCreatedTracked = false;
-    this.errorIdentity = this._createAnonymousVaultId();
+    this.errorIdentity = this._createAnonymousId();
     this.recentErrors = new Map();
     this.seenErrors = new WeakSet();
     this.errorListenersInstalled = false;
@@ -58,7 +67,7 @@ export class AnalyticsService {
       const now = Date.now();
 
       this.vaultAnalyticsState = {
-        vaultInstanceId: parsed.vaultInstanceId || this._createAnonymousVaultId(),
+        vaultInstanceId: parsed.vaultInstanceId || this._createAnonymousId(),
         firstOpenedAt: Number.isFinite(parsed.firstOpenedAt) ? parsed.firstOpenedAt : now,
         firstUserContentCreatedAt: Number.isFinite(parsed.firstUserContentCreatedAt)
           ? parsed.firstUserContentCreatedAt
@@ -71,15 +80,15 @@ export class AnalyticsService {
       this._persistVaultAnalyticsState();
     } catch (_error) {
       this.vaultAnalyticsState = null;
-      this.vaultInstanceId = this._createAnonymousVaultId();
+      this.vaultInstanceId = this._createAnonymousId();
     }
   }
 
-  _createAnonymousVaultId() {
+  _createAnonymousId(prefix = 'vault') {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return `vault_${crypto.randomUUID()}`;
+      return `${prefix}_${crypto.randomUUID()}`;
     }
-    return `vault_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
   }
 
   _persistVaultAnalyticsState() {
@@ -349,6 +358,7 @@ export class AnalyticsService {
       if (!this.mixpanelEnabled || !this.mixpanelToken || this.getConsent() !== true) return;
 
       const isErrorEvent = eventName === 'client_error' || eventName === 'vault_import_failed' || Boolean(properties.error_source);
+      const privateContext = isErrorEvent || eventName === 'private_backup_flow';
       // Obtener rol del usuario
       let userRole = 'unknown';
       try {
@@ -358,22 +368,24 @@ export class AnalyticsService {
         }
       } catch (e) {}
 
+      if (this.getConsent() !== true) return;
+
       // Construir payload del evento (formato Mixpanel)
       const eventData = {
         event: eventName,
         properties: {
           token: this.mixpanelToken,
-          distinct_id: isErrorEvent ? this.errorIdentity : this.mixpanelDistinctId,
+          distinct_id: privateContext ? this.errorIdentity : this.mixpanelDistinctId,
           time,
           $insert_id: Math.random().toString(36).substring(2, 15),
-          role: isErrorEvent ? this._normalizeEnum(userRole, ['GM', 'PLAYER']) : userRole,
-          ...(!isErrorEvent && vaultInstanceId ? { vault_instance_id: vaultInstanceId } : {}),
+          role: privateContext ? this._normalizeEnum(userRole, ['GM', 'PLAYER']) : userRole,
+          ...(!privateContext && vaultInstanceId ? { vault_instance_id: vaultInstanceId } : {}),
           vault_state: vaultState,
           ...properties,
           is_beta: this.isBeta,
           environment: this.environment,
           deploy_context: this.deployContext,
-          ...(isErrorEvent ? { app_version: BUILD_VERSION, build_ref: BUILD_REF } : {})
+          ...(privateContext ? { app_version: BUILD_VERSION, build_ref: BUILD_REF } : {})
         }
       };
 
@@ -407,6 +419,7 @@ export class AnalyticsService {
           throw new Error('HTTP error');
         }
       } catch (fetchError) {
+        if (this.getConsent() !== true) return;
         // Fallback: usar image pixel (más confiable con CORS)
         log(`📊 Using image pixel fallback for: ${eventName}`);
         const img = new Image();
@@ -809,6 +822,23 @@ export class AnalyticsService {
     this.trackEvent('json_exported', {
       item_count: itemCount
     });
+  }
+
+  /** Only controlled labels cross this boundary. Attempt IDs are never stored. */
+  privateBackupReporter(operation) {
+    if (!['save', 'restore'].includes(operation) || this.getConsent() !== true) return;
+    const attemptId = this._createAnonymousId('attempt');
+    let sequence = 0;
+    return (step, outcome, terminal, errorCode) => {
+      if (this.getConsent() !== true) return;
+      const code = ['room_sync', 'input_invalid'].includes(errorCode) ? errorCode : safeBackupErrorCode(errorCode);
+      return this.trackEvent('private_backup_flow', {
+        operation, attempt_id: attemptId, sequence: ++sequence, terminal: terminal === true,
+        step: this._normalizeEnum(step, BACKUP_STEPS),
+        outcome: this._normalizeEnum(outcome, BACKUP_OUTCOMES),
+        ...(outcome === 'failed' ? { error_code: code } : {})
+      });
+    };
   }
 
   /**

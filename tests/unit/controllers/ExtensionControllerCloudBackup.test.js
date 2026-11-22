@@ -3,7 +3,7 @@ import { ExtensionController } from '../../../js/controllers/ExtensionController
 import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
 import { StorageService } from '../../../js/services/StorageService.js';
 import { runCloudBackup, applyLocalRestore, captureBackupContext, undoLocalRestore } from '../../../js/services/CloudBackupFlow.js';
-import { prepareBackup } from '../../../js/utils/cloudBackup.js';
+import { BackupError, prepareBackup } from '../../../js/utils/cloudBackup.js';
 
 const source = { categories: [], pages: [{ id: 'page-new', name: 'Restored page', url: 'https://new.test', visibleToPlayers: true }] };
 const original = { categories: [], pages: [{ id: 'page-old', name: 'Previous page', url: 'https://old.test' }] };
@@ -30,7 +30,7 @@ function controllerWith() {
     session: jest.fn().mockResolvedValue(session), assertUser: jest.fn().mockResolvedValue(session.user),
     list: jest.fn().mockResolvedValue([{ id: 'backup-a', user_id: 'user-a', name: 'Campaign A', revision: 1, updated_at: '2026-11-21T20:00:00Z' }]),
     read: jest.fn().mockResolvedValue({ id: 'backup-a', name: 'Campaign A', user_id: 'user-a', schema_version: 1, payload: source, revision: 1, updated_at: '2026-11-21T20:00:00Z' }),
-    save: jest.fn().mockResolvedValue({ revision: 2 }), sendCode: jest.fn().mockResolvedValue(undefined),
+    save: jest.fn(async (_user, _payload, _previous, authorize) => { await authorize(); return { revision: 2 }; }), sendCode: jest.fn().mockResolvedValue(undefined),
     verifyCode: jest.fn().mockResolvedValue(session), signOut: jest.fn().mockResolvedValue(undefined)
   };
   return controller;
@@ -65,11 +65,84 @@ beforeEach(() => {
 });
 
 describe('cloud backup controller flows', () => {
+  function observe(controller) {
+    const record = jest.fn();
+    controller.analyticsService = { privateBackupReporter: jest.fn(() => record) };
+    return record.mock.calls;
+  }
+
+  it('records the rejected OTP step and an explicit Escape at the retry prompt', async () => {
+    const controller = controllerWith();
+    const events = observe(controller);
+    controller._cloudService.session.mockResolvedValue(null);
+    controller._cloudService.verifyCode.mockRejectedValue(new BackupError('code'));
+    const task = runCloudBackup(controller, 'restore');
+    await button('Send code');
+    await click('Send code');
+    expect(events).toContainEqual(['email', 'failed', false, 'input_invalid']);
+    document.querySelector('dialog input').value = 'test@example.test';
+    await click('Send code'); await button('Verify code');
+    document.querySelector('dialog input').value = '000000';
+    await click('Verify code'); await button('Verify code');
+    document.querySelector('dialog').dispatchEvent(new Event('cancel', { cancelable: true }));
+    await task;
+    expect(events).toContainEqual(['verify_code', 'failed', false, 'code']);
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['enter_code', 'cancelled', true, undefined]]);
+    expect(controller.analyticsService.privateBackupReporter).toHaveBeenCalledWith('restore');
+    expect(JSON.stringify(events)).not.toMatch(/000000|example\.test/);
+  });
+
+  it('records the real result of a write already dispatched after Close', async () => {
+    const controller = controllerWith();
+    const events = observe(controller);
+    let dispatch, finishWrite;
+    const dispatched = new Promise(resolve => { dispatch = resolve; });
+    controller._cloudService.save.mockImplementation(async (_user, _payload, _previous, authorize) => {
+      await authorize(); dispatch();
+      await new Promise(resolve => { finishWrite = resolve; });
+    });
+    const task = runCloudBackup(controller, 'save');
+    await nameBackup('Another copy');
+    await click('Save private backup'); await dispatched;
+    await click('Close'); finishWrite(); await task;
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['save', 'completed', true, undefined]]);
+  });
+
+  it('separates a persisted restore from a failed room sync', async () => {
+    const controller = controllerWith();
+    const events = observe(controller);
+    controller.broadcastService.broadcastVisiblePages.mockRejectedValue(new Error('private room name'));
+    const task = runCloudBackup(controller, 'restore');
+    await selectBackup(); await click('Restore private backup'); await button('Retry room update');
+    await click('Cancel'); await task;
+    expect(events).toContainEqual(['sync_room', 'failed', false, 'room_sync']);
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['retry_sync', 'local_only', true, undefined]]);
+  });
+
+  it('reports the confirmed result after an uncertain save without counting two attempts', async () => {
+    const controller = controllerWith();
+    const events = observe(controller);
+    const service = controller._cloudService;
+    service.save.mockImplementation(async (userId, _payload, _previous, authorize) => {
+      await authorize();
+      service.pendingWrite = { userId };
+      throw new BackupError('uncertain');
+    });
+    service.checkWrite = jest.fn().mockResolvedValue({ matched: true });
+    const task = runCloudBackup(controller, 'save');
+    await nameBackup('New copy'); await click('Save private backup');
+    await click('Check backup'); await click('Done'); await task;
+    expect(events).toContainEqual(['save', 'failed', false, 'uncertain']);
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['check_save', 'completed', true, undefined]]);
+    expect(controller.analyticsService.privateBackupReporter).toHaveBeenCalledTimes(1);
+  });
   it('rejects an empty save before requesting email or contacting the cloud', async () => {
     const controller = controllerWith();
+    const events = observe(controller);
     controller.config = controller.configParser.parse({ categories: [] });
     const task = runCloudBackup(controller, 'save');
     await click('Done'); await task;
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['prepare', 'failed', true, 'empty']]);
     expect(controller._cloudService.session).not.toHaveBeenCalled();
     expect(controller._cloudService.read).not.toHaveBeenCalled();
     expect(controller._cloudService.sendCode).not.toHaveBeenCalled();
@@ -161,6 +234,7 @@ describe('cloud backup controller flows', () => {
   });
   it.each(['save', 'restore'])('keeps loading cancellable while reading a selected %s target', async operation => {
     const controller = controllerWith();
+    const events = observe(controller);
     let finishRead;
     controller._cloudService.read.mockReturnValue(new Promise(resolve => { finishRead = resolve; }));
     const before = controller.storageService.getLocalConfig();
@@ -172,6 +246,7 @@ describe('cloud backup controller flows', () => {
     await click('Cancel');
     finishRead({ id: 'backup-a', name: 'Campaign A', user_id: 'user-a', schema_version: 1, payload: source });
     await task;
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['read', 'cancelled', true, undefined]]);
     expect(controller._cloudService.save).not.toHaveBeenCalled();
     expect(controller.storageService.getLocalConfig()).toEqual(before);
     expect(controller.broadcastService.broadcastVisiblePages).not.toHaveBeenCalled();
@@ -194,11 +269,13 @@ describe('cloud backup controller flows', () => {
   });
   it('restores with all player access off, keeps token and original bytes, then undoes locally', async () => {
     const controller = controllerWith();
+    const events = observe(controller);
     localStorage.setItem('notion-global-token', 'only-here');
     const task = runCloudBackup(controller, 'restore');
     await selectBackup();
     await click('Restore private backup');
     await click('Done'); await task;
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['sync_room', 'completed', true, undefined]]);
     expect(controller.config.findPageById('page-new').playerAccessEnabled).toBe(false);
     expect(controller.broadcastService.broadcastVisiblePages).toHaveBeenCalledWith({ categories: [] });
     expect(localStorage.getItem('notion-global-token')).toBe('only-here');

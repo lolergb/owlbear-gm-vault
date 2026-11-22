@@ -51,6 +51,26 @@ The dialog uses the shared modal surface, title, descriptions, metadata, fields 
 
 ## Verification record and limits
 
+### Checking private backup events in Mixpanel
+
+Filter the **Events** view to `private_backup_flow`, `environment = beta`, `deploy_context = deploy-preview` and `app_version = 2.2.0`. To isolate one revision, add its full Git SHA as `build_ref`. Events begin with this instrumentation and require analytics consent.
+
+| Question | Mixpanel setup |
+| --- | --- |
+| Where did GMs cancel? | In Insights, select Total Events, filter `outcome = cancelled` and break down by `operation` (save or restore) and `step`. |
+| What went wrong? | Filter `outcome = failed` and break down by `step` and `error_code`. A recoverable error has `terminal = false` and can be followed by success in the same attempt. |
+| What happened after a retry? | Inspect the same `attempt_id` in Events, using `sequence` for ordering. Filter `terminal = true` to count final results. Use total events for attempt counts. |
+
+To verify before inviting testers, open **Settings → Restore private backup** in a test room. With a signed-in test account containing a copy, cancel at the chooser. Expect `operation = restore`, `step = select`, `outcome = cancelled`. With a signed-out account, cancelling at the email prompt gives `step = email`. For an error check, use **Save private backup** in a separate, empty test vault. Expect `operation = save`, `step = prepare`, `outcome = failed` and `error_code = empty`.
+
+The flow starts at `open` and then prepares the vault, connects, and checks the session. Signed-out users go through `email`, `send_code`, `enter_code`, and `verify_code`. The next steps list the copies, collect a `name` or a `select` choice, read existing data when needed, and show `review`. Confirmation goes through `authorize`, then `save` or `restore_local` and `sync_room`.
+
+A dismissed dialog counts as cancelled only while the operation can still be stopped. After a write is dispatched, its actual result determines the outcome. A locally restored vault whose room update failed can end as `local_only`. Finding no copies and confirming an earlier pending save have their own outcomes, `no_backups` and `previous_save_confirmed`. A closed browser or lost connection can leave a started attempt without a terminal event.
+
+Each attempt receives a new random ID. These events use a temporary analytics identity and exclude Owlbear and Supabase account IDs, room and backup IDs, email, OTP, backup names, URLs, payloads and raw error messages.
+
+### Previous release checks
+
 The shared picker was exercised with two named copies in the local browser fixture, at 600×700 in dark mode and 360×640 in light mode. The checks covered name entry, choosing an existing name, search, keyboard selection, cancel, and the review of the selected copy.
 
 The primary implementation session inspected the selector in dark and light themes and a long name at a 360×640 viewport, including recovery from a name exceeding the 80-character limit. The long review started at its heading with no horizontal overflow. No screenshot files were available for this documentation pass. This records that inspection, not an independent visual audit or measured contrast certification.

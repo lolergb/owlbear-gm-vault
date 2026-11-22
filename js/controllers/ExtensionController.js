@@ -60,6 +60,7 @@ import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=2.2.0';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
 import { AnalyticsService } from '../services/AnalyticsService.js?v=20261118-1';
+import { BackupFlowProgress } from '../services/BackupFlowProgress.js';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.2.0';
 import {
@@ -3660,13 +3661,18 @@ export class ExtensionController {
   }
 
   async _runCloudAction(operation) {
-    if (!this.isGM || this.isCoGM || this._cloudFlowRunning) return;
+    if (!this.isGM || this.isCoGM || this._cloudFlowRunning || this._cloudActionPending) return;
+    this._cloudActionPending = true;
+    const progress = new BackupFlowProgress(this.analyticsService, operation);
     try {
       const flow = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=2');
       if (operation === 'undo') await flow.undoLocalRestore(this);
-      else await flow.runCloudBackup(this, operation);
+      else await flow.runCloudBackup(this, operation, progress);
     } catch (error) {
+      progress.fail(error?.code);
       this.uiRenderer?.showErrorToast('Private backup unavailable', error instanceof BackupError ? error.message : 'The action could not finish. Your local recovery copy has been kept. Check your connection and browser storage, then try again.');
+    } finally {
+      this._cloudActionPending = false;
     }
   }
 

@@ -33,6 +33,10 @@ const messages = {
   database: 'The backup database is not ready. Check the Supabase migration and access policies, then try again.'
 };
 
+export function safeBackupErrorCode(code) {
+  return typeof code === 'string' && Object.hasOwn(messages, code) ? code : 'unknown';
+}
+
 export class BackupError extends Error {
   constructor(code) { super(messages[code] || messages.network); this.code = code; }
 }
