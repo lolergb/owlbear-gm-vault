@@ -149,10 +149,6 @@
     height: 100%;
     max-width: 100%;
     overflow-x: hidden;
-  }
-
-  /* Owlbear's action surface already supplies the tinted, blurred background. */
-  html:not(.embedded-action) {
     background-color: var(--color-bg-overlay);
   }
   
@@ -705,6 +701,16 @@
     overflow-y: auto;
   }
 
+  /* The action icons repaint over solid rows; the gutters still show the map. */
+  .embedded-action .page-list {
+    --list-row-base: var(--color-bg-default);
+  }
+
+  .embedded-action .page-list .category-title-container {
+    background-color: var(--list-row-base);
+    border-radius: var(--radius-lg);
+  }
+
   .container .page-list > * {
     margin-bottom: 0;
   }
@@ -1044,7 +1050,7 @@
   /* Mantener el hover visible en el padre cuando el menú está activo */
   .page-button.context-menu-open {
     display: flex;
-    background: var(--color-bg-hover);
+    --page-row-tint: var(--color-bg-hover);
     border: 1px solid var(--color-border-active);
   }
   
@@ -1722,10 +1728,12 @@
   
   /* Compatibility aliases for page-button */
   .page-button {
+    --page-row-tint: var(--color-bg-primary);
     display: flex;
     align-items: center;
     border: 1px solid var(--color-border-primary);
-    background-color: var(--color-bg-primary);
+    background-color: var(--list-row-base, transparent);
+    background-image: linear-gradient(var(--page-row-tint), var(--page-row-tint));
     border-radius: var(--radius-lg);
     padding: var(--spacing-md) var(--spacing-lg);
     color: var(--color-text-secondary);
@@ -1740,7 +1748,7 @@
   }
   
   .page-button:active {
-    background-color: var(--color-bg-active);
+    --page-row-tint: var(--color-bg-active);
     border-color: var(--color-border-active);
   }
   
@@ -3471,11 +3479,12 @@
 
 /* Highlight específico para carpetas */
 .category-group.highlight-new-item > .category-title-container {
-  background: rgba(var(--color-accent-primary-rgb, 139, 92, 246), 0.15);
+  background-color: var(--list-row-base, transparent);
+  background-image: linear-gradient(rgba(var(--color-accent-primary-rgb), 0.15), rgba(var(--color-accent-primary-rgb), 0.15));
   border-radius: var(--radius-md);
 }
 
 /* Highlight específico para páginas */
 .page-button.highlight-new-item {
-  background: rgba(var(--color-accent-primary-rgb, 139, 92, 246), 0.15) !important;
+  --page-row-tint: rgba(var(--color-accent-primary-rgb, 139, 92, 246), 0.15);
 }
