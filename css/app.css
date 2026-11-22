@@ -741,10 +741,6 @@
     position: relative;
   }
   
-  .page:hover {
-    background: var(--color-bg-hover);
-  }
-  
   .page:active {
     background-color: var(--color-bg-active);
     border-color: var(--color-border-active);
@@ -1720,7 +1716,7 @@
   /* Aplicar animación solo cuando se añade la clase */
   .page-button.list-item-entering,
   .category-title-container.list-item-entering {
-    animation: listItemSlideIn 0.5s ease-out forwards;
+    animation: listItemSlideIn 0.5s ease-out;
   }
   
   /* Compatibility aliases for page-button */
@@ -1740,11 +1736,6 @@
     margin-bottom: var(--spacing-sm);
     gap: var(--spacing-sm);
     position: relative;
-  }
-  
-  .page-button:hover {
-    background: var(--color-bg-hover);
-    border: 1px solid var(--color-border-active);
   }
   
   .page-button:active {
