@@ -9,7 +9,7 @@ export class CloudBackupDialog {
     this.previousFocus = document.activeElement;
     this.dialog = createModalShell('cloud-backup-title', { native: true }).root;
     this.dialog.classList.add('cloud-backup-dialog');
-    this.dialog.addEventListener('cancel', event => { event.preventDefault(); this.dismiss(); });
+    this.dialog.addEventListener('cancel', event => { event.preventDefault(); this.cancel(); });
     document.body.append(this.dialog);
     this.dialog.showModal();
   }
@@ -18,6 +18,11 @@ export class CloudBackupDialog {
     if (this.closed) return;
     this.onDismiss?.();
     this.close();
+  }
+
+  cancel() {
+    if (this.cancelChoice) this.cancelChoice();
+    else this.dismiss();
   }
 
   close() {
@@ -35,6 +40,7 @@ export class CloudBackupDialog {
   }
 
   render(title, paragraphs = [], account) {
+    this.cancelChoice = null;
     this.picker?.destroy();
     this.picker = null;
     clearInterval(this.timer);
@@ -84,7 +90,7 @@ export class CloudBackupDialog {
     return button;
   }
 
-  choose({ title, account, paragraphs = [], error, field, actions = [], resendAt = 0 }) {
+  choose({ title, account, paragraphs = [], error, field, actions = [], resendAt = 0, cancelAction }) {
     if (this.closed) return Promise.resolve(null);
     this.render(title, paragraphs, account);
     const form = document.createElement('form');
@@ -124,12 +130,15 @@ export class CloudBackupDialog {
     const utilities = document.createElement('div');
     utilities.className = 'modal__utilities';
     const cancel = this.button('Cancel');
-    cancel.addEventListener('click', () => this.dismiss());
+    cancel.addEventListener('click', () => this.cancel());
     if (!(actions.length === 1 && actions[0].id === 'done')) buttons.append(cancel);
     const promise = new Promise(resolve => { this.resolve = resolve; });
+    const nameMatches = () => field?.confirmName === undefined ||
+      input.value.normalize('NFC') === field.confirmName.normalize('NFC');
     const finish = action => {
       if (!this.resolve) return;
-      if (field?.options && action.primary && !input.value) { this.picker.trigger.focus(); return; }
+      if (field?.options && (action.primary || action.requiresSelection) && !input.value) { this.picker.trigger.focus(); return; }
+      if (action.primary && !nameMatches()) { input.focus(); return; }
       if (field && action.primary && !form.reportValidity()) return;
       const value = input?.value.trim();
       const resolve = this.resolve;
@@ -139,8 +148,12 @@ export class CloudBackupDialog {
       for (const button of this.dialog.querySelectorAll('button')) button.disabled = true;
       resolve?.({ action: action.id, value });
     };
+    if (cancelAction) this.cancelChoice = () => finish({ id: cancelAction });
+    const selectionButtons = [];
     for (const action of actions) {
       const button = this.button(action.label, action.primary);
+      if (action.danger) button.classList.replace('btn--primary', 'btn--danger');
+      if (field?.options && (action.requiresSelection || action.primary)) selectionButtons.push(button);
       if (action.id === 'resend') {
         const tick = () => {
           const seconds = Math.max(0, Math.ceil((resendAt - Date.now()) / 1000));
@@ -151,6 +164,11 @@ export class CloudBackupDialog {
       }
       if (action.primary) {
         button.type = 'submit';
+        if (field?.confirmName !== undefined) {
+          const update = () => { button.disabled = !nameMatches(); };
+          input.addEventListener('input', update);
+          update();
+        }
         buttons.append(button);
       } else {
         button.className = 'modal__utility';
@@ -171,8 +189,11 @@ export class CloudBackupDialog {
       this.picker = new ModalSelect(input, {
         options: field.options, label: field.label, resultLabel: 'backup', placeholder: 'Choose a backup…'
       });
-      const submit = buttons.querySelector('[type="submit"]');
-      const update = () => { submit.disabled = !input.value; };
+      if (field.value) {
+        input.value = field.value;
+        this.picker.refresh();
+      }
+      const update = () => { for (const button of selectionButtons) button.disabled = !input.value; };
       input.addEventListener('change', update);
       update();
     } else if (field?.suggestions?.length) {

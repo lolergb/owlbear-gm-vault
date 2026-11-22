@@ -42,6 +42,14 @@ controller._cloudService = {
     return readCopies(id).map(({ payload, ...metadata }) => metadata).sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
   async read(id, backupId) { await this.assertUser(id); return readCopies(id).find(row => row.id === backupId) || null; },
+  async deleteBackup(id, row, authorize) {
+    await this.assertUser(id); await authorize(); await this.assertUser(id);
+    const copies = readCopies(id);
+    const matches = copy => copy.id === row.id && copy.revision === row.revision && copy.name === row.name;
+    if (!copies.some(matches)) throw new BackupError('conflict');
+    localStorage.setItem(copiesKey(id), JSON.stringify(copies.filter(copy => !matches(copy))));
+    if (row.id === 'previous-copy') localStorage.removeItem(copyKey(id));
+  },
   async save(id, payload, previous, authorize, { name }) {
     await this.assertUser(id); await authorize?.();
     const copies = readCopies(id);

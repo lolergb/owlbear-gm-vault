@@ -12,7 +12,7 @@ function safeError(error, fallback = 'network') {
   if (error?.code === '23505') return new BackupError('conflict');
   if (error?.code === '23514' && /backup_(entry_)?size/.test(error?.message || '')) return new BackupError('size');
   if (error?.code === '23514' && error?.message?.includes('backup_entry_name')) return new BackupError('name');
-  if (['42P01', '42501', 'PGRST205'].includes(error?.code)) return new BackupError('database');
+  if (['42P01', '42501', 'PGRST202', 'PGRST205'].includes(error?.code)) return new BackupError('database');
   return new BackupError(fallback);
 }
 
@@ -162,6 +162,20 @@ export class CloudBackupService {
       if (data && (data.user_id !== userId || data.id !== backupId)) throw new BackupError('changed');
       return data;
     } catch (error) { throw safeError(error); }
+  }
+
+  async deleteBackup(userId, row, authorize) {
+    if (!row?.id || !row.revision || !row.name || row.user_id !== userId) throw new BackupError('changed');
+    await this.assertUser(userId);
+    await authorize();
+    try {
+      const { data, error } = await this.client.rpc('delete_private_vault_backup', {
+        p_id: row.id, p_revision: row.revision, p_name: row.name
+      });
+      if (error) throw error;
+      if (data === false) throw new BackupError('conflict');
+      if (data !== true) throw new BackupError('delete_uncertain');
+    } catch (error) { throw safeError(error, 'delete_uncertain'); }
   }
 
   async checkWrite(userId) {

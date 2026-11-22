@@ -18,14 +18,15 @@ En un proyecto nuevo, aplicar una sola vez y en este orden:
 
 1. [Migración inicial](../supabase/migrations/202611210001_private_vault_backups.sql).
 2. [Migración de copias con nombre](../supabase/migrations/202611220001_named_private_vault_backups.sql).
+3. [Migración de borrado de una copia confirmada](../supabase/migrations/202611220002_delete_private_vault_backup.sql).
 
-En un proyecto que solo tenga la migración inicial, aplicar únicamente la segunda. En `gm-vault-production` ya están aplicadas ambas: no repetirlas. También pueden aplicarse mediante Supabase CLI al proyecto correcto. Ejecutar la segunda migración **antes** de desplegar el cliente con nombres y recargar las pestañas de la preview después del despliegue.
+En proyectos existentes, aplicar solo las migraciones pendientes, en orden. La tercera debe estar aplicada antes de desplegar el botón de borrado. Crear la función no elimina ninguna fila.
 
 La segunda migración crea `public.private_vault_backup_entries`: UUID de copia, propietario, nombre único dentro de la cuenta, fechas, payload y revisión. Copia las filas anteriores como `Previous backup` conservando contenido, revisión y fecha. La tabla original `public.private_vault_backups` queda como respaldo de solo lectura. Sus permisos de escritura se retiran para que una pestaña antigua no guarde fuera del catálogo nuevo. No borrar ninguna de las dos tablas ni volver a ejecutar una migración ya aplicada.
 
-Cada fila pertenece al UUID de Authentication, no al email ni al usuario de Owlbear. El usuario puede leer, crear y actualizar únicamente sus copias. El nombre admite de 1 a 80 caracteres, se recortan espacios exteriores y no se permiten controles. Los nombres distinguen mayúsculas; un nombre idéntico identifica la misma copia. Una sustitución filtra propietario, UUID de copia y revisión. No se ofrecen borrado ni renombrado remoto. No habilitar autenticación anónima para este flujo. No hacen falta buckets de Storage ni Realtime.
+Cada fila pertenece al UUID de Authentication, no al email ni al usuario de Owlbear. El usuario puede leer, crear y actualizar únicamente sus copias. El nombre admite de 1 a 80 caracteres, se recortan espacios exteriores y no se permiten controles. Los nombres distinguen mayúsculas; un nombre idéntico identifica la misma copia. Una sustitución filtra propietario, UUID de copia y revisión. Para borrar, la función `delete_private_vault_backup` comprueba la cuenta autenticada, el UUID, el nombre y la revisión en la misma operación. Al borrar la copia migrada también retira su respaldo de la tabla antigua. No habilitar autenticación anónima para este flujo. No hacen falta buckets de Storage ni Realtime.
 
-Las 59 comprobaciones de PostgreSQL se ejecutan con `npm run test:cloud-db`. Aplican ambas migraciones en PostgreSQL embebido y comprueban conservación de la copia anterior, varias copias por cuenta, aislamiento, permisos, nombres, metadatos del servidor, límites y conflictos; no se conectan a tu proyecto alojado.
+Las comprobaciones de PostgreSQL se ejecutan con `npm run test:cloud-db`. Aplican las tres migraciones en PostgreSQL embebido y comprueban conservación de la copia anterior, varias copias por cuenta, aislamiento, permisos, nombres, metadatos del servidor, límites y conflictos; no se conectan a tu proyecto alojado.
 
 ## Acceso por código y entrega de email
 

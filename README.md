@@ -28,7 +28,7 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 
 ## 🚀 Installation
 
-GM Vault 2.2.0 adds multiple named private backups per account. Save under a new name to keep another copy, or reuse a name and confirm replacing only that copy. Restore lets you choose a saved name and date before reviewing the destination. Configure the service using the [Supabase setup and testing guide](docs/SUPABASE_SETUP.md), applying both migrations in order. Local vaults and JSON backups work without an account.
+GM Vault 2.2.0 adds multiple named private backups per account. Save under a new name to keep another copy, or reuse a name and confirm replacing only that copy. In Restore private backup, select a copy to review it or choose Delete selected backup and type its name to confirm deletion. Configure the service using the [Supabase setup and testing guide](docs/SUPABASE_SETUP.md), applying the migrations in order. Local vaults and JSON backups work without an account.
 
 The extension can be installed manually by pasting the manifest URL below in the "Add Extension" dialog.
 

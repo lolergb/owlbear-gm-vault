@@ -26,6 +26,7 @@ The surface uses one native modal `dialog`, labelled by its `h2`, with plain exp
 | Verify | Required One-time code field with numeric input mode and a 6–10 digit pattern; Verify code, Change email, or Resend code. Resend displays a countdown and is disabled during its cooldown. |
 | Name a copy | Account, local page/folder counts and size, required Backup name, existing-name suggestions, and Review backup. |
 | Select a copy | Account, required Saved backup selector, and Review backup. Each option shows its name and localized saved date/time. |
+| Delete a copy | Select a saved copy, choose **Delete selected backup**, and type its displayed name to enable **Delete backup**. Cancel or Escape returns to the list. After deletion the list refreshes. |
 | Empty account | “No private backups found”; account change or Done. |
 | Review | Account, full backup name, remote summary/date when present, local summary, consequences, applicable warnings, back action, and explicit confirmation. |
 | Loading | Connecting, sending/verifying codes, checking copies, reading the chosen payload, saving, or restoring. |
@@ -41,7 +42,7 @@ Review names the destination and consequence before a write. Saving uses “Save
 
 ## Keyboard, focus, and asynchronous work
 
-The native modal supplies focus containment. Escape and Cancel close it, resolve a pending choice with `null`, remove the dialog, and return focus to the element active before opening. The required field receives initial focus when present. Enter submits the form's primary action through native validity checks. Action buttons are disabled after a choice to prevent duplicate submissions while the next step starts.
+The native modal supplies focus containment. Outside the deletion confirmation, Escape and Cancel close it, resolve a pending choice with `null`, remove the dialog, and return focus to the element active before opening. The required field receives initial focus when present. Enter submits the form's primary action through native validity checks. Action buttons are disabled after a choice to prevent duplicate submissions while the next step starts.
 
 A short review initially focuses its primary action. A review taller than the dialog initially focuses the heading with `tabindex="-1"`; this heading is outside the normal Tab order. Focus uses `preventScroll`, and each choice resets dialog scroll to the top so a long name and summary are read before confirmation. Users can scroll down and Tab to the actions.
 
