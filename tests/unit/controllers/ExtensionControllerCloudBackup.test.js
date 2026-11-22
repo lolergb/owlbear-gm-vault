@@ -38,10 +38,12 @@ function controllerWith() {
   return controller;
 }
 async function button(text) {
-  for (let i = 0; i < 50; i++) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
     const found = [...document.querySelectorAll('dialog button')].find(element => element.textContent === text);
     if (found) return found;
-    await Promise.resolve();
+    // Lazy imports also need a turn of the event loop before the dialog renders.
+    await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw new Error(`Button not found: ${text}. Visible: ${document.body.textContent}`);
 }
