@@ -3,6 +3,21 @@ export const BACKUP_SCHEMA = 1;
 export const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 export const RECOVERY_PREFIX = 'gm-vault-cloud-recovery-v1:';
 export const MAX_BACKUP_NAME_LENGTH = 80;
+export const CLOUD_AUTH_PREFIX = 'gm-vault-cloud-auth-v1:';
+
+// Key presence only decides whether to ask the SDK about a previous session.
+export function isCloudSessionKey(key, hostname) {
+  return typeof key === 'string' && key.startsWith(CLOUD_AUTH_PREFIX) && key.endsWith(':' + hostname);
+}
+
+export function hasStoredCloudSession() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      if (isCloudSessionKey(localStorage.key(i), location.hostname)) return true;
+    }
+  } catch { /* A memory-only session lives in the active SDK client. */ }
+  return false;
+}
 
 export function backupName(value) {
   const name = typeof value === 'string' ? value.trim().normalize('NFC') : '';

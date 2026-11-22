@@ -177,11 +177,7 @@ export async function runCloudBackup(controller, operation, progress) {
     const localPrepared = operation === 'save' ? prepareBackup(controller.config, controller.configParser) : null;
     progress.enter('connect');
     dialog.loading('Connecting to private backups');
-    if (!controller._cloudService) {
-      const { CloudBackupService } = await import('./CloudBackupService.js');
-      controller._cloudService = await CloudBackupService.create();
-    }
-    const service = controller._cloudService;
+    const service = await controller._getCloudBackupService();
     let chosenName = '';
     if (operation === 'signout') {
       await service.signOut();
@@ -198,6 +194,7 @@ export async function runCloudBackup(controller, operation, progress) {
         session = await authenticate(service, dialog, progress);
       }
       if (!session || dialog.closed) return;
+      if (operation === 'signin') return;
       const userId = session.user.id;
       dialog.loading('Checking your private backup');
       if (service.pendingWrite && service.pendingWrite.userId !== userId) service.pendingWrite = null;

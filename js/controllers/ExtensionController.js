@@ -93,7 +93,7 @@ import { BetaPromotionBanner } from '../ui/BetaPromotionBanner.js';
 import { BetaVaultMigration } from '../services/BetaVaultMigration.js?v=2.2.0';
 import { PRODUCTION_ORIGIN, MIGRATION_PREFIX, validRoom } from '../config/betaMigration.js';
 import { chooseBetaVault, betaRecoveryMessage } from '../ui/BetaMigrationDialog.js';
-import { BackupError } from '../utils/cloudBackup.js';
+import { BackupError, hasStoredCloudSession, isCloudSessionKey } from '../utils/cloudBackup.js';
 
 // Attach only a controlled stage to the original error without modifying it.
 const contentErrorStages = new WeakMap();
@@ -2194,6 +2194,7 @@ export class ExtensionController {
    */
   cleanup() {
     this._cloudDialog?.close();
+    this._cloudSettingsListeners?.abort();
     log('🧹 Limpiando recursos...');
     this.betaRecoveryAbort?.abort();
     this.announcementCancelled = true;
@@ -3639,17 +3640,23 @@ export class ExtensionController {
       heading.id = 'cloud-backup-settings-title';
       section.setAttribute('aria-labelledby', heading.id);
       heading.textContent = 'Private backup';
+      const badge = document.createElement('span');
+      badge.className = 'cloud-backup-beta';
+      badge.textContent = 'Beta';
+      heading.append(' ', badge);
       const description = document.createElement('p');
       description.className = 'settings__description';
       description.textContent = 'Keep named private backups across devices. Choose which copy to restore using an email code. Your Notion token stays on this device.';
       const actions = document.createElement('div');
-      actions.className = 'form__actions';
+      actions.className = 'cloud-backup-actions';
       for (const [id, text, operation] of [
+        ['cloud-signin-btn', 'Sign in', 'signin'],
         ['cloud-save-btn', 'Save private backup', 'save'], ['cloud-restore-btn', 'Restore private backup', 'restore'],
         ['cloud-signout-btn', 'Sign out', 'signout'], ['cloud-undo-btn', 'Undo restore', 'undo']
       ]) {
         const button = document.createElement('button');
         button.id = id; button.type = 'button'; button.className = 'btn btn--ghost btn--flex'; button.textContent = text;
+        if (operation === 'signin' || operation === 'save') button.classList.replace('btn--ghost', 'btn--primary');
         button.addEventListener('click', () => this._runCloudAction(operation));
         actions.append(button);
       }
@@ -3658,9 +3665,54 @@ export class ExtensionController {
     }
     const allowed = this.isGM && !this.isCoGM && new URLSearchParams(location.search).get('modal') !== 'true';
     section.hidden = !allowed;
+    if (!allowed) return;
     const undo = document.getElementById('cloud-undo-btn');
     try { undo.hidden = !localStorage.getItem('gm-vault-cloud-recovery-v1:' + this.roomId); }
     catch { undo.hidden = true; }
+    const checkSession = this._cloudService || hasStoredCloudSession();
+    this._showCloudAccountActions(this._cloudSignedIn ?? (checkSession ? null : false));
+    if (!this._cloudSettingsListeners) {
+      this._cloudSettingsListeners = new AbortController();
+      window.addEventListener('storage', event => {
+        if (isCloudSessionKey(event.key, location.hostname) && !this._cloudService) this._setupCloudSettings();
+      }, { signal: this._cloudSettingsListeners.signal });
+    }
+    if (checkSession) {
+      // One subscription supplies INITIAL_SESSION as well as later sign-in/out events.
+      return this._getCloudBackupService().catch(() => this._showCloudAccountActions(false));
+    }
+  }
+
+  _showCloudAccountActions(signedIn) {
+    this._cloudSignedIn = signedIn;
+    const section = document.getElementById('cloud-backup-settings');
+    if (!section) return;
+    const signIn = section.querySelector('#cloud-signin-btn');
+    const save = section.querySelector('#cloud-save-btn');
+    const previousFocus = document.activeElement;
+    signIn.hidden = signedIn === true;
+    signIn.disabled = signedIn === null;
+    signIn.textContent = signedIn === null ? 'Checking session…' : 'Sign in';
+    save.hidden = !signedIn;
+    section.querySelector('#cloud-restore-btn').hidden = !signedIn;
+    section.querySelector('#cloud-signout-btn').hidden = !signedIn;
+    if (section.contains(previousFocus) && previousFocus.hidden) (signedIn ? save : signIn).focus();
+  }
+
+  async _getCloudBackupService() {
+    if (!this._cloudService) {
+      this._cloudServiceTask ??= import('../services/CloudBackupService.js')
+        .then(({ CloudBackupService }) => CloudBackupService.create())
+        .then(service => { this._cloudService = service; })
+        .finally(() => { this._cloudServiceTask = null; });
+      await this._cloudServiceTask;
+    }
+    const scope = this._cloudSettingsListeners;
+    if (scope && !scope.signal.aborted && !this._cloudSessionUnsubscribe) {
+      this._cloudSessionUnsubscribe = this._cloudService.watchSession(session => this._showCloudAccountActions(!!session?.user));
+      scope.signal.addEventListener('abort', this._cloudSessionUnsubscribe, { once: true });
+    }
+    return this._cloudService;
   }
 
   async _runCloudAction(operation) {

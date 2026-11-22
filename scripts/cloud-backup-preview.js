@@ -9,6 +9,7 @@ controller.OBR.room.id = controller.roomId;
 controller.storageService.setRoomId(controller.roomId);
 const sessionKey = `cloud-qa-session-${profile}`;
 const readSession = () => JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
+let notifySession;
 const copyKey = userId => `cloud-qa-copy-${userId}`;
 const readCopy = userId => JSON.parse(localStorage.getItem(copyKey(userId)) || 'null');
 const copiesKey = userId => `cloud-qa-copies-v2-${userId}`;
@@ -21,15 +22,21 @@ const readCopies = userId => {
 controller._cloudService = {
   storage: { persistent: true }, pendingWrite: null,
   session: async () => readSession(),
+  watchSession(listener) {
+    notifySession = listener;
+    listener(readSession());
+    return () => { notifySession = null; };
+  },
   async assertUser(id) { if (readSession()?.user.id !== id) throw new BackupError('auth'); },
   async sendCode() {},
   async verifyCode(email, token) {
     if (token !== '123456') throw new BackupError('code');
     const session = { user: { id: email.toLowerCase(), email } };
     sessionStorage.setItem(sessionKey, JSON.stringify(session));
+    notifySession?.(session);
     return session;
   },
-  async signOut() { sessionStorage.removeItem(sessionKey); },
+  async signOut() { sessionStorage.removeItem(sessionKey); notifySession?.(null); },
   async list(id) {
     await this.assertUser(id);
     return readCopies(id).map(({ payload, ...metadata }) => metadata).sort((a, b) => b.created_at.localeCompare(a.created_at));

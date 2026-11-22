@@ -28,7 +28,10 @@ export class CloudBackupDialog {
     this.picker?.destroy();
     this.dialog.close();
     this.dialog.remove();
-    this.previousFocus?.focus();
+    const focusTarget = this.previousFocus?.hidden
+      ? this.previousFocus.closest('.cloud-backup-settings')?.querySelector('.btn--primary:not([hidden])')
+      : this.previousFocus;
+    focusTarget?.focus();
   }
 
   render(title, paragraphs = [], account) {

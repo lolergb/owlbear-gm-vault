@@ -6,14 +6,32 @@
 }
 
 .cloud-backup-settings h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   margin: 0;
   font: var(--ui-font-body);
   color: var(--color-text-primary);
 }
 
-.cloud-backup-settings .form__actions {
+.cloud-backup-beta {
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-xs);
+  background: color-mix(in srgb, var(--button-primary-bg) 16%, transparent);
+  color: var(--ui-color-link);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.cloud-backup-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--button-group-gap-md);
+  margin-top: var(--spacing-sm);
 }
 
 .cloud-backup-settings[hidden], .cloud-backup-settings button[hidden] { display: none; }
+
+.cloud-backup-settings #cloud-signin-btn:not([hidden]):has(~ #cloud-undo-btn[hidden]) {
+  grid-column: 1 / -1;
+}

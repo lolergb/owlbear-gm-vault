@@ -1,4 +1,4 @@
-import { BACKUP_SCHEMA, BackupError, backupName } from '../utils/cloudBackup.js';
+import { BACKUP_SCHEMA, BackupError, CLOUD_AUTH_PREFIX, backupName } from '../utils/cloudBackup.js';
 
 const TABLE = 'private_vault_backup_entries';
 const METADATA = 'id,user_id,name,schema_version,revision,created_at,updated_at';
@@ -76,7 +76,7 @@ export class CloudBackupService {
     const storage = sessionStorageAdapter();
     const client = sdk.createClient(config.url, config.key, {
       auth: {
-        storage, storageKey: `gm-vault-cloud-auth-v1:${new URL(config.url).hostname}:${location.hostname}`,
+        storage, storageKey: `${CLOUD_AUTH_PREFIX}${new URL(config.url).hostname}:${location.hostname}`,
         persistSession: true, autoRefreshToken: true, detectSessionInUrl: false
       },
       global: { fetch: timeoutFetch }
@@ -90,6 +90,11 @@ export class CloudBackupService {
       if (error) throw error;
       return data.session;
     } catch (error) { throw safeError(error, 'auth'); }
+  }
+
+  watchSession(listener) {
+    const { data } = this.client.auth.onAuthStateChange((_event, session) => listener(session));
+    return () => data.subscription.unsubscribe();
   }
 
   async assertUser(userId) {

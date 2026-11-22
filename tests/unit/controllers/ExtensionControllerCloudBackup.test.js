@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ExtensionController } from '../../../js/controllers/ExtensionController.js';
 import { ConfigParser } from '../../../js/parsers/ConfigParser.js';
 import { StorageService } from '../../../js/services/StorageService.js';
+import { CloudBackupService } from '../../../js/services/CloudBackupService.js';
 import { runCloudBackup, applyLocalRestore, captureBackupContext, undoLocalRestore } from '../../../js/services/CloudBackupFlow.js';
 import { BackupError, prepareBackup } from '../../../js/utils/cloudBackup.js';
 
@@ -27,6 +28,7 @@ function controllerWith() {
   controller.storageService.saveLocalConfig(original);
   controller._cloudService = {
     storage: { persistent: true }, pendingWrite: null,
+    watchSession: jest.fn(listener => { listener(session); return () => {}; }),
     session: jest.fn().mockResolvedValue(session), assertUser: jest.fn().mockResolvedValue(session.user),
     list: jest.fn().mockResolvedValue([{ id: 'backup-a', user_id: 'user-a', name: 'Campaign A', revision: 1, updated_at: '2026-11-21T20:00:00Z' }]),
     read: jest.fn().mockResolvedValue({ id: 'backup-a', name: 'Campaign A', user_id: 'user-a', schema_version: 1, payload: source, revision: 1, updated_at: '2026-11-21T20:00:00Z' }),
@@ -350,5 +352,80 @@ describe('cloud backup controller flows', () => {
     expect(document.getElementById('cloud-backup-settings').hidden).toBe(true);
     controller.isGM = false; controller._setupCloudSettings();
     expect(document.getElementById('cloud-backup-settings').hidden).toBe(true);
+  });
+
+  it('checks a remembered session on Settings open and uses an SDK sign-out event to update the buttons', async () => {
+    const controller = controllerWith();
+    const service = controller._cloudService;
+    delete controller._cloudService;
+    controller._setupCloudSettings = ExtensionController.prototype._setupCloudSettings;
+    document.body.innerHTML = '<div class="form"><button id="download-json-btn"></button></div>';
+    const create = jest.spyOn(CloudBackupService, 'create').mockResolvedValue(service);
+    try {
+      await controller._setupCloudSettings();
+      expect(create).not.toHaveBeenCalled();
+      localStorage.setItem(`gm-vault-cloud-auth-v1:project:${location.hostname}`, 'stored');
+      await controller._setupCloudSettings();
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(document.getElementById('cloud-signin-btn').hidden).toBe(true);
+      service.watchSession.mock.calls[0][0](null);
+      expect(document.getElementById('cloud-signin-btn').hidden).toBe(false);
+      expect(document.getElementById('cloud-signout-btn').hidden).toBe(true);
+    } finally {
+      create.mockRestore();
+      controller._cloudSettingsListeners.abort();
+    }
+  });
+
+  it('switches Settings from sign-out to OTP sign-in and back without reading or writing copies', async () => {
+    const controller = controllerWith();
+    controller._setupCloudSettings = ExtensionController.prototype._setupCloudSettings;
+    const service = controller._cloudService;
+    let authChanged;
+    service.watchSession.mockImplementation(listener => {
+      authChanged = listener;
+      listener(session);
+      return () => {};
+    });
+    service.signOut.mockImplementation(async () => {
+      service.session.mockResolvedValue(null);
+      authChanged(null);
+    });
+    service.verifyCode.mockImplementation(async () => { authChanged(session); return session; });
+    controller.config = controller.configParser.parse({ categories: [] });
+    localStorage.setItem('gm-vault-cloud-recovery-v1:room-cloud', 'local recovery');
+    document.body.innerHTML = '<div class="form"><button id="download-json-btn"></button></div>';
+    await controller._setupCloudSettings();
+    const action = name => document.getElementById(`cloud-${name}-btn`);
+    const runAction = jest.spyOn(controller, '_runCloudAction');
+    expect(document.querySelector('#cloud-backup-settings-title span').textContent).toBe('Beta');
+    expect(action('save').classList.contains('btn--primary')).toBe(true);
+    expect(action('signin').hidden).toBe(true);
+    action('signout').focus();
+    action('signout').click();
+    await click('Done');
+    await runAction.mock.results[0].value;
+    expect(action('signin').hidden).toBe(false);
+    expect(action('signin').classList.contains('btn--primary')).toBe(true);
+    expect(action('undo').hidden).toBe(false);
+    for (const name of ['signout', 'save', 'restore']) expect(action(name).hidden).toBe(true);
+    expect(document.activeElement).toBe(action('signin'));
+    action('signin').click();
+    await button('Send code');
+    document.querySelector('dialog input').value = 'a@example.test';
+    await click('Send code');
+    await button('Verify code');
+    document.querySelector('dialog input').value = '123456';
+    await click('Verify code');
+    await runAction.mock.results[1].value;
+    expect(action('signin').hidden).toBe(true);
+    for (const name of ['signout', 'save', 'restore']) expect(action(name).hidden).toBe(false);
+    expect(action('signout').classList.contains('btn--ghost')).toBe(true);
+    expect(document.activeElement).toBe(action('save'));
+    expect(service.watchSession).toHaveBeenCalledTimes(1);
+    expect(service.list).not.toHaveBeenCalled();
+    expect(service.save).not.toHaveBeenCalled();
+    expect(service.read).not.toHaveBeenCalled();
+    controller._cloudSettingsListeners.abort();
   });
 });

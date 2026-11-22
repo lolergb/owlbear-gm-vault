@@ -16,6 +16,8 @@ Implementation files remain authoritative if this snapshot becomes stale.
 
 ## Components and states
 
+Settings labels private backups as Beta. Signed-out GMs can sign in with an email code, even with an empty vault. After sign-in, Save private backup is primary, with Restore private backup and Sign out as secondary actions. Undo restore stays available whenever this room has a local recovery copy, including after sign-out.
+
 The surface uses one native modal `dialog`, labelled by its `h2`, with plain explanatory paragraphs and a form. Primary actions use the application's primary button; Cancel uses the secondary button. Account management appears beside the signed-in identity. Other supporting actions use text buttons above the footer. Errors are inline `role="alert"` messages. Loading uses a `role="status"` paragraph and a visible dismissal action.
 
 | State | Information and action |
@@ -61,7 +63,7 @@ Filter the **Events** view to `private_backup_flow`, `environment = beta`, `depl
 | What went wrong? | Filter `outcome = failed` and break down by `step` and `error_code`. A recoverable error has `terminal = false` and can be followed by success in the same attempt. |
 | What happened after a retry? | Inspect the same `attempt_id` in Events, using `sequence` for ordering. Filter `terminal = true` to count final results. Use total events for attempt counts. |
 
-To verify before inviting testers, open **Settings → Restore private backup** in a test room. With a signed-in test account containing a copy, cancel at the chooser. Expect `operation = restore`, `step = select`, `outcome = cancelled`. With a signed-out account, cancelling at the email prompt gives `step = email`. For an error check, use **Save private backup** in a separate, empty test vault. Expect `operation = save`, `step = prepare`, `outcome = failed` and `error_code = empty`.
+To verify before inviting testers, sign in under **Settings → Vault → Private backup** in a test room. With a test account containing a copy, choose **Restore private backup** and cancel at the chooser. Expect `operation = restore`, `step = select`, `outcome = cancelled`. Signing in by itself does not start a measured backup attempt. For an error check, use **Save private backup** in a separate, empty test vault. Expect `operation = save`, `step = prepare`, `outcome = failed` and `error_code = empty`.
 
 The flow starts at `open` and then prepares the vault, connects, and checks the session. Signed-out users go through `email`, `send_code`, `enter_code`, and `verify_code`. The next steps list the copies, collect a `name` or a `select` choice, read existing data when needed, and show `review`. Confirmation goes through `authorize`, then `save` or `restore_local` and `sync_room`.
 
