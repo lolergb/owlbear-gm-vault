@@ -5,8 +5,9 @@ This records the named private backup dialog added for PR #26 / v2.2.0: save mul
 ## Source of truth
 
 - [CloudBackupDialog.js](../js/ui/CloudBackupDialog.js): native dialog, fields, actions, focus, validation, and loading/error presentation.
+- [ModalShell.js](../js/ui/ModalShell.js) supplies the labelled panel used by the vault's dialogs.
 - [CloudBackupFlow.js](../js/services/CloudBackupFlow.js): account, naming, selection, review, confirmation, and result states.
-- [cloud-backup.css](../css/cloud-backup.css): dialog dimensions, wrapping, local focus treatment, and narrow-width actions.
+- [ModalSelect.js](../js/ui/ModalSelect.js) and [modal-select.css](../css/modal-select.css) provide the same searchable picker used for folders and pages.
 - [cloudBackup.js](../js/utils/cloudBackup.js): backup-name validation and user-facing error messages.
 - [app.css](../css/app.css), [ui-typography.css](../css/ui-typography.css), and [button-tokens.css](../css/button-tokens.css): incumbent modal, input, label, type, button, spacing, and shape rules.
 - [themeManager.js](../js/utils/themeManager.js): Owlbear theme values mapped to shared CSS custom properties.
@@ -15,7 +16,7 @@ Implementation files remain authoritative if this snapshot becomes stale.
 
 ## Components and states
 
-The surface uses one native modal `dialog`, labelled by its `h2`, with plain explanatory paragraphs and a form. Primary actions use the application's primary button; Cancel, account changes, and navigation use its secondary/ghost button alias. Errors are inline `role="alert"` messages. Loading uses a `role="status"` paragraph and a visible dismissal action.
+The surface uses one native modal `dialog`, labelled by its `h2`, with plain explanatory paragraphs and a form. Primary actions use the application's primary button; Cancel uses the secondary button. Account management appears beside the signed-in identity. Other supporting actions use text buttons above the footer. Errors are inline `role="alert"` messages. Loading uses a `role="status"` paragraph and a visible dismissal action.
 
 | State | Information and action |
 | --- | --- |
@@ -30,9 +31,9 @@ The surface uses one native modal `dialog`, labelled by its `h2`, with plain exp
 
 ## Field semantics and replacement review
 
-Backup name is text, not a selector. The initial suggestion is a localized timestamp name; a datalist offers existing names. The field has an HTML maximum length of 80. The domain validator trims and normalizes to NFC, requires 1–80 Unicode code points, and rejects control characters. A new name creates a separate copy. An existing matching name requires reading that copy and reviewing its current contents before replacement.
+Backup name starts with a localized timestamp and accepts free text. When copies exist, the arrow at the end of the field opens the shared picker. Choosing a name fills the editable field. The field has an HTML maximum length of 80. The domain validator trims and normalizes to NFC, requires 1–80 Unicode code points, and rejects control characters. A new name creates a separate copy. An existing matching name requires reading that copy and reviewing its current contents before replacement.
 
-Saved backup is a native, required `select`. Its initial empty option says “Choose a backup…”; the user must choose an actual saved-copy ID before the primary review action succeeds. Name plus `updated_at` rendered with `toLocaleString()` identifies each option. A long option may be visually truncated by the native control; the following review prints the full name in wrapping text.
+Saved backup uses the shared modal picker backed by a required select. Its initial prompt is “Choose a backup…”. Review becomes available after a saved-copy ID is selected. Results show each name above its localized saved date and time. Search, arrows and Enter select a result. Escape dismisses the picker and returns focus to its trigger.
 
 Review names the destination and consequence before a write. Saving uses “Save private backup” for a new name or “Replace private backup” for an existing name, and explains that other saved copies are kept. “Change name” returns to naming. Restoration uses “Restore private backup”, explains replacement of the local vault in the current room, retains the previous local copy for Undo restore, and explains player-access and Notion-token handling. “Choose another backup” returns to selection. Selecting or reviewing a copy does not itself confirm replacement.
 
@@ -46,11 +47,11 @@ Both reads of a chosen payload—an existing name being replaced and a restore s
 
 ## Theme and width inheritance
 
-The modal retains the existing surface padding, corner radius, shadow, tint, and UI typography. Text and surface colors use `--color-text-primary` and `--color-bg-surface`; the backdrop uses `--color-bg-overlay`. Native options receive the same text/surface tokens. Error text uses `--color-error-text`; focus rings use `--button-focus-ring`. Caret and selection colors use the incumbent accent tokens. The dialog therefore follows Owlbear's light/dark theme mapping rather than defining its own palette.
-
-The dialog is centered and uses the viewport width minus 32px, capped at 460px. Its maximum height is `100dvh - 32px`, with vertical scrolling. Inputs fill the available width. Review paragraphs wrap anywhere so long names remain readable. Action rows wrap, and at widths up to 380px become a column. Button hover, active, disabled, sizing, and reduced-motion treatment come from shared button styles and tokens.
+The dialog uses the shared modal surface, title, descriptions, metadata, fields and action group from the application stylesheet. It follows the Owlbear theme. At widths above 480px, Cancel and the primary action share the footer. At narrower widths they stack with the primary action first in both visual and keyboard order.
 
 ## Verification record and limits
+
+The shared picker was exercised with two named copies in the local browser fixture, at 600×700 in dark mode and 360×640 in light mode. The checks covered name entry, choosing an existing name, search, keyboard selection, cancel, and the review of the selected copy.
 
 The primary implementation session inspected the selector in dark and light themes and a long name at a 360×640 viewport, including recovery from a name exceeding the 80-character limit. The long review started at its heading with no horizontal overflow. No screenshot files were available for this documentation pass. This records that inspection, not an independent visual audit or measured contrast certification.
 

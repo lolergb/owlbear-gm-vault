@@ -116,7 +116,7 @@ async function chooseNamedBackup(service, dialog, session, operation, localPrepa
     while (!dialog.closed) {
       const entered = await dialog.choose({
         title: 'Name your backup',
-        paragraphs: [`Account: ${session.user.email || 'Signed in'}`, `Saving: ${backupSummary(localPrepared.summary)} (${Math.ceil(localPrepared.bytes / 1024)} KiB).`, 'A new name keeps a separate copy. Reusing a name asks you to confirm replacing only that copy.'],
+        account: session.user.email || 'Signed in', paragraphs: [`Saving: ${backupSummary(localPrepared.summary)} (${Math.ceil(localPrepared.bytes / 1024)} KiB).`, 'A new name keeps a separate copy. Reusing a name asks you to confirm replacing only that copy.'],
         field: { label: 'Backup name', value: name, maxLength: MAX_BACKUP_NAME_LENGTH, suggestions: rows.map(row => row.name) },
         error, actions: [accountAction, { id: 'continue', label: 'Review backup', primary: true }]
       });
@@ -133,11 +133,12 @@ async function chooseNamedBackup(service, dialog, session, operation, localPrepa
     return null;
   }
   if (!rows.length) {
-    return dialog.choose({ title: 'No private backups found', paragraphs: ['This account has no saved copies. Your local vault is unchanged.'], actions: [accountAction, { id: 'done', label: 'Done', primary: true }] });
+    return dialog.choose({ title: 'No private backups found', account: session.user.email || 'Signed in', paragraphs: ['This account has no saved copies. Your local vault is unchanged.'], actions: [accountAction, { id: 'done', label: 'Done', primary: true }] });
   }
   const selected = await dialog.choose({
-    title: 'Choose a backup to restore', paragraphs: [`Account: ${session.user.email || 'Signed in'}`, 'Choose a saved copy. You will review its contents before replacing your local vault.'],
-    field: { label: 'Saved backup', options: rows.map(row => ({ value: row.id, label: `${row.name} — ${new Date(row.updated_at).toLocaleString()}` })) },
+    title: 'Choose a backup to restore', account: session.user.email || 'Signed in',
+    paragraphs: ['Choose a saved copy. You will review its contents before replacing your local vault.'],
+    field: { label: 'Saved backup', options: rows.map(row => ({ value: row.id, label: row.name, detail: new Date(row.updated_at).toLocaleString() })) },
     actions: [accountAction, { id: 'review', label: 'Review backup', primary: true }]
   });
   if (!selected || selected.action === 'account') return selected;
@@ -202,7 +203,6 @@ export async function runCloudBackup(controller, operation) {
       const remote = row ? prepareBackup(row.payload, controller.configParser, { schema: row.schema_version, restoring: operation === 'restore' }) : null;
       const actionLabel = operation === 'restore' ? 'Restore private backup' : row ? 'Replace private backup' : 'Save private backup';
       const paragraphs = [
-        `Account: ${session.user.email || 'Signed in'}`,
         `Backup: ${name}`,
         !service.storage?.persistent ? 'This browser cannot remember your session. You will need a new code next time.' : '',
         row ? `Private copy: ${backupSummary(remote.summary)}. Saved ${new Date(row.updated_at).toLocaleString()}.` : 'No private copy exists yet.',
@@ -210,7 +210,7 @@ export async function runCloudBackup(controller, operation) {
         operation === 'save' ? (row ? 'Only this named copy will be replaced. Your other saved copies are kept.' : 'This creates a separate named copy. Your other saved copies are kept.') : 'Player access will be turned off until you review and enable it. Your Notion token stays on this device and is not included in the backup.',
         ...(operation === 'restore' ? remote.warnings : localPrepared.warnings)
       ];
-      const choice = await dialog.choose({ title: actionLabel, paragraphs, actions: [{ id: 'back', label: operation === 'save' ? 'Change name' : 'Choose another backup' }, { id: 'confirm', label: actionLabel, primary: true }] });
+      const choice = await dialog.choose({ title: actionLabel, account: session.user.email || 'Signed in', paragraphs, actions: [{ id: 'back', label: operation === 'save' ? 'Change name' : 'Choose another backup' }, { id: 'confirm', label: actionLabel, primary: true }] });
       if (!choice) return;
       if (choice.action === 'back') continue;
       dialog.loading(operation === 'save' ? 'Saving your private backup' : 'Restoring your vault', { committing: true });

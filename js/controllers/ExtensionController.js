@@ -81,6 +81,8 @@ import { ModalManager } from '../ui/ModalManager.js?v=20260722-4';
 import { EventHandlers } from '../ui/EventHandlers.js?v=20260722-4';
 import { AnnouncementBanner } from '../ui/AnnouncementBanner.js?v=20260906-9';
 import { VaultEmptyState } from '../ui/VaultEmptyState.js?v=20260906-9';
+import { ModalSelect } from '../ui/ModalSelect.js';
+import { createModalShell } from '../ui/ModalShell.js';
 import { FolderSelect } from '../ui/FolderSelect.js?v=20260906-9';
 import { watchResponsiveButtonGroups } from '../ui/ResponsiveButtonGroups.js?v=20260906-9';
 import { watchListPanelBackdrop } from '../ui/ListPanelBackdrop.js';
@@ -946,15 +948,8 @@ export class ExtensionController {
     const previouslyFocusedElement = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const overlay = document.createElement('div');
-    overlay.id = 'player-access-modal';
-    overlay.className = 'modal';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-labelledby', 'player-access-modal-title');
-
-    const modal = document.createElement('div');
-    modal.className = 'modal__content notion-pages-modal player-access-modal';
+    const { root: overlay, content: modal } = createModalShell('player-access-modal-title', { id: 'player-access-modal' });
+    modal.classList.add('notion-pages-modal', 'player-access-modal');
 
     const title = document.createElement('h2');
     title.id = 'player-access-modal-title';
@@ -1145,7 +1140,6 @@ export class ExtensionController {
     });
 
     modal.append(title, form);
-    overlay.appendChild(modal);
     document.body.appendChild(overlay);
     updateState();
     (list.querySelector('input:checked') || everyone).focus();
@@ -2010,14 +2004,8 @@ export class ExtensionController {
    */
   _showModalForm(title, fields, onSubmit, onCancel = null, options = {}) {
     const { submitText = 'Save', cancelText = 'Cancel' } = options;
-    // Crear overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'modal-overlay';
-    overlay.className = 'modal';
-
-    // Crear modal
-    const modal = document.createElement('div');
-    modal.className = 'modal__content';
+    const previousFocus = document.activeElement;
+    const { root: overlay, content: modal } = createModalShell('modal-form-title', { id: 'modal-overlay' });
 
     // Generar HTML del formulario
     const fieldsHtml = fields.map(field => {
@@ -2047,69 +2035,19 @@ export class ExtensionController {
           </div>
         `;
       } else if (field.type === 'select') {
-        const options = field.options || [];
-        const selectId = `field-${safeName}`;
-        const searchId = `field-${safeName}-search`;
-        const statusId = `field-${safeName}-search-status`;
-        const listboxId = `field-${safeName}-listbox`;
-        const selectLabelId = `field-${safeName}-label`;
-        const visibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
-
         return `
           <div class="form__field" data-field-name="${safeName}">
-            ${field.searchable ? `
-              <label class="form__label" for="${searchId}">${escapeHtml(field.searchLabel || `Search ${field.label}`)}</label>
-              <input
-                type="search"
-                id="${searchId}"
-                class="input"
-                placeholder="${escapeHtml(field.searchPlaceholder || 'Search options...')}"
-                aria-label="${escapeHtml(field.searchLabel || `Search ${field.label}`)}"
-                aria-controls="${listboxId}"
-                aria-describedby="${statusId}"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <span
-                id="${statusId}"
-                class="form__help form__search-status"
-                role="status"
-                aria-live="polite"
-              ></span>
-            ` : ''}
-            <label
-              class="form__label"
-              id="${selectLabelId}"
-              ${field.searchable ? '' : `for="${selectId}"`}
-            >${safeLabel}${field.required ? ' *' : ''}</label>
-            <select 
-              id="${selectId}"
-              name="${safeName}"
-              class="select${field.searchable ? ' select--searchable-source' : ''}"
-              ${field.searchable ? `data-searchable-select="true" size="${visibleOptions}" hidden aria-hidden="true" tabindex="-1"` : ''}
-              ${field.required ? 'required' : ''}
-            >
-              ${options.map(opt =>
+            <label class="form__label" for="field-${safeName}">${safeLabel}${field.required ? ' *' : ''}</label>
+            <select id="field-${safeName}" name="${safeName}" class="select" ${field.required ? 'required' : ''}>
+              ${(field.options || []).map(opt =>
                 `<option value="${escapeHtml(opt.value)}" ${field.value === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`
               ).join('')}
             </select>
-            ${field.searchable ? `
-              <div
-                id="${listboxId}"
-                class="select select--searchable"
-                role="listbox"
-                tabindex="0"
-                aria-labelledby="${selectLabelId}"
-                aria-describedby="${statusId}"
-                ${field.required ? 'aria-required="true"' : ''}
-              ></div>
-            ` : ''}
-          </div>
-        `;
+          </div>`;
       } else if (field.type === 'textarea') {
         return `
           <div class="form__field" data-field-name="${safeName}">
-            <label class="form__label">${safeLabel}${field.required ? ' *' : ''}</label>
+            <label class="form__label" for="field-${safeName}">${safeLabel}${field.required ? ' *' : ''}</label>
             <textarea 
               id="field-${safeName}"
               name="${safeName}"
@@ -2125,7 +2063,7 @@ export class ExtensionController {
           : 'text';
         return `
           <div class="form__field" data-field-name="${safeName}">
-            <label class="form__label">${safeLabel}${field.required ? ' *' : ''}</label>
+            <label class="form__label" for="field-${safeName}">${safeLabel}${field.required ? ' *' : ''}</label>
             <input 
               type="${safeInputType}"
               id="field-${safeName}"
@@ -2142,7 +2080,7 @@ export class ExtensionController {
     }).join('');
 
     modal.innerHTML = `
-      <h2 class="modal__title">${escapeHtml(title)}</h2>
+      <h2 class="modal__title" id="modal-form-title">${escapeHtml(title)}</h2>
       <form id="modal-form" class="form">
         ${fieldsHtml}
         <div class="form__actions">
@@ -2152,32 +2090,36 @@ export class ExtensionController {
       </form>
     `;
 
-    overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
     const consentBanner = document.getElementById('cookie-consent-banner');
     const onConsentChanged = () => {
-      modal.querySelector('input, textarea, select, #modal-cancel')?.focus();
+      modal.querySelector('input:not([hidden]), textarea, [role="combobox"]:not([hidden]), #modal-cancel')?.focus();
     };
     consentBanner?.addEventListener('analytics-consent-changed', onConsentChanged);
-    const cleanupConsent = () => {
+    const dismiss = () => {
       consentBanner?.removeEventListener('analytics-consent-changed', onConsentChanged);
+      overlay.remove();
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
 
     const form = modal.querySelector('#modal-form');
     const cancelBtn = modal.querySelector('#modal-cancel');
 
-    fields.forEach(field => {
-      if (field.type === 'select' && field.folderPicker) {
-        this._setupFolderSelect(modal, field);
-      } else if (field.type === 'select' && field.searchable) {
-        this._setupSearchableSelect(modal, field);
-      }
+    const updateRequiredSelects = () => {
+      form.querySelector('#modal-submit').disabled = Array.from(form.querySelectorAll('select[required]'))
+        .some(select => select.disabled || select.value === '');
+    };
+    form.addEventListener('input', updateRequiredSelects);
+    form.addEventListener('change', updateRequiredSelects);
+    fields.filter(field => field.type === 'select').forEach(field => {
+      if (field.folderPicker) this._setupFolderSelect(modal, field);
+      else new ModalSelect(form.elements.namedItem(field.name), { ...field, searchable: !!field.searchable, trackSearchSelection: !!field.searchable });
     });
+    updateRequiredSelects();
 
     const close = () => {
-      cleanupConsent();
-      overlay.remove();
+      dismiss();
       if (onCancel) onCancel();
     };
 
@@ -2187,6 +2129,9 @@ export class ExtensionController {
     });
 
     cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !event.defaultPrevented) close();
+    });
 
     // Manejar submit
     form.addEventListener('submit', (e) => {
@@ -2203,214 +2148,16 @@ export class ExtensionController {
         }
       });
       
-      cleanupConsent();
-      overlay.remove();
+      dismiss();
       if (onSubmit) onSubmit(formData);
     });
 
-    // Focus en primer campo
-    const firstInput = modal.querySelector('input[type="search"], input[type="text"], input[type="url"], textarea, select');
-    if (firstInput) {
-      setTimeout(() => firstInput.focus(), 100);
-    }
+    form.querySelector('input:not([hidden]), textarea, [role="combobox"]')?.focus();
   }
 
   _setupFolderSelect(modal, field) {
     const select = modal.querySelector(`#field-${field.name}`);
     return select ? new FolderSelect(select, field) : null;
-  }
-
-  /**
-   * Añade filtrado accesible a un campo select sin afectar al resto de formularios.
-   * Conserva el value original de cada opción para que el resultado siga apuntando
-   * al índice correcto aunque la lista visible esté filtrada.
-   *
-   * @param {HTMLElement} modal - Elemento modal que contiene el formulario
-   * @param {Object} field - Configuración del campo select
-   * @private
-   */
-  _setupSearchableSelect(modal, field) {
-    const select = modal.querySelector(`#field-${field.name}`);
-    const searchInput = modal.querySelector(`#field-${field.name}-search`);
-    const status = modal.querySelector(`#field-${field.name}-search-status`);
-    const listbox = modal.querySelector(`#field-${field.name}-listbox`);
-    const submitButton = modal.querySelector('#modal-submit');
-
-    if (!select || !searchInput || !listbox) return;
-
-    const options = (field.options || []).map(option => ({
-      label: String(option.label ?? ''),
-      value: String(option.value ?? ''),
-      searchText: String(option.searchText ?? option.label ?? '')
-    }));
-    const maxVisibleOptions = Math.min(Math.max(field.visibleOptions || 7, 2), 10);
-    const resultLabel = field.resultLabel || 'option';
-
-    const normalizeSearchText = (value) => String(value || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLocaleLowerCase();
-
-    const updateSubmitState = () => {
-      const requiredSelects = Array.from(
-        modal.querySelectorAll('select[data-searchable-select="true"][required]')
-      );
-      const requiredSelectStates = requiredSelects.map(requiredSelect => {
-        const invalid = requiredSelect.disabled ||
-          requiredSelect.options.length === 0 ||
-          requiredSelect.value === '';
-        const relatedListbox = modal.querySelector(`#${requiredSelect.id}-listbox`);
-        relatedListbox?.setAttribute('aria-invalid', String(invalid));
-        return invalid;
-      });
-      const emptyRequiredSelect = requiredSelectStates.some(Boolean);
-
-      if (submitButton) submitButton.disabled = emptyRequiredSelect;
-    };
-
-    const updateStatus = () => {
-      if (!status) return;
-
-      const matchingCount = listbox.children.length;
-      if (matchingCount === 0) {
-        status.textContent = field.noResultsText || 'No options found';
-      } else if (field.required && select.value === '') {
-        status.textContent = field.requiredSelectionText || 'Select an option';
-      } else {
-        const label = matchingCount === 1 ? resultLabel : `${resultLabel}s`;
-        status.textContent = `${matchingCount} ${label}`;
-      }
-    };
-
-    const syncSelectedOption = (value, emitChange = false, reveal = false) => {
-      select.value = value;
-      let selectedOption = null;
-
-      Array.from(listbox.children).forEach(optionElement => {
-        const isSelected = optionElement.dataset.value === value;
-        optionElement.setAttribute('aria-selected', String(isSelected));
-        if (isSelected) selectedOption = optionElement;
-      });
-
-      if (selectedOption) {
-        listbox.setAttribute('aria-activedescendant', selectedOption.id);
-        if (reveal) selectedOption.scrollIntoView?.({ block: 'nearest' });
-      } else {
-        listbox.removeAttribute('aria-activedescendant');
-      }
-
-      updateSubmitState();
-      updateStatus();
-
-      if (emitChange) {
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    };
-
-    const renderOptions = () => {
-      const query = normalizeSearchText(searchInput.value.trim());
-      const previousValue = select.value;
-      const matchingOptions = options.filter(option =>
-        normalizeSearchText(option.searchText).includes(query)
-      );
-
-      select.replaceChildren();
-      listbox.replaceChildren();
-      matchingOptions.forEach((option, optionIndex) => {
-        const optionElement = document.createElement('option');
-        optionElement.value = option.value;
-        optionElement.textContent = option.label;
-        select.appendChild(optionElement);
-
-        const listboxOption = document.createElement('div');
-        listboxOption.id = `field-${field.name}-option-${optionIndex}`;
-        listboxOption.className = 'select--searchable__option';
-        listboxOption.dataset.value = option.value;
-        listboxOption.setAttribute('role', 'option');
-        listboxOption.setAttribute('aria-selected', 'false');
-        listboxOption.textContent = option.label;
-        listboxOption.title = option.label;
-        listbox.appendChild(listboxOption);
-      });
-
-      let selectedValue = null;
-      if (matchingOptions.some(option => option.value === previousValue)) {
-        selectedValue = previousValue;
-      } else if (matchingOptions.length > 0) {
-        selectedValue = matchingOptions[0].value;
-      }
-
-      select.disabled = matchingOptions.length === 0;
-      select.size = Math.min(Math.max(matchingOptions.length, 2), maxVisibleOptions);
-      listbox.tabIndex = matchingOptions.length === 0 ? -1 : 0;
-      listbox.setAttribute('aria-disabled', String(matchingOptions.length === 0));
-      listbox.style.maxHeight = `${(maxVisibleOptions * 40) + 8}px`;
-      if (selectedValue !== null) {
-        syncSelectedOption(selectedValue, false, true);
-      } else {
-        listbox.removeAttribute('aria-activedescendant');
-        updateSubmitState();
-        updateStatus();
-      }
-
-      return matchingOptions.length;
-    };
-
-    let searchAnalyticsTimer = null;
-    searchInput.addEventListener('input', () => {
-      const resultCount = renderOptions();
-      clearTimeout(searchAnalyticsTimer);
-
-      const queryLength = searchInput.value.trim().length;
-      if (queryLength > 0 && typeof field.onSearch === 'function') {
-        searchAnalyticsTimer = setTimeout(() => {
-          field.onSearch({
-            queryLength,
-            resultCount,
-            totalCount: options.length
-          });
-        }, 500);
-      }
-    });
-    searchInput.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowDown' && !select.disabled) {
-        event.preventDefault();
-        listbox.focus();
-      }
-    });
-
-    listbox.addEventListener('click', (event) => {
-      const optionElement = event.target.closest('[role="option"]');
-      if (!optionElement || !listbox.contains(optionElement)) return;
-      syncSelectedOption(optionElement.dataset.value, true);
-      listbox.focus();
-    });
-
-    listbox.addEventListener('keydown', (event) => {
-      const optionElements = Array.from(listbox.querySelectorAll('[role="option"]'));
-      if (optionElements.length === 0) return;
-
-      const currentIndex = Math.max(
-        0,
-        optionElements.findIndex(optionElement =>
-          optionElement.dataset.value === select.value
-        )
-      );
-      let nextIndex = currentIndex;
-
-      if (event.key === 'ArrowDown') nextIndex = Math.min(currentIndex + 1, optionElements.length - 1);
-      else if (event.key === 'ArrowUp') nextIndex = Math.max(currentIndex - 1, 0);
-      else if (event.key === 'Home') nextIndex = 0;
-      else if (event.key === 'End') nextIndex = optionElements.length - 1;
-      else return;
-
-      event.preventDefault();
-      const nextOption = optionElements[nextIndex];
-      syncSelectedOption(nextOption.dataset.value, true);
-      nextOption.scrollIntoView?.({ block: 'nearest' });
-    });
-
-    renderOptions();
   }
 
   /**
@@ -2670,6 +2417,7 @@ export class ExtensionController {
 
     // UI Renderer
     this.uiRenderer.setDependencies({
+      modalManager: this.modalManager,
       storageService: this.storageService,
       notionService: this.notionService
     });
@@ -4248,15 +3996,8 @@ export class ExtensionController {
    */
   _showJsonImportWarningsStep(preflight, fileName) {
     return new Promise(resolve => {
-      const overlay = document.createElement('div');
-      overlay.id = 'json-import-warning-modal';
-      overlay.className = 'modal';
-      overlay.setAttribute('role', 'dialog');
-      overlay.setAttribute('aria-modal', 'true');
-      overlay.setAttribute('aria-labelledby', 'json-import-warning-title');
-
-      const modal = document.createElement('div');
-      modal.className = 'modal__content notion-pages-modal';
+      const { root: overlay, content: modal } = createModalShell('json-import-warning-title', { id: 'json-import-warning-modal' });
+      modal.classList.add('notion-pages-modal');
 
       modal.innerHTML = `
         <h2 class="modal__title" id="json-import-warning-title">Review this backup</h2>
@@ -4285,7 +4026,6 @@ export class ExtensionController {
           </div>
         </div>
       `;
-      overlay.appendChild(modal);
       document.body.appendChild(overlay);
 
       let settled = false;
@@ -4316,16 +4056,10 @@ export class ExtensionController {
    */
   _showJsonImportErrorAlert(error) {
     return new Promise(resolve => {
-      const overlay = document.createElement('div');
-      overlay.id = 'json-import-error-modal';
-      overlay.className = 'modal';
-      overlay.setAttribute('role', 'alertdialog');
-      overlay.setAttribute('aria-modal', 'true');
-      overlay.setAttribute('aria-labelledby', 'json-import-error-title');
-      overlay.setAttribute('aria-describedby', 'json-import-error-message');
-
-      const modal = document.createElement('div');
-      modal.className = 'modal__content notion-pages-modal';
+      const { root: overlay, content: modal } = createModalShell('json-import-error-title', {
+        id: 'json-import-error-modal', role: 'alertdialog', descriptionId: 'json-import-error-message'
+      });
+      modal.classList.add('notion-pages-modal');
       const validationDetails = Array.isArray(error?.validationErrors) && error.validationErrors.length > 0
         ? `<ul class="import-error__details">${error.validationErrors.slice(0, 5).map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}</ul>`
         : '';
@@ -4340,7 +4074,6 @@ export class ExtensionController {
           </div>
         </div>
       `;
-      overlay.appendChild(modal);
       document.body.appendChild(overlay);
 
       let settled = false;
@@ -4427,7 +4160,7 @@ export class ExtensionController {
       saveBtn.addEventListener('click', async () => {
         const token = tokenInput ? tokenInput.value.trim() : '';
         if (!token) {
-          alert('Please enter a Notion token');
+          this.modalManager.showAlert({ title: 'Notion connection', message: 'Please enter a Notion token.' });
           return;
         }
         
@@ -4674,7 +4407,7 @@ export class ExtensionController {
           countExportItems(itemsFormatConfig.categories);
           this.analyticsService.trackJSONExported(itemCount);
         } catch (err) {
-          alert('❌ Error downloading: ' + err.message);
+          this.modalManager.showAlert({ title: 'Download failed', message: err.message, type: 'error' });
         }
       });
     }
@@ -4784,20 +4517,14 @@ export class ExtensionController {
       return;
     }
 
-    // Crear overlay (mismo estilo que _showModalForm)
-    const overlay = document.createElement('div');
-    overlay.id = 'notion-pages-modal';
-    overlay.className = 'modal';
-
-    // Crear modal
-    const modal = document.createElement('div');
-    modal.className = 'modal__content notion-pages-modal';
+    const { root: overlay, content: modal } = createModalShell('notion-import-title', { id: 'notion-pages-modal' });
+    modal.classList.add('notion-pages-modal');
 
     modal.innerHTML = `
-      <h2 class="modal__title">Import from Notion</h2>
+      <h2 class="modal__title" id="notion-import-title">Import from Notion</h2>
       <div class="form">
         <div class="form__field">
-          <label class="form__label">Search pages</label>
+          <label class="form__label" for="notion-search-input">Search pages</label>
           <input type="text" placeholder="Search..." id="notion-search-input" class="input" />
         </div>
         <div class="form__field">
@@ -4821,8 +4548,6 @@ export class ExtensionController {
         </div>
       </div>
     `;
-
-    overlay.appendChild(modal);
 
     // Eventos
     const closeModal = () => {
@@ -5346,16 +5071,9 @@ export class ExtensionController {
 
     // Use the same modal structure as the Notion importer.
     log('Showing import options modal');
-    const overlay = document.createElement('div');
-    overlay.id = 'json-import-modal';
-    overlay.className = 'modal';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-labelledby', 'json-import-title');
-    const modal = document.createElement('div');
-    modal.className = 'modal__content notion-pages-modal';
+    const { root: overlay, content: modal } = createModalShell('json-import-title', { id: 'json-import-modal' });
+    modal.classList.add('notion-pages-modal');
     modal.innerHTML = `<h2 class="modal__title" id="json-import-title">Choose where to import</h2><div class="form">${modalContent}</div>`;
-    overlay.appendChild(modal);
     document.body.appendChild(overlay);
     log('Modal created:', modal);
     const destinationPicker = !isEmptyVault ? this._setupFolderSelect(modal, {
@@ -8779,12 +8497,9 @@ export class ExtensionController {
    * @private
    */
   async _showMentionPageModal(page, displayName) {
-    // Crear overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'mention-modal-overlay';
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-label', `Page: ${displayName}`);
+    const { root: overlay, content: modal, titleId } = createModalShell();
+    overlay.classList.add('mention-modal-overlay');
+    modal.classList.add('mention-modal');
     
     // Guardar referencia a page y displayName para poder recargar el modal
     const notionPageId = page.getNotionPageId();
@@ -8795,16 +8510,13 @@ export class ExtensionController {
       overlay._mentionModalPage = page;
     }
     
-    // Crear modal
-    const modal = document.createElement('div');
-    modal.className = 'mention-modal';
-    
     // Header del modal
     const header = document.createElement('div');
     header.className = 'mention-modal__header';
     
     const title = document.createElement('h2');
-    title.className = 'mention-modal__title';
+    title.id = titleId;
+    title.className = 'modal__title mention-modal__title';
     title.textContent = displayName;
     
     // Botón de compartir (solo para GM y coGM)
@@ -8820,7 +8532,7 @@ export class ExtensionController {
     let shareBtn = null;
     
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'mention-modal__close';
+    closeBtn.className = 'modal-close-button';
     closeBtn.innerHTML = '&times;';
     closeBtn.setAttribute('aria-label', 'Close modal');
     closeBtn.title = 'Close (Escape)';
@@ -8842,7 +8554,6 @@ export class ExtensionController {
     
     modal.appendChild(header);
     modal.appendChild(content);
-    overlay.appendChild(modal);
     document.body.appendChild(overlay);
     
     // Funciones de cierre
@@ -9569,7 +9280,7 @@ export class ExtensionController {
   async _showItemPageSelector(selectedItems) {
     // Verificar que tengamos configuración
     if (!this.config || !this.config.categories) {
-      alert('No pages configured. Add pages from the main panel.');
+      this.modalManager.showAlert({ title: 'No pages configured', message: 'Add pages from the main panel.' });
       return;
     }
     
@@ -9618,7 +9329,7 @@ export class ExtensionController {
     });
     
     if (allPages.length === 0) {
-      alert('No pages configured. Add pages from the main panel.');
+      this.modalManager.showAlert({ title: 'No pages configured', message: 'Add pages from the main panel.' });
       return;
     }
     
@@ -9658,7 +9369,7 @@ export class ExtensionController {
       const selectedPage = allPages[parseInt(data.pageIndex)];
       
       if (!selectedPage) {
-        alert('Error: page not found');
+        this.modalManager.showAlert({ title: 'Page not found', message: 'Choose another page.', type: 'error' });
         return;
       }
       
@@ -9689,7 +9400,7 @@ export class ExtensionController {
       } catch (error) {
         logError('Error al vincular página:', error);
         this.analyticsService?.trackClientError?.({ operation: 'token_link', error });
-        alert('Error linking page: ' + error.message);
+        this.modalManager.showAlert({ title: 'Could not link page', message: error.message, type: 'error' });
       }
     });
   }

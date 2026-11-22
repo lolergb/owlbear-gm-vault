@@ -50,9 +50,13 @@ async function nameBackup(name) {
   await click('Review backup');
 }
 async function selectBackup(id = 'backup-a') {
-  await button('Review backup');
-  document.querySelector('dialog select').value = id;
-  await click('Review backup');
+  const review = await button('Review backup');
+  expect(review.disabled).toBe(true);
+  const trigger = document.querySelector('dialog button[role="combobox"]');
+  trigger.click();
+  document.querySelector(`dialog [role="option"][data-value="${id}"]`).click();
+  expect(review.disabled).toBe(false);
+  review.click();
 }
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -113,6 +117,18 @@ describe('cloud backup controller flows', () => {
     await click('Save private backup'); await click('Done'); await task;
     expect(controller._cloudService.save.mock.calls[0][2]).toBeNull();
     expect(controller._cloudService.save.mock.calls[0][4]).toEqual({ name: 'Campaign B' });
+  });
+  it('fills the editable backup name from the picker and allows a new name before review', async () => {
+    const controller = controllerWith();
+    const task = runCloudBackup(controller, 'save');
+    await button('Review backup');
+    document.querySelector('dialog button[role="combobox"]').click();
+    document.querySelector('dialog [role="option"][data-value="Campaign A"]').click();
+    expect(document.getElementById('cloud-backup-input').value).toBe('Campaign A');
+    await nameBackup('Campaign B');
+    await button('Save private backup');
+    expect(controller._cloudService.read).not.toHaveBeenCalled();
+    await click('Cancel'); await task;
   });
   it('restores only the selected named copy and can cancel the selection without fetching payloads', async () => {
     const controller = controllerWith();

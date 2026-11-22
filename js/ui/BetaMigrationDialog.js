@@ -1,24 +1,24 @@
+import { createModalShell } from './ModalShell.js';
+
 /** A separate dialog so recovery can run before the vault UI is initialized. */
 export function chooseBetaVault({ host = window, signal } = {}) {
   return new Promise(resolve => {
     if (signal?.aborted) return resolve('later');
     const doc = host.document;
     const previousFocus = doc.activeElement;
-    const dialog = doc.createElement('dialog');
-    dialog.className = 'modal__content';
-    dialog.style.cssText = 'color:inherit;border:0;position:fixed;inset:0;margin:auto;height:fit-content;width:calc(100% - 32px);max-width:420px;box-sizing:border-box;';
-    dialog.setAttribute('aria-labelledby', 'beta-recovery-title');
-    dialog.setAttribute('aria-describedby', 'beta-recovery-description');
+    const { root: dialog } = createModalShell('beta-recovery-title', {
+      native: true, ownerDocument: doc, descriptionId: 'beta-recovery-description'
+    });
     const title = doc.createElement('h2');
     title.id = 'beta-recovery-title';
     title.className = 'modal__title';
     title.textContent = 'Two vaults found';
     const description = doc.createElement('p');
     description.id = 'beta-recovery-description';
-    description.className = 'modal__body';
+    description.className = 'modal__text';
     description.textContent = 'This room has different vaults in the beta and the current version. Choose which one to use. If you use the beta vault, we will save a backup of your current vault. The beta original stays untouched.';
     const actions = doc.createElement('div');
-    actions.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+    actions.className = 'form__actions form__actions--stacked';
     const finish = choice => {
       signal?.removeEventListener('abort', abort);
       dialog.close();
