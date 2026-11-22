@@ -1,3 +1,4 @@
+import { BUILD_VERSION } from '../../../js/utils/buildVersion.js';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { TextEncoder } from 'node:util';
 import { AnalyticsService } from '../../../js/services/AnalyticsService.js';
@@ -25,6 +26,38 @@ describe('privacy-safe error analytics', () => {
   const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
   const eventAt = (index = 0) => JSON.parse(atob(new URLSearchParams(global.fetch.mock.calls[index][1].body).get('data')))[0];
 
+  it('sends versioned backup stages with a fresh attempt ID and only controlled values', async () => {
+    const report = service.privateBackupReporter('save');
+    await report('review', 'entered', false);
+    await report('private backup name', 'failed', true, 'https://private.test/?otp=123456');
+    await service.privateBackupReporter('restore')('select', 'cancelled', true);
+    const first = eventAt(), failed = eventAt(1), next = eventAt(2);
+    expect(first.event).toBe('private_backup_flow');
+    expect(first.properties).toMatchObject({ step: 'review', outcome: 'entered', operation: 'save', terminal: false,
+      sequence: 1, app_version: BUILD_VERSION, build_ref: 'unknown', environment: 'beta', deploy_context: 'deploy-preview' });
+    expect(first.properties).not.toHaveProperty('error_code');
+    expect(failed.properties).toMatchObject({ step: 'unknown', outcome: 'failed', terminal: true, error_code: 'unknown',
+      sequence: 2, attempt_id: first.properties.attempt_id, distinct_id: first.properties.distinct_id });
+    expect(next.properties).toMatchObject({ step: 'select', outcome: 'cancelled', operation: 'restore', sequence: 1 });
+    expect(next.properties.attempt_id).not.toBe(first.properties.attempt_id);
+    expect(JSON.stringify([first, failed, next])).not.toMatch(/private-player-id|private-vault-id|private backup name|private\.test|123456/);
+  });
+
+  it('requires consent at start and delivery, and ignores unrelated settings actions', async () => {
+    expect(service.privateBackupReporter('undo')).toBeUndefined();
+    expect(service.privateBackupReporter('signout')).toBeUndefined();
+    const report = service.privateBackupReporter('restore');
+    let resolveRole;
+    service.OBR.player.getRole = () => new Promise(resolve => { resolveRole = resolve; });
+    const pendingEvent = report('review', 'entered', false);
+    service.setConsent(false);
+    resolveRole('GM');
+    await pendingEvent;
+    expect(service.privateBackupReporter('save')).toBeUndefined();
+    await report('review', 'cancelled', true);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('sends only controlled properties for global and promise errors', async () => {
     service._installErrorListeners();
     const error = new TypeError('https://private.test/secret?token=super-secret-token-value Room name');
@@ -36,7 +69,7 @@ describe('privacy-safe error analytics', () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
     const first = eventAt();
     expect(first.event).toBe('client_error');
-    expect(first.properties).toMatchObject({ operation: 'runtime', error_type: 'TypeError', error_code: 'unknown', error_source: 'global', error_fingerprint: 'runtime:TypeError:unknown', app_version: '2.1.5', environment: 'beta', deploy_context: 'deploy-preview', role: 'GM', vault_state: 'configured' });
+    expect(first.properties).toMatchObject({ operation: 'runtime', error_type: 'TypeError', error_code: 'unknown', error_source: 'global', error_fingerprint: 'runtime:TypeError:unknown', app_version: BUILD_VERSION, environment: 'beta', deploy_context: 'deploy-preview', role: 'GM', vault_state: 'configured' });
     expect(eventAt(1).properties).toMatchObject({ error_source: 'promise', error_type: 'RangeError' });
     const sent = JSON.stringify([first, eventAt(1)]);
     for (const secret of ['private.test', 'super-secret-token-value', 'Room name', 'private-player-id', 'private-vault-id', 'private player']) expect(sent).not.toContain(secret);

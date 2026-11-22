@@ -5,7 +5,7 @@
  * Este modelo es independiente del framework y puede ser serializado a JSON.
  */
 
-import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js?v=2.1.5';
+import { extractNotionPageId, isNotionUrl, isDemoHtmlFile } from '../utils/helpers.js?v=2.2.0';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
 import { normalizePlayerIds } from '../utils/playerAccess.js';
 

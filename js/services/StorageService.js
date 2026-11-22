@@ -345,6 +345,7 @@ export class StorageService {
               // Delete private recovery backups too. Keep the non-content
               // decision marker so clearing data cannot trigger re-import.
               key.startsWith(MIGRATION_PREFIX + 'backup:') ||
+              key.startsWith('gm-vault-cloud-recovery-v1:') ||
               key.startsWith('notion_') || 
               key.startsWith('gm_vault_') ||
               key.startsWith('gmvault_') ||

@@ -1,0 +1,17 @@
+:root {
+  -webkit-font-smoothing: subpixel-antialiased;
+  text-rendering: geometricPrecision;
+  shape-rendering: geometricPrecision;
+}
+
+/* Native controls can set their own text-rendering in the browser stylesheet. */
+:where(button, input, select, textarea) {
+  text-rendering: inherit;
+}
+
+/* Authored page content uses the document renderer's defaults. */
+:where(.notion-content) {
+  -webkit-font-smoothing: auto;
+  text-rendering: auto;
+  shape-rendering: auto;
+}

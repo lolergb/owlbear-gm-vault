@@ -263,9 +263,6 @@ export function applyOBRTheme(theme) {
     '--color-danger': isDark ? '#ff6b6b' : '#dc2626',
     '--color-danger-hover': isDark ? '#e05555' : '#b91c1c',
     '--color-danger-active': isDark ? '#cc4444' : '#991b1b',
-
-    // === BODY BACKGROUND ===
-    '--body-bg': rgba(bgDefaultRgb.r, bgDefaultRgb.g, bgDefaultRgb.b, overlayAlpha),
   };
 
   // Aplicar todas las variables al root
@@ -278,7 +275,6 @@ export function applyOBRTheme(theme) {
 
   // Marcar modo en el body para selectores CSS condicionales
   document.body.dataset.obrTheme = isDark ? 'dark' : 'light';
-  document.body.style.backgroundColor = vars['--body-bg'];
 
   console.log(`🎨 OBR Theme aplicado: ${theme.mode}`, {
     primary: theme.primary.main,

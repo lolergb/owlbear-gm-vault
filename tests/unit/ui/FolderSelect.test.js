@@ -36,7 +36,7 @@ describe('FolderSelect', () => {
     expect(picker.popup.hidden).toBe(false);
     expect(document.activeElement).toBe(picker.search);
     expect(picker.list.children).toHaveLength(6);
-    expect(picker.list.children[2].style.getPropertyValue('--folder-depth')).toBe('1');
+    expect(picker.list.children[2].style.getPropertyValue('--option-depth')).toBe('1');
     expect(picker.list.querySelector('[aria-selected="true"]').dataset.value).toBe('encounters-b');
   });
 
@@ -57,7 +57,7 @@ describe('FolderSelect', () => {
   it('distinguishes duplicate names with their parent paths and commits only the chosen ID', () => {
     picker.open();
     search('encuentros');
-    expect(Array.from(picker.list.querySelectorAll('.folder-select__path'), el => el.textContent)).toEqual(['Campaign A', 'Campaign B']);
+    expect(Array.from(picker.list.querySelectorAll('.modal-select__path'), el => el.textContent)).toEqual(['Campaign A', 'Campaign B']);
     picker.list.firstElementChild.click();
     expect(select.value).toBe('encounters-a');
     expect(new FormData(select.form).get('folder')).toBe('encounters-a');

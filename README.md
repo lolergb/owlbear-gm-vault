@@ -8,6 +8,7 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 - 📝 Page management by folders from the interface
 - 🎨 Clean and dark interface
 - 💾 Persistent cache for fast loading
+- ☁️ Named private backups across devices with email codes, when Supabase is configured
 - 🏠 Independent configuration per Owlbear room
 - 🖼️ Full-size image viewing in modal
 - 📥 Import/Export JSON configuration
@@ -26,6 +27,8 @@ This is an [Owlbear Rodeo](https://www.owlbear.rodeo/) extension that allows you
 - 👁️ **Visibility toggles:** Quick visibility buttons for pages and categories
 
 ## 🚀 Installation
+
+GM Vault 2.2.0 adds multiple named private backups per account. Save under a new name to keep another copy, or reuse a name and confirm replacing only that copy. Restore lets you choose a saved name and date before reviewing the destination. Configure the service using the [Supabase setup and testing guide](docs/SUPABASE_SETUP.md), applying both migrations in order. Local vaults and JSON backups work without an account.
 
 The extension can be installed manually by pasting the manifest URL below in the "Add Extension" dialog.
 
@@ -322,6 +325,7 @@ We track the following events to measure usage and identify popular features:
 - `vault_import_completed` - When an import finishes (source, mode, root/folder destination and item count; no file, URL or folder names)
 - `vault_import_failed` - When an import fails (source, stage and technical error type; no content values)
 - `json_exported` - When you export JSON configuration (includes item count)
+- `private_backup_flow` - Steps and outcomes of a GM's private save or restore attempt, including explicit cancellations and controlled error codes. [Event fields and beta verification](docs/PRIVATE_BACKUP_UI.md#checking-private-backup-events-in-mixpanel).
 
 **Sharing & Integration:**
 - `image_shared` - When GM shares an image with players
@@ -346,7 +350,7 @@ Each event includes:
 - **User role** - Whether you're a GM or Player
 - **Environment** - Whether the event came from beta or production
 - **Deploy context** - Production, deploy preview or branch deploy
-- **Distinct ID** - A unique identifier (your Owlbear player ID or an anonymous ID)
+- **Distinct ID** - An Owlbear player ID or an anonymous ID, depending on the event. Private backup events use a temporary anonymous identity and a fresh ID for each attempt.
 - **Timestamp** - When the event occurred
 - **Event-specific properties** - Relevant context (e.g., page name, page type)
 

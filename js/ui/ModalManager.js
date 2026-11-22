@@ -6,7 +6,10 @@
 
 import { log } from '../utils/logger.js?v=20260722-4';
 
-let modalId = 0;
+import { ModalSelect } from './ModalSelect.js';
+import { createModalShell } from './ModalShell.js';
+
+let fieldId = 0;
 
 /**
  * Gestor de modales de la UI
@@ -36,13 +39,6 @@ export class ModalManager {
     if (!this.container) {
       this.container = document.body;
     }
-
-    // Cerrar modal con Escape
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.activeModal) {
-        this.close();
-      }
-    });
   }
 
   /**
@@ -63,7 +59,7 @@ export class ModalManager {
 
       const modal = this._createModalBase(title);
       const form = document.createElement('form');
-      form.className = 'modal-form';
+      form.className = 'form';
 
       // Crear campos
       fields.forEach(field => {
@@ -73,21 +69,19 @@ export class ModalManager {
 
       // Botones
       const buttons = document.createElement('div');
-      buttons.className = 'modal-buttons';
+      buttons.className = 'form__actions';
 
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
-      cancelBtn.className = 'modal-button modal-button-cancel';
+      cancelBtn.className = 'btn btn--ghost btn--flex';
       cancelBtn.textContent = cancelText;
       cancelBtn.addEventListener('click', () => {
-        if (onCancel) onCancel();
         this.close();
-        resolve(null);
       });
 
       const submitBtn = document.createElement('button');
       submitBtn.type = 'submit';
-      submitBtn.className = 'modal-button modal-button-submit';
+      submitBtn.className = 'btn btn--primary btn--flex';
       submitBtn.textContent = submitText;
 
       buttons.appendChild(cancelBtn);
@@ -98,16 +92,20 @@ export class ModalManager {
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         const data = this._getFormData(form, fields);
-        if (onSubmit) onSubmit(data);
+        this.onClose = null;
         this.close();
         resolve(data);
+        onSubmit?.(data);
       });
 
-      modal.querySelector('.modal-content').appendChild(form);
-      this._showModal(modal);
+      modal.querySelector('.modal__body').appendChild(form);
+      this._showModal(modal, () => { onCancel?.(); resolve(null); });
+      for (const field of fields.filter(field => field.type === 'select')) {
+        new ModalSelect(form.elements.namedItem(field.name), field);
+      }
 
       // Focus primer campo
-      const firstInput = form.querySelector('input, textarea, select');
+      const firstInput = form.querySelector('input:not([hidden]), textarea, .modal-select__trigger');
       if (firstInput) firstInput.focus();
     });
   }
@@ -128,19 +126,19 @@ export class ModalManager {
       } = options;
 
       const modal = this._createModalBase(title);
-      const content = modal.querySelector('.modal-content');
+      const content = modal.querySelector('.modal__body');
 
       const messageEl = document.createElement('p');
-      messageEl.className = 'modal-message';
+      messageEl.className = 'modal__text';
       messageEl.textContent = message;
       content.appendChild(messageEl);
 
       const buttons = document.createElement('div');
-      buttons.className = 'modal-buttons';
+      buttons.className = 'form__actions';
 
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
-      cancelBtn.className = 'modal-button modal-button-cancel';
+      cancelBtn.className = 'btn btn--ghost btn--flex';
       cancelBtn.textContent = cancelText;
       cancelBtn.addEventListener('click', () => {
         this.close();
@@ -149,19 +147,19 @@ export class ModalManager {
 
       const confirmBtn = document.createElement('button');
       confirmBtn.type = 'button';
-      confirmBtn.className = `modal-button modal-button-submit ${danger ? 'modal-button-danger' : ''}`;
+      confirmBtn.className = `btn btn--flex ${danger ? 'btn--danger' : 'btn--primary'}`;
       confirmBtn.textContent = confirmText;
       confirmBtn.addEventListener('click', () => {
-        this.close();
         resolve(true);
+        this.close();
       });
 
       buttons.appendChild(cancelBtn);
       buttons.appendChild(confirmBtn);
       content.appendChild(buttons);
 
-      this._showModal(modal);
-      confirmBtn.focus();
+      this._showModal(modal, () => resolve(false));
+      (danger ? cancelBtn : confirmBtn).focus();
     });
   }
 
@@ -180,21 +178,21 @@ export class ModalManager {
       } = options;
 
       const modal = this._createModalBase(title);
-      modal.querySelector('.modal-container').classList.add(`modal-${type}`);
+      modal.querySelector('.modal__content').classList.add(`modal-${type}`);
       
-      const content = modal.querySelector('.modal-content');
+      const content = modal.querySelector('.modal__body');
 
       const messageEl = document.createElement('p');
-      messageEl.className = 'modal-message';
+      messageEl.className = 'modal__text';
       messageEl.textContent = message;
       content.appendChild(messageEl);
 
       const buttons = document.createElement('div');
-      buttons.className = 'modal-buttons';
+      buttons.className = 'form__actions';
 
       const okBtn = document.createElement('button');
       okBtn.type = 'button';
-      okBtn.className = 'modal-button modal-button-submit';
+      okBtn.className = 'btn btn--primary btn--flex';
       okBtn.textContent = buttonText;
       okBtn.addEventListener('click', () => {
         this.close();
@@ -204,7 +202,7 @@ export class ModalManager {
       buttons.appendChild(okBtn);
       content.appendChild(buttons);
 
-      this._showModal(modal);
+      this._showModal(modal, () => resolve());
       okBtn.focus();
     });
   }
@@ -224,18 +222,17 @@ export class ModalManager {
 
     const modal = this._createModalBase(title);
     if (className) {
-      modal.querySelector('.modal-container').classList.add(className);
+      modal.querySelector('.modal__content').classList.add(className);
     }
 
-    const contentEl = modal.querySelector('.modal-content');
+    const contentEl = modal.querySelector('.modal__body');
     if (typeof content === 'string') {
       contentEl.innerHTML = content;
     } else if (content instanceof HTMLElement) {
       contentEl.appendChild(content);
     }
 
-    this.onClose = onClose;
-    this._showModal(modal);
+    this._showModal(modal, onClose);
     
     if (onOpen) onOpen(modal);
 
@@ -246,26 +243,15 @@ export class ModalManager {
    * Cierra el modal activo
    */
   close() {
-    if (this.activeModal) {
-      const previouslyFocusedElement = this.previouslyFocusedElement;
-      this.activeModal.classList.remove('modal-visible');
-      
-      setTimeout(() => {
-        if (this.activeModal && this.activeModal.parentNode) {
-          this.activeModal.parentNode.removeChild(this.activeModal);
-        }
-        this.activeModal = null;
-        this.previouslyFocusedElement = null;
-        
-        if (this.onClose) {
-          this.onClose();
-          this.onClose = null;
-        }
-        if (previouslyFocusedElement?.isConnected) previouslyFocusedElement.focus();
-      }, 200);
-
-      log('Modal cerrado');
-    }
+    if (!this.activeModal) return;
+    const onClose = this.onClose;
+    const previous = this.previouslyFocusedElement;
+    this.activeModal.remove();
+    this.activeModal = null;
+    this.onClose = null;
+    this.previouslyFocusedElement = null;
+    if (previous?.isConnected) previous.focus();
+    onClose?.();
   }
 
   /**
@@ -285,22 +271,17 @@ export class ModalManager {
    * @private
    */
   _createModalBase(title) {
-    const titleId = `gm-vault-modal-title-${++modalId}`;
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-
-    const container = document.createElement('div');
-    container.className = 'modal-container';
-    container.setAttribute('role', 'dialog');
-    container.setAttribute('aria-modal', 'true');
-    container.setAttribute('aria-labelledby', titleId);
+    const { root: overlay, content: container, titleId } = createModalShell();
+    overlay.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !event.defaultPrevented) this.close();
+    });
 
     // Header
     const header = document.createElement('div');
-    header.className = 'modal-header';
+    header.className = 'modal__header';
 
-    const titleEl = document.createElement('h3');
-    titleEl.className = 'modal-title';
+    const titleEl = document.createElement('h2');
+    titleEl.className = 'modal__title';
     titleEl.id = titleId;
     titleEl.textContent = title;
 
@@ -316,11 +297,10 @@ export class ModalManager {
 
     // Content
     const content = document.createElement('div');
-    content.className = 'modal-content';
+    content.className = 'modal__body';
 
     container.appendChild(header);
     container.appendChild(content);
-    overlay.appendChild(container);
 
     // Click en overlay cierra modal
     overlay.addEventListener('click', (e) => {
@@ -338,15 +318,15 @@ export class ModalManager {
    */
   _createField(field) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'form-field';
+    wrapper.className = 'form__field';
+    const id = `modal-field-${++fieldId}`;
 
     if (field.label) {
       const label = document.createElement('label');
-      label.className = 'form-label';
+      label.className = 'form__label';
+      label.htmlFor = id;
       label.textContent = field.label;
-      if (field.required) {
-        label.innerHTML += ' <span class="required">*</span>';
-      }
+      if (field.required) label.append(' *');
       wrapper.appendChild(label);
     }
 
@@ -380,7 +360,8 @@ export class ModalManager {
     }
 
     input.name = field.name;
-    input.className = 'form-input';
+    input.id = id;
+    input.className = { select: 'select', textarea: 'textarea', checkbox: 'checkbox' }[field.type] || 'input';
     
     if (field.value !== undefined && field.type !== 'checkbox') {
       input.value = field.value;
@@ -398,7 +379,7 @@ export class ModalManager {
 
     if (field.hint) {
       const hint = document.createElement('span');
-      hint.className = 'form-hint';
+      hint.className = 'form__help';
       hint.textContent = field.hint;
       wrapper.appendChild(hint);
     }
@@ -431,7 +412,7 @@ export class ModalManager {
    * Muestra el modal
    * @private
    */
-  _showModal(modal) {
+  _showModal(modal, onClose = null) {
     // Cerrar modal anterior si existe
     if (this.activeModal) {
       this.close();
@@ -443,10 +424,7 @@ export class ModalManager {
     this.container.appendChild(modal);
     this.activeModal = modal;
 
-    // Trigger animación
-    requestAnimationFrame(() => {
-      modal.classList.add('modal-visible');
-    });
+    this.onClose = onClose;
 
     log('Modal abierto');
   }

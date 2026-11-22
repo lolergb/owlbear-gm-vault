@@ -12,6 +12,14 @@ baseUrl.hash = '';
 
 const checks = [
   {
+    name: 'get-cloud-config',
+    path: '/.netlify/functions/get-cloud-config',
+    expectedStatus: 200,
+    validate: body => typeof body.enabled === 'boolean' && (!body.enabled || (
+      typeof body.url === 'string' && typeof body.key === 'string' && !body.key.startsWith('sb_secret_')
+    ))
+  },
+  {
     name: 'manifest',
     path: '/manifest.json',
     expectedStatus: 200,

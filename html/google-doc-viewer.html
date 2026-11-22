@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Google Doc</title>
+  <link rel="stylesheet" href="../css/ui-rendering.css">
   <style>
     :root {
       --color-text-primary: #fff;
@@ -86,9 +87,10 @@
       gap: var(--spacing-sm);
     }
     .toolbar-button {
+      appearance: none;
       background: var(--share-button-bg);
       border: 1px solid var(--share-button-border);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-lg);
       padding: 0;
       color: var(--color-text-secondary);
       cursor: pointer;

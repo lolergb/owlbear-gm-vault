@@ -5,7 +5,7 @@
  * Compatible con el CSS existente (app.css)
  */
 
-import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js?v=2.1.5';
+import { generateColorFromString, getInitial, extractNotionPageId, isNotionUrl } from '../utils/helpers.js?v=2.2.0';
 import { log } from '../utils/logger.js?v=20260722-4';
 import { iconHtml } from '../utils/iconHelper.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
@@ -60,7 +60,8 @@ export class UIRenderer {
   /**
    * Inyecta dependencias
    */
-  setDependencies({ storageService, notionService }) {
+  setDependencies({ storageService, notionService, modalManager }) {
+    if (modalManager) this.modalManager = modalManager;
     if (storageService) this.storageService = storageService;
     if (notionService) this.notionService = notionService;
   }
@@ -372,19 +373,6 @@ export class UIRenderer {
       contextMenuButton.className = 'category-context-menu-button icon-button';
       contextMenuButton.innerHTML = iconHtml('img/icon-contextualmenu.svg', { className: 'icon-button-icon', alt: 'Menu' });
       contextMenuButton.title = 'Folder options';
-      contextMenuButton.style.opacity = '0';
-
-      // Mostrar/ocultar en hover
-      titleContainer.addEventListener('mouseenter', () => {
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '1';
-        }
-      });
-      titleContainer.addEventListener('mouseleave', (e) => {
-        if (!contextMenuButton.classList.contains('context-menu-active')) {
-          contextMenuButton.style.opacity = '0';
-        }
-      });
 
       contextMenuButton.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -398,7 +386,10 @@ export class UIRenderer {
         }
       });
 
-      titleContainer.appendChild(contextMenuButton);
+      const tools = document.createElement('div');
+      tools.className = 'list-row-tools';
+      tools.appendChild(contextMenuButton);
+      titleContainer.appendChild(tools);
     }
 
     categoryDiv.appendChild(titleContainer);
@@ -617,8 +608,8 @@ export class UIRenderer {
       <div class="page-button-inner">
         ${pageIconHtml || `<div class="page-icon-placeholder" style="background: ${escapeHtml(placeholderColor)};">${escapeHtml(placeholderInitial)}</div>`}
         <div class="page-name-text">${escapeHtml(page.name)}</div>
-        ${linkIconHtml}
       </div>
+      <div class="list-row-tools">${linkIconHtml}</div>
     `;
 
     // Contenedor de acciones. Players pueden abrir contenido, pero solo los
@@ -746,7 +737,7 @@ export class UIRenderer {
         actionsContainer.appendChild(contextMenuButton);
     }
     
-    button.appendChild(actionsContainer);
+    button.querySelector('.list-row-tools').appendChild(actionsContainer);
 
     // Click para abrir página
     button.addEventListener('click', (e) => {
@@ -761,7 +752,7 @@ export class UIRenderer {
     // Only GM views refresh metadata; actual players use the shared icon.
     const pageId = extractNotionPageId(page.url);
     if (pageId && this.notionService && (isGM || this.previewPlayerAccess)) {
-      this._loadPageIcon(button, pageId, page, linkIconHtml);
+      this._loadPageIcon(button, pageId, page);
     }
 
     return button;
@@ -865,7 +856,7 @@ export class UIRenderer {
    * Carga el icono real de una página de Notion
    * @private
    */
-  async _loadPageIcon(button, pageId, page, linkIconHtml) {
+  async _loadPageIcon(button, pageId, page) {
     const sourceUrl = page.url;
     try {
       const pageInfo = await this.notionService.fetchPageInfo(pageId);
@@ -877,7 +868,6 @@ export class UIRenderer {
           inner.innerHTML = `
             ${iconHtml}
             <div class="page-name-text">${escapeHtml(page.name)}</div>
-            ${linkIconHtml}
           `;
         }
         this.onPageIconLoaded?.(page, pageInfo.icon);
@@ -1228,7 +1218,6 @@ export class UIRenderer {
       const menu = this._createContextMenu(menuItems, { x: rect.left, y: rect.bottom + 4 }, () => {
         button.classList.remove('context-menu-active');
         titleContainer.classList.remove('context-menu-open');
-        button.style.opacity = '0';
       });
       
       if (!menu) {
@@ -1383,81 +1372,7 @@ export class UIRenderer {
   _showConfirmDialog(message, options = {}) {
     const { confirmText = 'Delete', cancelText = 'Cancel', isDangerous = true } = options;
 
-    return new Promise((resolve) => {
-      // Remover diálogo anterior si existe
-      const existing = document.getElementById('gm-confirm-dialog');
-      if (existing) existing.remove();
-
-      // Crear overlay
-      const overlay = document.createElement('div');
-      overlay.id = 'gm-confirm-dialog';
-      overlay.className = 'modal';
-      overlay.style.zIndex = '10002';
-
-      // Crear contenido
-      const content = document.createElement('div');
-      content.className = 'modal__content';
-      content.style.maxWidth = '300px';
-      content.style.width = '85%';
-
-      // Mensaje
-      const messageEl = document.createElement('p');
-      messageEl.className = 'modal__text';
-      messageEl.style.fontSize = 'var(--font-size-base)';
-      messageEl.style.marginBottom = 'var(--spacing-lg)';
-      messageEl.style.textAlign = 'center';
-      messageEl.textContent = message;
-
-      // Botones
-      const actions = document.createElement('div');
-      actions.className = 'form__actions';
-      actions.style.display = 'flex';
-
-      const cancelBtn = document.createElement('button');
-      cancelBtn.className = 'btn btn--ghost btn--flex';
-      cancelBtn.textContent = cancelText;
-      cancelBtn.style.flex = '1';
-
-      const confirmBtn = document.createElement('button');
-      confirmBtn.className = isDangerous ? 'btn btn--danger btn--flex' : 'btn btn--primary btn--flex';
-      confirmBtn.textContent = confirmText;
-      confirmBtn.style.flex = '1';
-
-      // Event handlers
-      const cleanup = (result) => {
-        overlay.remove();
-        resolve(result);
-      };
-
-      cancelBtn.addEventListener('click', () => cleanup(false));
-      confirmBtn.addEventListener('click', () => cleanup(true));
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) cleanup(false);
-      });
-
-      // Escape key
-      const handleKeydown = (e) => {
-        if (e.key === 'Escape') {
-          document.removeEventListener('keydown', handleKeydown);
-          cleanup(false);
-        } else if (e.key === 'Enter') {
-          document.removeEventListener('keydown', handleKeydown);
-          cleanup(true);
-        }
-      };
-      document.addEventListener('keydown', handleKeydown);
-
-      // Ensamblar
-      actions.appendChild(cancelBtn);
-      actions.appendChild(confirmBtn);
-      content.appendChild(messageEl);
-      content.appendChild(actions);
-      overlay.appendChild(content);
-      document.body.appendChild(overlay);
-
-      // Focus en el botón de confirmar
-      confirmBtn.focus();
-    });
+    return this.modalManager.showConfirm({ title: confirmText, message, confirmText, cancelText, danger: isDangerous });
   }
 
   // ============================================
