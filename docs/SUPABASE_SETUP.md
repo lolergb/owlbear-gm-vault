@@ -4,7 +4,7 @@ El candidato de la PR #26 incorpora guardado y restauración manual de varias co
 
 https://deploy-preview-26--owlbear-gm-vault.netlify.app/manifest.json
 
-**Actualización del 22 de noviembre de 2026:** la segunda migración ya está aplicada en el proyecto configurado. Se comprobó que `Previous backup` conserva contenido, revisión y fecha, con RLS y tres políticas activas; las escrituras del cliente antiguo quedan deshabilitadas. El ciclo de copia única anterior se verificó el 21 de noviembre en dos salas de Owlbear con Supabase alojado. La nube sigue desactivada en el despliegue de producción.
+**Actualización del 22 de noviembre de 2026:** la preview ya permite probar varias copias con nombre. La segunda migración está aplicada: `Previous backup` conserva contenido, revisión y fecha, con RLS y tres políticas activas; las escrituras del cliente antiguo quedan deshabilitadas. Se guardaron y recuperaron dos copias con contenidos distintos desde dos salas de Owlbear y se comprobó que sustituir una conserva las demás. No hace falta configurar nada más para probar en esta preview. La nube sigue desactivada en el despliegue de producción.
 
 Instalarlo en una sala de pruebas. El dominio del preview tiene almacenamiento local independiente de producción: que aparezca vacío no significa que se haya perdido el vault de producción. Para llevar un vault al preview, exportar su JSON e importarlo allí. La copia privada excluye el token de Notion.
 
@@ -19,7 +19,7 @@ En un proyecto nuevo, aplicar una sola vez y en este orden:
 1. [Migración inicial](../supabase/migrations/202611210001_private_vault_backups.sql).
 2. [Migración de copias con nombre](../supabase/migrations/202611220001_named_private_vault_backups.sql).
 
-En el proyecto ya configurado, aplicar solo la segunda. También pueden aplicarse mediante Supabase CLI al proyecto correcto. Ejecutar la segunda migración **antes** de desplegar el cliente con nombres y recargar las pestañas de la preview después del despliegue.
+En un proyecto que solo tenga la migración inicial, aplicar únicamente la segunda. En `gm-vault-production` ya están aplicadas ambas: no repetirlas. También pueden aplicarse mediante Supabase CLI al proyecto correcto. Ejecutar la segunda migración **antes** de desplegar el cliente con nombres y recargar las pestañas de la preview después del despliegue.
 
 La segunda migración crea `public.private_vault_backup_entries`: UUID de copia, propietario, nombre único dentro de la cuenta, fechas, payload y revisión. Copia las filas anteriores como `Previous backup` conservando contenido, revisión y fecha. La tabla original `public.private_vault_backups` queda como respaldo de solo lectura. Sus permisos de escritura se retiran para que una pestaña antigua no guarde fuera del catálogo nuevo. No borrar ninguna de las dos tablas ni volver a ejecutar una migración ya aplicada.
 
@@ -87,7 +87,7 @@ La copia es privada mediante controles de acceso, no cifrado de extremo a extrem
 
 ## Validación del candidato
 
-En esta implementación se verificaron las pruebas de regresión y de los nuevos servicios y diálogos y 59 comprobaciones de PostgreSQL con ambas migraciones reales. La comprobación inicial de interoperabilidad con el SDK oficial 2.119.2 usó 15 peticiones HTTP simuladas. La CI ejecuta la suite completa y las comprobaciones de PostgreSQL. El flujo con nombres añade pruebas de listado paginado sin payloads, selección por UUID, nombres no válidos, cancelación durante la lectura y conservación de otras copias.
+En esta implementación pasaron 865 pruebas de Jest en 79 suites y 59 comprobaciones de PostgreSQL con ambas migraciones reales. La comprobación inicial de interoperabilidad con el SDK oficial 2.119.2 usó 15 peticiones HTTP simuladas. La CI ejecuta la suite completa y las comprobaciones de PostgreSQL. El flujo con nombres añade pruebas de listado paginado sin payloads, selección por UUID, nombres no válidos, cancelación durante la lectura y conservación de otras copias.
 
 La revisión del navegador recorrió acceso, código incorrecto, primera copia, sesión reutilizada, restauración y Undo en dos sesiones lógicas de QA, con email simulado, usando temas claro y oscuro y panel estrecho. La ruta local `/__dev/cloud?state=configured&profile=a` sirve exclusivamente para estas pruebas mediante `npm run dev`; su código simulado es `123456` y no envía emails. La extensión instalada desde el manifest siempre utiliza el servicio Supabase real cuando está configurado.
 
@@ -101,4 +101,11 @@ Antes de ampliar a varias copias, la preview 2.2.0 se instaló dentro de dos sal
 - Después de cerrar sesión en la segunda sala se solicitó y verificó un segundo código real. La copia actualizada se recuperó correctamente y los 12 controles de acceso de jugadores volvieron a quedar desactivados, incluida la página compartida.
 - Una consulta de solo lectura confirmó una sola fila para esa cuenta, revisión `2` y esquema `1`.
 
-Estas pruebas reales se hicieron con una cuenta y dos salas en el mismo navegador. La prueba adicional desde otro dispositivo y la comprobación alojada con una segunda cuenta permanecen como QA recomendado; el aislamiento entre cuentas se comprobó en PostgreSQL embebido y el acceso alojado sin sesión fue rechazado. No se publicaron cambios en el despliegue de producción.
+El 22 de noviembre se repitió el ciclo con la ampliación de nombres desplegada en `abf06bc` y ambas migraciones aplicadas:
+
+- Se guardó `Prueba 2.2.0 — sesión 1` con 12 páginas y 6 carpetas, y `Prueba 2.2.0 — sesión 2` con 13 páginas y 6 carpetas. Solo la segunda incluía la página de prueba `Diferencia de la sesión 2`.
+- La segunda sala ofreció esas dos copias y `Previous backup` en el selector. Recuperar la sesión 1 dejó ausente la página adicional; recuperar la sesión 2 la mostró.
+- Guardar otra vez con el nombre de la sesión 2 pidió confirmar su sustitución. Una consulta de solo lectura confirmó tres filas: copia anterior en revisión 2, sesión 1 en revisión 1 y sesión 2 en revisión 2. Las otras copias se conservaron.
+- La Data API de `private_vault_backup_entries` rechazó la lectura sin sesión con HTTP 401 usando únicamente la clave pública.
+
+Estas pruebas reales se hicieron con una cuenta y dos salas en el mismo navegador, reutilizando la sesión verificada. La prueba adicional desde otro dispositivo y la comprobación alojada con una segunda cuenta permanecen como QA recomendado; el aislamiento entre cuentas se comprobó en PostgreSQL embebido. No se publicaron cambios en el despliegue de producción.
