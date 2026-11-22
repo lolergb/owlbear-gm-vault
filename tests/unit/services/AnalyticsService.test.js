@@ -198,7 +198,7 @@ describe('AnalyticsService beta events', () => {
       mode: 'unknown',
       destination_type: 'unknown',
       error_type: 'TypeError', operation: 'import', error_source: 'handled',
-      error_code: 'unknown', error_fingerprint: 'import:TypeError:unknown'
+      error_code: 'unknown', error_fingerprint: 'import:unknown:unknown:TypeError:unknown'
     });
   });
 });

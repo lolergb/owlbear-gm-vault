@@ -192,7 +192,7 @@ export class StorageService {
       log('💾 Configuración guardada en localStorage');
       return true;
     } catch (e) {
-      logError('Error al guardar configuración local:', e);
+      logError('Local configuration save failed.');
       if (notifyStorageLimit && e.name === 'QuotaExceededError' && this.onStorageLimitReached) {
         this.onStorageLimitReached('saving configuration');
       }
