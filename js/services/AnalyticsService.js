@@ -24,7 +24,7 @@ const BACKUP_STEPS = [
   'sync_room', 'retry_sync', 'check_save', 'change_account', 'no_backups'
 ];
 const BACKUP_OUTCOMES = [
-  'started', 'entered', 'cancelled', 'failed', 'completed', 'local_only', 'no_backups', 'previous_save_confirmed'
+  'started', 'entered', 'cancelled', 'failed', 'completed', 'local_only', 'no_backups', 'previous_save_confirmed', 'manage_backups'
 ];
 
 /**

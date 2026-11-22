@@ -32,6 +32,7 @@ function controllerWith() {
     session: jest.fn().mockResolvedValue(session), assertUser: jest.fn().mockResolvedValue(session.user),
     list: jest.fn().mockResolvedValue([{ id: 'backup-a', user_id: 'user-a', name: 'Campaign A', revision: 1, updated_at: '2026-11-21T20:00:00Z' }]),
     read: jest.fn().mockResolvedValue({ id: 'backup-a', name: 'Campaign A', user_id: 'user-a', schema_version: 1, payload: source, revision: 1, updated_at: '2026-11-21T20:00:00Z' }),
+    deleteBackup: jest.fn(async (_user, _row, authorize) => { await authorize(); }),
     save: jest.fn(async (_user, _payload, _previous, authorize) => { await authorize(); return { revision: 2 }; }), sendCode: jest.fn().mockResolvedValue(undefined),
     verifyCode: jest.fn().mockResolvedValue(session), signOut: jest.fn().mockResolvedValue(undefined)
   };
@@ -53,14 +54,19 @@ async function nameBackup(name) {
   document.querySelector('dialog input').value = name;
   await click('Review backup');
 }
-async function selectBackup(id = 'backup-a') {
-  const review = await button('Review backup');
-  expect(review.disabled).toBe(true);
+async function selectBackup(id = 'backup-a', action = 'Review backup') {
+  const actionButton = await button(action);
+  expect(actionButton.disabled).toBe(true);
   const trigger = document.querySelector('dialog button[role="combobox"]');
   trigger.click();
   document.querySelector(`dialog [role="option"][data-value="${id}"]`).click();
-  expect(review.disabled).toBe(false);
-  review.click();
+  expect(actionButton.disabled).toBe(false);
+  actionButton.click();
+}
+function enterConfirmation(value) {
+  const input = document.getElementById('cloud-backup-input');
+  input.value = value;
+  input.dispatchEvent(new Event('input'));
 }
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -235,6 +241,66 @@ describe('cloud backup controller flows', () => {
     expect(document.body.textContent).toContain('1 to 80 characters');
     expect(controller._cloudService.save).not.toHaveBeenCalled();
     await click('Cancel'); await task;
+  });
+  it('returns to the picker on Cancel or Escape and requires the selected name before deleting', async () => {
+    const controller = controllerWith();
+    const service = controller._cloudService;
+    const events = observe(controller);
+    const row = { id: 'backup-b', user_id: 'user-a', name: 'Lost <Keep>', revision: 3, updated_at: '2026-11-22' };
+    const other = { ...row, id: 'backup-a', name: 'Campaign A' };
+    let rows = [other, row];
+    service.list.mockImplementation(async () => rows);
+    service.deleteBackup.mockImplementation(async (_user, selected, authorize) => {
+      await authorize();
+      rows = rows.filter(item => item.id !== selected.id);
+    });
+    const before = controller.storageService.getLocalConfig();
+    const task = runCloudBackup(controller, 'restore');
+    await selectBackup(row.id, 'Delete selected backup');
+    await button('Delete backup');
+    expect(document.querySelector('dialog h2').textContent).toContain(row.name);
+    expect(document.querySelector('dialog keep')).toBeNull();
+    await click('Cancel');
+    await click('Delete selected backup');
+    await button('Delete backup');
+    document.querySelector('dialog').dispatchEvent(new Event('cancel', { cancelable: true }));
+    await click('Delete selected backup');
+    const confirm = await button('Delete backup');
+    enterConfirmation(other.name);
+    expect(confirm.disabled).toBe(true);
+    confirm.form.dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(service.deleteBackup).not.toHaveBeenCalled();
+    enterConfirmation(row.name);
+    expect(confirm.disabled).toBe(false);
+    confirm.click(); confirm.click();
+    await button('Review backup');
+    expect(document.querySelector('dialog select').textContent).toContain(other.name);
+    expect(document.querySelector('dialog select').textContent).not.toContain(row.name);
+    expect(document.querySelector('dialog').textContent).toContain('was deleted');
+    expect(service.deleteBackup).toHaveBeenCalledTimes(1);
+    expect(service.deleteBackup).toHaveBeenCalledWith('user-a', row, expect.any(Function));
+    expect(service.read).not.toHaveBeenCalled();
+    expect(controller.storageService.getLocalConfig()).toEqual(before);
+    await click('Cancel'); await task;
+    expect(events.filter(([, , terminal]) => terminal)).toEqual([['select', 'manage_backups', true, undefined]]);
+  });
+
+  it('refreshes the list on a stale confirmation and shows the empty state after deleting the last copy', async () => {
+    const controller = controllerWith();
+    const service = controller._cloudService;
+    service.deleteBackup.mockRejectedValueOnce(new BackupError('conflict'));
+    const task = runCloudBackup(controller, 'restore');
+    await selectBackup('backup-a', 'Delete selected backup');
+    await button('Delete backup'); enterConfirmation('Campaign A'); await click('Delete backup');
+    await button('Review backup');
+    expect(document.querySelector('dialog').textContent).toContain('changed or removed');
+    await selectBackup('backup-a', 'Delete selected backup');
+    await button('Delete backup'); enterConfirmation('Campaign A');
+    service.list.mockResolvedValue([]);
+    await click('Delete backup'); await button('Done');
+    expect(document.querySelector('dialog h2').textContent).toBe('No private backups found');
+    expect(document.querySelector('dialog').textContent).toContain('“Campaign A” was deleted.');
+    await click('Done'); await task;
   });
   it.each(['save', 'restore'])('keeps loading cancellable while reading a selected %s target', async operation => {
     const controller = controllerWith();

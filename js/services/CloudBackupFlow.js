@@ -113,14 +113,14 @@ async function authenticate(service, dialog, progress) {
   return dialog.closed ? null : session;
 }
 
-async function chooseNamedBackup(service, dialog, session, operation, localPrepared, preferredName, progress) {
+async function chooseNamedBackup(service, dialog, session, operation, localPrepared, selection, progress) {
   const userId = session.user.id;
   progress.enter('list');
   const rows = await service.list(userId);
   if (dialog.closed) return null;
   const accountAction = { id: 'account', label: 'Sign out / change account' };
   if (operation === 'save') {
-    let name = preferredName || `Backup ${new Date().toLocaleString()}`;
+    let name = selection.name || `Backup ${new Date().toLocaleString()}`;
     let error = '';
     while (!dialog.closed) {
       progress.enter('name');
@@ -147,21 +147,40 @@ async function chooseNamedBackup(service, dialog, session, operation, localPrepa
   }
   if (!rows.length) {
     progress.enter('no_backups');
-    return dialog.choose({ title: 'No private backups found', account: session.user.email || 'Signed in', paragraphs: ['This account has no saved copies. Your local vault is unchanged.'], actions: [accountAction, { id: 'done', label: 'Done', primary: true }] });
+    return dialog.choose({ title: 'No private backups found', account: session.user.email || 'Signed in', paragraphs: [selection.notice, 'This account has no saved copies. Your local vault is unchanged.'], actions: [accountAction, { id: 'done', label: 'Done', primary: true }] });
   }
   progress.enter('select');
   const selected = await dialog.choose({
     title: 'Choose a backup to restore', account: session.user.email || 'Signed in',
-    paragraphs: ['Choose a saved copy. You will review its contents before replacing your local vault.'],
-    field: { label: 'Saved backup', options: rows.map(row => ({ value: row.id, label: row.name, detail: new Date(row.updated_at).toLocaleString() })) },
-    actions: [accountAction, { id: 'review', label: 'Review backup', primary: true }]
+    paragraphs: [selection.notice, 'Choose a saved copy to review or delete.'],
+    field: { label: 'Saved backup', value: selection.id, options: rows.map(row => ({ value: row.id, label: row.name, detail: new Date(row.updated_at).toLocaleString() })) },
+    actions: [accountAction, { id: 'delete', label: 'Delete selected backup', requiresSelection: true }, { id: 'review', label: 'Review backup', primary: true }]
   });
   if (!selected || selected.action === 'account') return selected;
-  progress.enter('read');
-  dialog.loading('Loading your private backup');
-  const row = await service.read(userId, selected.value);
+  const row = rows.find(item => item.id === selected.value);
   if (!row) throw new BackupError('missing');
-  return { row, name: row.name };
+  return { action: selected.action, row, name: row.name };
+}
+
+async function confirmBackupDeletion(controller, context, service, dialog, session, row) {
+  const choice = await dialog.choose({
+    title: `Delete “${row.name}”?`, account: session.user.email || 'Signed in',
+    paragraphs: ['This permanently deletes this saved copy from your account. Your current vault and other backups are kept.'],
+    field: { label: 'Type the backup name to confirm', confirmName: row.name },
+    cancelAction: 'back', actions: [{ id: 'delete', label: 'Delete backup', primary: true, danger: true }]
+  });
+  if (choice?.action !== 'delete') return { id: row.id };
+  dialog.loading('Deleting your private backup', { committing: true });
+  try {
+    await service.deleteBackup(session.user.id, row, async () => {
+      await assertBackupContext(controller, context);
+      if (dialog.closed) throw new BackupError('changed');
+    });
+  } catch (error) {
+    if (error.code === 'conflict' || error.code === 'delete_uncertain') return { notice: error.message };
+    throw error;
+  }
+  return { notice: `“${row.name}” was deleted.` };
 }
 
 export async function runCloudBackup(controller, operation, progress) {
@@ -178,7 +197,7 @@ export async function runCloudBackup(controller, operation, progress) {
     progress.enter('connect');
     dialog.loading('Connecting to private backups');
     const service = await controller._getCloudBackupService();
-    let chosenName = '';
+    let selection = {};
     if (operation === 'signout') {
       await service.signOut();
       if (!dialog.closed) await dialog.choose({ title: 'Signed out on this device', paragraphs: ['Your local vault and private backups have been kept.'], actions: [{ id: 'done', label: 'Done', primary: true }] });
@@ -196,11 +215,12 @@ export async function runCloudBackup(controller, operation, progress) {
       if (!session || dialog.closed) return;
       if (operation === 'signin') return;
       const userId = session.user.id;
+      if (selection.userId && selection.userId !== userId) throw new BackupError('changed');
       dialog.loading('Checking your private backup');
       if (service.pendingWrite && service.pendingWrite.userId !== userId) service.pendingWrite = null;
       if (service.pendingWrite) {
         progress.enter('check_save');
-        chosenName = service.pendingWrite.name || chosenName;
+        selection.name = service.pendingWrite.name || selection.name;
         const choice = await dialog.choose({ title: 'Check the previous save', paragraphs: [new BackupError('uncertain').message], actions: [{ id: 'check', label: 'Check backup', primary: true }] });
         if (!choice) return;
         const result = await service.checkWrite(userId);
@@ -213,18 +233,33 @@ export async function runCloudBackup(controller, operation, progress) {
         // save may exist. Require a new review before any further write.
         service.pendingWrite = null;
       }
-      const target = await chooseNamedBackup(service, dialog, session, operation, localPrepared, chosenName, progress);
+      const target = await chooseNamedBackup(service, dialog, session, operation, localPrepared, selection, progress);
       if (dialog.closed) return;
       if (!target) return;
       if (target.action === 'done') { progress.finish('no_backups'); return; }
       if (target.action === 'account') {
         progress.enter('change_account');
         await service.signOut();
-        chosenName = '';
+        selection = {};
         continue;
       }
-      const { row, name } = target;
-      chosenName = name;
+      if (target.action === 'delete') {
+        // Managing saved copies is a different intent from restoring a vault.
+        progress.finish('manage_backups');
+        selection = { userId, ...await confirmBackupDeletion(controller, context, service, dialog, session, target.row) };
+        continue;
+      }
+      let { row, name } = target;
+      if (target.action === 'review') {
+        if (progress.ended) progress = new BackupFlowProgress(controller.analyticsService, operation);
+        progress.enter('read');
+        dialog.loading('Loading your private backup');
+        row = await service.read(userId, row.id);
+        if (dialog.closed) return;
+        if (!row) throw new BackupError('missing');
+        name = row.name;
+      }
+      selection = { name, userId };
       const remote = row ? prepareBackup(row.payload, controller.configParser, { schema: row.schema_version, restoring: operation === 'restore' }) : null;
       const actionLabel = operation === 'restore' ? 'Restore private backup' : row ? 'Replace private backup' : 'Save private backup';
       const paragraphs = [

@@ -11,11 +11,26 @@ function clientWith(result = { data: null, error: null }) {
     verifyOtp: jest.fn().mockResolvedValue({ data: { session: { user: { id: 'user-a' } } }, error: null }),
     signOut: jest.fn().mockResolvedValue({ error: null })
   };
-  const client = { auth, from: jest.fn().mockReturnValue(query) };
+  const client = { auth, from: jest.fn().mockReturnValue(query), rpc: jest.fn().mockResolvedValue({ data: true }) };
   return { service: new CloudBackupService(client), client, auth, query };
 }
 
 describe('private cloud backup requests', () => {
+  it('deletes the confirmed identity and revision only after account and room authorization', async () => {
+    const { service, client } = clientWith();
+    const row = { user_id: 'user-a', id: 'copy-1', name: 'Session one', revision: 4 };
+    const authorize = jest.fn();
+    await expect(service.deleteBackup('user-b', row, authorize)).rejects.toMatchObject({ code: 'changed' });
+    authorize.mockRejectedValueOnce(new Error('Room changed'));
+    await expect(service.deleteBackup('user-a', row, authorize)).rejects.toThrow('Room changed');
+    expect(client.rpc).not.toHaveBeenCalled();
+    await service.deleteBackup('user-a', row, authorize);
+    expect(client.rpc).toHaveBeenCalledWith('delete_private_vault_backup', { p_id: row.id, p_revision: 4, p_name: row.name });
+    client.rpc.mockResolvedValueOnce({ data: false });
+    await expect(service.deleteBackup('user-a', row, authorize)).rejects.toMatchObject({ code: 'conflict' });
+    client.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(service.deleteBackup('user-a', row, authorize)).rejects.toMatchObject({ code: 'delete_uncertain' });
+  });
   it('sends OTP and verifies email code without passwords or redirects', async () => {
     const { service, auth } = clientWith();
     await service.sendCode('test@example.test');
