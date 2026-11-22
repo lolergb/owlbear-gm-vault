@@ -29,6 +29,7 @@ import {
 } from '../utils/sceneItemLinks.js';
 import { iconHtml } from '../utils/iconHelper.js';
 import { getVisibilityStatusLabel } from '../utils/playerVisibilityCopy.js';
+import { normalizeImportDiagnostic } from '../utils/importDiagnostics.js';
 import { runShareButtonAction } from '../utils/shareButtonState.js?v=20260722-4';
 import {
   escapeHtml,
@@ -110,6 +111,8 @@ function getContentErrorStage(error) {
   return error && (typeof error === 'object' || typeof error === 'function')
     ? contentErrorStages.get(error) || 'other' : 'other';
 }
+
+const jsonImportErrors = new WeakSet();
 
 /**
  * Controlador principal de la extensión
@@ -3818,11 +3821,13 @@ export class ExtensionController {
    */
   _createJsonImportError(stage, title, message, cause = null) {
     const error = new Error(message);
-    error.name = cause?.name || (stage === 'parse' ? 'SyntaxError' : 'Error');
+    error.name = ['TypeError', 'SyntaxError', 'AbortError', 'NetworkError', 'RangeError'].includes(cause?.name)
+      ? cause.name : (stage === 'parse' ? 'SyntaxError' : 'Error');
     error.importStage = stage;
-    if (stage === 'read') error.importCode = 'file_read_failed';
+    error.importCode = normalizeImportDiagnostic(stage).code;
     error.userTitle = title;
-    error.cause = cause || undefined;
+    // Native parser/fetch exceptions can contain the input. Retain only type.
+    jsonImportErrors.add(error);
     return error;
   }
 
@@ -3852,7 +3857,7 @@ export class ExtensionController {
     if (typeof text !== 'string' || text.trim() === '') {
       const error = this._createJsonImportError(
         'parse',
-        'This file is empty',
+        source === 'url' ? 'This response is empty' : 'This file is empty',
         `${sourceLabel} does not contain any data. Choose a GM Vault backup with folders or pages.`
       );
       error.importCode = 'empty_file';
@@ -3860,13 +3865,23 @@ export class ExtensionController {
     }
 
     let importedConfig;
+    if (/^\s*(?:<!doctype\s+html\b|<html\b|<head\b|<body\b)/i.test(text.replace(/^\uFEFF/, ''))) {
+      const error = this._createJsonImportError(
+        'parse', 'This is an HTML page',
+        source === 'url'
+          ? 'Use a direct link to the JSON backup, or download it and import the file.'
+          : 'Choose the exported JSON backup instead of a saved web page.'
+      );
+      error.importCode = 'html_response';
+      throw error;
+    }
     try {
       // Algunos editores añaden BOM al principio de los archivos UTF-8.
       importedConfig = JSON.parse(text.replace(/^\uFEFF/, ''));
     } catch (cause) {
       const error = this._createJsonImportError(
         'parse',
-        'This file isn’t valid JSON',
+        source === 'url' ? 'This response isn’t valid JSON' : 'This file isn’t valid JSON',
         `GM Vault could not read ${source === 'url' ? 'the downloaded file' : 'this file'}. Check for missing commas, brackets, or quotation marks, then try again.`,
         cause
       );
@@ -3936,6 +3951,7 @@ export class ExtensionController {
    * @private
    */
   async _fetchJsonImport(url) {
+    url = this._validateJsonImportUrl(url);
     let response;
     try {
       response = await fetch(url);
@@ -3943,7 +3959,7 @@ export class ExtensionController {
       throw this._createJsonImportError(
         'fetch',
         'Could not reach URL',
-        'Check the address, your connection, and whether the server allows browser requests, then try again.',
+        'Check the address and connection, or download the backup and import the file.',
         cause
       );
     }
@@ -3952,7 +3968,7 @@ export class ExtensionController {
       throw this._createJsonImportError(
         'http',
         'Could not download backup',
-        `The server returned HTTP ${response.status}. Check the URL and try again.`
+        'The server could not provide the backup. Check the link, or download the backup and import the file.'
       );
     }
 
@@ -3960,15 +3976,33 @@ export class ExtensionController {
     try {
       text = await response.text();
     } catch (cause) {
-      throw this._createJsonImportError(
+      const error = this._createJsonImportError(
         'read',
         'Could not read response',
         'The backup was downloaded but its response could not be read. Try again.',
         cause
       );
+      error.importCode = 'response_read_failed';
+      throw error;
     }
 
     return this._prepareJsonImportText(text, 'url');
+  }
+
+  _validateJsonImportUrl(value) {
+    const url = typeof value === 'string' ? value.trim() : '';
+    if (!url) {
+      const error = this._createJsonImportError('input', 'URL required', 'Enter the complete URL of a GM Vault JSON file.');
+      error.importCode = 'missing_url';
+      throw error;
+    }
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+    } catch (_error) {
+      throw this._createJsonImportError('input', 'Invalid URL', 'Use a complete HTTP or HTTPS URL.');
+    }
+    return url;
   }
 
   /**
@@ -4109,14 +4143,29 @@ export class ExtensionController {
    * @private
    */
   _handleJsonImportError(error, source, fallbackStage = 'read', context = {}) {
+    // Only errors constructed by this flow may supply user-facing text. An
+    // unexpected exception must not expose input via the dialog or analytics.
+    if (!jsonImportErrors.has(error)) {
+      const diagnostic = normalizeImportDiagnostic(fallbackStage, undefined, source);
+      error = this._createJsonImportError(
+        diagnostic.stage, 'Could not import backup',
+        diagnostic.stage === 'save'
+          ? 'Check available storage and try again.'
+          : diagnostic.stage === 'display'
+          ? 'The backup was saved, but the view could not update. Reopen GM Vault.'
+          : 'Try another JSON backup, or download it and import the file.',
+        error
+      );
+      error.importCode = diagnostic.code;
+    }
     try {
       this.analyticsService?.trackVaultImportFailed?.({
         source,
         stage: error?.importStage || fallbackStage,
         errorType: error?.name || 'Error',
-        errorCode: error?.importCode || (fallbackStage === 'apply' ? 'apply_failed' : fallbackStage),
-        error,
-        ...context
+        errorCode: error.importCode,
+        mode: context.mode,
+        destinationType: context.destinationType
       });
     } catch (_error) {
       // Error reporting must never prevent the import error from being shown.
@@ -4259,7 +4308,7 @@ export class ExtensionController {
             await this._showPreparedJsonImport(importedConfig, preflight, file.name, 'file');
             
           } catch (err) {
-            await this._handleJsonImportError(err, 'file', 'read');
+            await this._handleJsonImportError(err, 'file', 'prepare');
           }
         });
         
@@ -4277,35 +4326,15 @@ export class ExtensionController {
         e.stopPropagation();
         log('Load from URL button clicked');
         
-        const url = vaultUrlInput ? vaultUrlInput.value.trim() : '';
-        log('URL value:', url);
-        if (!url) {
-          const error = this._createJsonImportError(
-            'input',
-            'URL required',
-            'Enter the complete URL of a GM Vault JSON file.'
-          );
-          await this._handleJsonImportError(error, 'url', 'input');
-          return;
-        }
-
-        // Validar que sea una URL válida
+        let url;
         try {
-          const parsedUrl = new URL(url);
-          if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-            throw new Error('Unsupported URL protocol');
-          }
-        } catch (e) {
-          const error = this._createJsonImportError(
-            'input',
-            'Invalid URL',
-            'Use a complete HTTP or HTTPS URL.'
-          );
+          url = this._validateJsonImportUrl(vaultUrlInput?.value);
+        } catch (error) {
           await this._handleJsonImportError(error, 'url', 'input');
           return;
         }
 
-        this.analyticsService.trackLoadFromUrlClicked(url);
+        this.analyticsService?.trackLoadFromUrlClicked?.();
         const urlObj = new URL(url);
         const vaultName = urlObj.pathname.split('/').pop() || 'vault';
 
@@ -4315,13 +4344,11 @@ export class ExtensionController {
         loadUrlBtn.textContent = 'Loading...';
 
         try {
-          log('Loading vault from URL:', url);
           const { importedConfig, preflight } = await this._fetchJsonImport(url);
           await this._showPreparedJsonImport(importedConfig, preflight, vaultName, 'url');
           
         } catch (err) {
-          console.error('Error loading from URL:', err);
-          await this._handleJsonImportError(err, 'url', 'fetch');
+          await this._handleJsonImportError(err, 'url', 'prepare');
         } finally {
           loadUrlBtn.disabled = false;
           loadUrlBtn.textContent = originalText;
@@ -4991,7 +5018,7 @@ export class ExtensionController {
     source = 'file',
     preflight = null
   ) {
-    log(`_showLoadJsonOptionsModal: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}, file=${fileName}`);
+    log(`Import options: currentPages=${currentPagesCount}, importedPages=${importedPagesCount}`);
 
     const configParser = this.configParser || new ConfigParser();
     const importPreflight = preflight || configParser.preflight(importedConfig);
@@ -5082,7 +5109,6 @@ export class ExtensionController {
     modal.classList.add('notion-pages-modal');
     modal.innerHTML = `<h2 class="modal__title" id="json-import-title">Choose where to import</h2><div class="form">${modalContent}</div>`;
     document.body.appendChild(overlay);
-    log('Modal created:', modal);
     const destinationPicker = !isEmptyVault ? this._setupFolderSelect(modal, {
       name: 'destination', label: 'Destination folder', options: destinationOptions
     }) : null;
@@ -5091,7 +5117,6 @@ export class ExtensionController {
     const cancelBtn = modal.querySelector('#json-import-cancel');
     const confirmBtn = modal.querySelector('#json-import-confirm');
     const destinationField = modal.querySelector('.import-destination-field');
-    log('Cancel button:', cancelBtn, 'Confirm button:', confirmBtn);
 
     const closeModal = () => {
       overlay.remove();
@@ -5189,12 +5214,10 @@ export class ExtensionController {
       }
       const importedPages = importedConfig.pages || [];
       markContentOrigin(importedCategories, importedPages, 'import');
-      log(`Imported categories:`, JSON.stringify(importedCategories.map(c => ({ name: c.name, items: c.items?.length || 0 }))));
 
       // Obtener config actual y convertir a formato items[]
       const currentConfig = this.config || { categories: [], pages: [] };
       const configJson = currentConfig.toJSON ? currentConfig.toJSON() : currentConfig;
-      log(`Current config JSON:`, JSON.stringify(configJson).substring(0, 500));
       
       // Detectar formato de la config actual
       const currentFormat = this.configParser.detectFormat(configJson);
@@ -5236,11 +5259,9 @@ export class ExtensionController {
         case 'merge':
           // Combinar: añadir nuevas, actualizar duplicadas por nombre
           log(`Merge: existing=${existingCategories.length} categories, imported=${importedCategories.length} categories`);
-          log(`Existing categories:`, JSON.stringify(existingCategories.map(c => ({ name: c.name, items: c.items?.length || 0 }))));
           finalCategories = this._mergeCategories(existingCategories, importedCategories);
           finalPages = this._mergeRootPages(existingPages, importedPages);
           log(`Merged result: ${finalCategories.length} categories`);
-          log(`Merged categories:`, JSON.stringify(finalCategories.map(c => ({ name: c.name, items: c.items?.length || 0 }))));
           break;
         
         case 'replace':
@@ -5271,6 +5292,7 @@ export class ExtensionController {
         error.importCode = 'storage_failed';
         throw error;
       }
+      stage = 'display';
       await this.render();
       log('Config saved successfully');
       
@@ -5303,7 +5325,6 @@ export class ExtensionController {
       this._goBackToList();
       return true;
     } catch (err) {
-      logError('Error applying JSON import:', err);
       await this._handleJsonImportError(err, source, stage, {
         mode: importMode,
         destinationType: destinationId === 'root' ? 'root' : 'folder'

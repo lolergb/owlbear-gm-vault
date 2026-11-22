@@ -96,7 +96,7 @@ describe('privacy-safe error analytics', () => {
     await flush();
     expect(eventAt(0).properties).toMatchObject({ operation: 'token_link', error_source: 'handled', error_type: 'TypeError' });
     expect(eventAt(1).event).toBe('vault_import_failed');
-    expect(eventAt(1).properties).toMatchObject({ operation: 'import', error_source: 'handled', error_code: 'read', source: 'file' });
+    expect(eventAt(1).properties).toMatchObject({ operation: 'import', error_source: 'handled', error_code: 'file_read_failed', source: 'file' });
     expect(JSON.stringify(eventAt(0))).not.toContain('private token');
   });
 
@@ -122,5 +122,61 @@ describe('privacy-safe error analytics', () => {
     service.trackClientError({ operation: 'token_link', error: new Error('secret') });
     await flush();
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps file and URL failures distinct while deduplicating nearby repeats', async () => {
+    service.trackVaultImportFailed({ source: 'file', stage: 'parse', errorCode: 'invalid_json' });
+    service.trackVaultImportFailed({ source: 'url', stage: 'parse', errorCode: 'invalid_json' });
+    service.trackVaultImportFailed({ source: 'url', stage: 'parse', errorCode: 'invalid_json' });
+    await flush();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(eventAt(0).properties.error_fingerprint).not.toBe(eventAt(1).properties.error_fingerprint);
+  });
+
+  it('normalizes codes by phase and discards all extra diagnostic input', async () => {
+    service.trackVaultImportFailed({
+      source: 'url', stage: 'input', errorCode: 'invalid_json',
+      errorType: 'private-name', error: new Error('private-raw-message'),
+      url: 'https://private.test', fileName: 'private-backup.json',
+      content: 'private-content', message: 'private-message'
+    });
+    await flush();
+    expect(eventAt().properties).toMatchObject({ stage: 'input', error_code: 'invalid_url', error_type: 'unknown' });
+    expect(JSON.stringify(eventAt())).not.toContain('private-');
+    expect(localStorage.setItem.mock.calls).toEqual([['analytics_consent', 'true']]);
+  });
+
+  it('drops an import diagnostic if consent is revoked during role lookup', async () => {
+    let resolveRole;
+    service.OBR.player.getRole = () => new Promise(resolve => { resolveRole = resolve; });
+    service.trackVaultImportFailed({ source: 'url', stage: 'fetch', errorCode: 'fetch_failed' });
+    service.setConsent(false);
+    resolveRole('GM');
+    await flush();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not queue an event without consent while initialization is pending', async () => {
+    let finishInitialization;
+    service.initializationTask = new Promise(resolve => { finishInitialization = resolve; });
+    service.setConsent(false);
+    const pending = service.trackEvent('load_from_url_clicked');
+    service.setConsent(true);
+    finishInitialization();
+    await pending;
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to an image request after consent is revoked', async () => {
+    let rejectRequest;
+    const image = jest.spyOn(global, 'Image');
+    global.fetch = jest.fn(() => new Promise((_resolve, reject) => { rejectRequest = reject; }));
+    service.trackVaultImportFailed({ source: 'url', stage: 'fetch' });
+    await flush();
+    service.setConsent(false);
+    rejectRequest(new Error('private transport error'));
+    await flush();
+    expect(image).not.toHaveBeenCalled();
+    image.mockRestore();
   });
 });

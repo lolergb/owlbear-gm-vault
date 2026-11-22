@@ -78,7 +78,7 @@ export class ConfigParser {
         order: Array.isArray(json.order) ? json.order : null
       });
     } catch (e) {
-      logError('Error parseando configuración:', e);
+      logError('Configuration parsing failed.');
       return new Config();
     }
   }
