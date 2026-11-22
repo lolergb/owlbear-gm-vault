@@ -149,7 +149,17 @@
     height: 100%;
     max-width: 100%;
     overflow-x: hidden;
-    background-color: var(--color-bg-default);
+  }
+
+  /* Composite the panel tint once, behind the scrolling list and its hover controls. */
+  html::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-color: var(--color-bg-overlay);
+    pointer-events: none;
+    transform: translateZ(0);
   }
   
   /* Reset: los botones heredan color del padre (evita el negro del user-agent) */
