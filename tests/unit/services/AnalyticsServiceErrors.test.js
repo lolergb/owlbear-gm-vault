@@ -26,6 +26,31 @@ describe('privacy-safe error analytics', () => {
   const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
   const eventAt = (index = 0) => JSON.parse(atob(new URLSearchParams(global.fetch.mock.calls[index][1].body).get('data')))[0];
 
+  it('counts the same consenting GM across reloads and stages without exposing their account ID', async () => {
+    service.OBR.player.id = 'owlbear-private-account';
+    await service.trackPrivateBackupAdoption('settings_option_viewed');
+    const otherVisit = Object.assign(new AnalyticsService(), {
+      OBR: service.OBR, mixpanelEnabled: true, mixpanelToken: 'project-token'
+    });
+    await otherVisit.trackPrivateBackupAdoption('sign_in_clicked');
+    await otherVisit.trackPrivateBackupAdoption('backup_saved');
+    const ids = [0, 1, 2].map(n => eventAt(n).properties.distinct_id);
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).toMatch(/^backup_gm_[a-f0-9]{64}$/);
+    expect(eventAt(0).properties).toMatchObject({ role: 'GM', operation: 'adoption', step: 'settings_option_viewed' });
+    expect(JSON.stringify(eventAt(0))).not.toMatch(/owlbear-private-account|private-player-id|private-vault-id|attempt_id/);
+    service.OBR.player.id = 'another-gm';
+    await service.trackPrivateBackupAdoption('backup_saved');
+    expect(eventAt(3).properties.distinct_id).not.toBe(ids[0]);
+    await service.trackPrivateBackupAdoption('unknown');
+    service.OBR.player.getRole = async () => 'PLAYER';
+    await service.trackPrivateBackupAdoption('backup_saved');
+    service.setConsent(false);
+    service.OBR.player.getRole = async () => 'GM';
+    await service.trackPrivateBackupAdoption('settings_option_viewed');
+    expect(global.fetch).toHaveBeenCalledTimes(4);
+  });
+
   it('sends versioned backup stages with a fresh attempt ID and only controlled values', async () => {
     const report = service.privateBackupReporter('save');
     await report('review', 'entered', false);
