@@ -361,6 +361,7 @@ export class AnalyticsService {
 
       const isErrorEvent = eventName === 'client_error' || eventName === 'vault_import_failed' || Boolean(properties.error_source);
       const privateContext = isErrorEvent || eventName === 'private_backup_flow';
+      let distinctId = privateContext ? this.errorIdentity : this.mixpanelDistinctId;
       // Obtener rol del usuario
       let userRole = 'unknown';
       try {
@@ -370,6 +371,16 @@ export class AnalyticsService {
         }
       } catch (e) {}
 
+      if (eventName === 'private_backup_flow' && properties.operation === 'adoption') {
+        if (userRole !== 'GM') return;
+        // Use the account, not the connection, without sending a raw Owlbear ID.
+        const id = this.OBR.player.id || await this.OBR.player.getId();
+        if (!id) return;
+        const bytes = new TextEncoder().encode('gm-vault/private-backup-adoption/v1/' + id);
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        distinctId = 'backup_gm_' + Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+
       // Consent may change while initialization or role lookup is pending.
       if (this.getConsent() !== true) return;
 
@@ -378,7 +389,7 @@ export class AnalyticsService {
         event: eventName,
         properties: {
           token: this.mixpanelToken,
-          distinct_id: privateContext ? this.errorIdentity : this.mixpanelDistinctId,
+          distinct_id: distinctId,
           time,
           $insert_id: Math.random().toString(36).substring(2, 15),
           role: privateContext ? this._normalizeEnum(userRole, ['GM', 'PLAYER']) : userRole,
@@ -827,6 +838,11 @@ export class AnalyticsService {
     this.trackEvent('json_exported', {
       item_count: itemCount
     });
+  }
+
+  trackPrivateBackupAdoption(step) {
+    if (!['settings_option_viewed', 'sign_in_clicked', 'backup_saved'].includes(step)) return;
+    return this.trackEvent('private_backup_flow', { operation: 'adoption', step });
   }
 
   /** Only controlled labels cross this boundary. Attempt IDs are never stored. */

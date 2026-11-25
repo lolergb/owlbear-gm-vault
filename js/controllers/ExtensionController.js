@@ -60,7 +60,7 @@ import { StorageService } from '../services/StorageService.js?v=2.2.0';
 import { NotionService } from '../services/NotionService.js?v=20260812-1';
 import { BroadcastService } from '../services/BroadcastService.js?v=2.2.0';
 import { shareImageWithPlayers } from '../services/ImageShareService.js';
-import { AnalyticsService } from '../services/AnalyticsService.js?v=20261118-1';
+import { AnalyticsService } from '../services/AnalyticsService.js?v=20261125-1';
 import { BackupFlowProgress } from '../services/BackupFlowProgress.js';
 import { getImageCacheService } from '../services/ImageCacheService.js?v=20260722-4';
 import { PlayerDirectoryService } from '../services/PlayerDirectoryService.js?v=2.2.0';
@@ -2194,6 +2194,7 @@ export class ExtensionController {
    */
   cleanup() {
     this._cloudDialog?.close();
+    this._cloudViewScope?.abort();
     this._cloudSettingsListeners?.abort();
     log('🧹 Limpiando recursos...');
     this.betaRecoveryAbort?.abort();
@@ -2522,6 +2523,7 @@ export class ExtensionController {
 
     if (isSettingsVisible) {
       // Cerrar settings
+      this._cloudViewScope?.abort();
       this.analyticsService.trackSettingsClosed();
       settingsContainer.classList.add('hidden');
     } else if (isNotionContainerVisible) {
@@ -3626,6 +3628,31 @@ export class ExtensionController {
     this._setupSettingsEventListeners();
     this._setupBetaRecoverySettings();
     this._setupCloudSettings();
+    this._observeCloudSettingsView();
+  }
+
+  _observeCloudSettingsView() {
+    this._cloudViewScope?.abort();
+    const heading = document.getElementById('cloud-backup-settings-title');
+    if (!heading || heading.closest('[hidden]') || typeof IntersectionObserver === 'undefined') return;
+    const scope = this._cloudViewScope = new AbortController();
+    const observer = new IntersectionObserver(entries => {
+      const entry = entries[entries.length - 1];
+      if (!scope.signal.aborted && !document.hidden && this.isGM && !this.isCoGM &&
+          !heading.closest('[hidden], .hidden') && entry?.isIntersecting && entry.intersectionRatio >= 0.5 &&
+          this.analyticsService?.getConsent() === true) {
+        scope.abort();
+        this.analyticsService.trackPrivateBackupAdoption('settings_option_viewed');
+      }
+    }, { threshold: 0.5 });
+    const refresh = () => {
+      observer.disconnect();
+      if (!document.hidden && this.analyticsService?.getConsent() === true) observer.observe(heading);
+    };
+    scope.signal.addEventListener('abort', () => observer.disconnect(), { once: true });
+    document.addEventListener('visibilitychange', refresh, { signal: scope.signal });
+    document.getElementById('cookie-consent-banner')?.addEventListener('analytics-consent-changed', refresh, { signal: scope.signal });
+    refresh();
   }
 
   _setupCloudSettings() {
@@ -3718,9 +3745,10 @@ export class ExtensionController {
   async _runCloudAction(operation) {
     if (!this.isGM || this.isCoGM || this._cloudFlowRunning || this._cloudActionPending) return;
     this._cloudActionPending = true;
+    if (operation === 'signin') this.analyticsService?.trackPrivateBackupAdoption?.('sign_in_clicked');
     const progress = new BackupFlowProgress(this.analyticsService, operation);
     try {
-      const flow = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=2');
+      const flow = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=3');
       if (operation === 'undo') await flow.undoLocalRestore(this);
       else await flow.runCloudBackup(this, operation, progress);
     } catch (error) {
@@ -3737,7 +3765,7 @@ export class ExtensionController {
     try { pending = JSON.parse(localStorage.getItem('gm-vault-cloud-recovery-v1:' + this.roomId) || 'null'); }
     catch { return; }
     if (pending?.state !== 'pending') return;
-    const { undoLocalRestore } = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=2');
+    const { undoLocalRestore } = await import('../services/CloudBackupFlow.js?v=2.2.0&backups=3');
     await undoLocalRestore(this, { startup: true });
   }
 

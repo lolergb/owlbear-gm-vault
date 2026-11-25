@@ -186,6 +186,10 @@ async function confirmBackupDeletion(controller, context, service, dialog, sessi
 export async function runCloudBackup(controller, operation, progress) {
   if (controller._cloudFlowRunning) return;
   progress ??= new BackupFlowProgress(controller.analyticsService, operation);
+  const finishSave = (outcome) => {
+    progress.finish(outcome);
+    controller.analyticsService?.trackPrivateBackupAdoption?.('backup_saved');
+  };
   const dialog = new CloudBackupDialog(() => progress.dismiss(), () => progress.fail('input_invalid', false));
   controller._cloudFlowRunning = true;
   controller._cloudDialog = dialog;
@@ -225,7 +229,7 @@ export async function runCloudBackup(controller, operation, progress) {
         if (!choice) return;
         const result = await service.checkWrite(userId);
         if (result.matched) {
-          progress.finish('previous_save_confirmed');
+          finishSave('previous_save_confirmed');
           await dialog.choose({ title: 'Private backup saved', paragraphs: ['The previous save was confirmed.'], actions: [{ id: 'done', label: 'Done', primary: true }] });
           return;
         }
@@ -285,7 +289,7 @@ export async function runCloudBackup(controller, operation, progress) {
           if (dialog.closed) throw new BackupError('changed');
           progress.enter('save');
         }, { name });
-        progress.finish();
+        finishSave();
         if (dialog.closed) return;
         await dialog.choose({ title: 'Private backup saved', paragraphs: [`“${name}” is saved. Local edits will be backed up only when you choose Save private backup again.`], actions: [{ id: 'done', label: 'Done', primary: true }] });
       } else {
@@ -328,7 +332,7 @@ export async function runCloudBackup(controller, operation, progress) {
         try {
           const service = controller._cloudService;
           const { matched } = await service.checkWrite(service.pendingWrite.userId);
-          if (matched) progress.finish();
+          if (matched) finishSave();
           else progress.fail('uncertain');
           await dialog.choose({ title: matched ? 'Private backup saved' : 'Save could not be confirmed', paragraphs: [matched ? 'Your save was confirmed.' : 'Close this dialog and review the current private copy before saving again.'], actions: [{ id: 'done', label: 'Done', primary: true }] });
         } catch (checkError) {

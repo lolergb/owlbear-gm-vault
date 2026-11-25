@@ -77,7 +77,7 @@ beforeEach(() => {
 describe('cloud backup controller flows', () => {
   function observe(controller) {
     const record = jest.fn();
-    controller.analyticsService = { privateBackupReporter: jest.fn(() => record) };
+    controller.analyticsService = { privateBackupReporter: jest.fn(() => record), trackPrivateBackupAdoption: jest.fn() };
     return record.mock.calls;
   }
 
@@ -116,6 +116,7 @@ describe('cloud backup controller flows', () => {
     await click('Save private backup'); await dispatched;
     await click('Close'); finishWrite(); await task;
     expect(events.filter(([, , terminal]) => terminal)).toEqual([['save', 'completed', true, undefined]]);
+    expect(controller.analyticsService.trackPrivateBackupAdoption.mock.calls).toEqual([['backup_saved']]);
   });
 
   it('separates a persisted restore from a failed room sync', async () => {
@@ -127,6 +128,7 @@ describe('cloud backup controller flows', () => {
     await click('Cancel'); await task;
     expect(events).toContainEqual(['sync_room', 'failed', false, 'room_sync']);
     expect(events.filter(([, , terminal]) => terminal)).toEqual([['retry_sync', 'local_only', true, undefined]]);
+    expect(controller.analyticsService.trackPrivateBackupAdoption).not.toHaveBeenCalled();
   });
 
   it('reports the confirmed result after an uncertain save without counting two attempts', async () => {
@@ -145,6 +147,7 @@ describe('cloud backup controller flows', () => {
     expect(events).toContainEqual(['save', 'failed', false, 'uncertain']);
     expect(events.filter(([, , terminal]) => terminal)).toEqual([['check_save', 'completed', true, undefined]]);
     expect(controller.analyticsService.privateBackupReporter).toHaveBeenCalledTimes(1);
+    expect(controller.analyticsService.trackPrivateBackupAdoption.mock.calls).toEqual([['backup_saved']]);
   });
   it('rejects an empty save before requesting email or contacting the cloud', async () => {
     const controller = controllerWith();
@@ -156,6 +159,7 @@ describe('cloud backup controller flows', () => {
     expect(controller._cloudService.session).not.toHaveBeenCalled();
     expect(controller._cloudService.read).not.toHaveBeenCalled();
     expect(controller._cloudService.sendCode).not.toHaveBeenCalled();
+    expect(controller.analyticsService.trackPrivateBackupAdoption).not.toHaveBeenCalled();
   });
   it('reuses session, reviews first save, and never writes before confirmation', async () => {
     const controller = controllerWith();
@@ -422,6 +426,40 @@ describe('cloud backup controller flows', () => {
     expect(document.getElementById('cloud-backup-settings').hidden).toBe(true);
   });
 
+  it('records an impression only on a visible, consented Settings visit', () => {
+    const controller = controllerWith();
+    observe(controller);
+    let consent = false;
+    controller.analyticsService.getConsent = () => consent;
+    document.body.innerHTML = '<button id="cookie-consent-banner"></button><section><h4 id="cloud-backup-settings-title"></h4></section>';
+    const heading = document.querySelector('h4');
+    const observeHeading = jest.fn();
+    let intersect;
+    const originalObserver = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = class {
+      constructor(callback) { intersect = ratio => callback([{ isIntersecting: ratio > 0, intersectionRatio: ratio }]); }
+      observe = observeHeading;
+      disconnect() {}
+    };
+    try {
+      controller._observeCloudSettingsView();
+      expect(observeHeading).not.toHaveBeenCalled();
+      consent = true;
+      document.querySelector('button').dispatchEvent(new Event('analytics-consent-changed'));
+      expect(observeHeading).toHaveBeenCalledWith(heading);
+      intersect(0.1);
+      heading.closest('section').hidden = true;
+      intersect(1);
+      expect(controller.analyticsService.trackPrivateBackupAdoption).not.toHaveBeenCalled();
+      heading.closest('section').hidden = false;
+      intersect(0.5); intersect(1);
+      expect(controller.analyticsService.trackPrivateBackupAdoption.mock.calls).toEqual([['settings_option_viewed']]);
+    } finally {
+      controller._cloudViewScope?.abort();
+      globalThis.IntersectionObserver = originalObserver;
+    }
+  });
+
   it('checks a remembered session on Settings open and uses an SDK sign-out event to update the buttons', async () => {
     const controller = controllerWith();
     const service = controller._cloudService;
@@ -447,6 +485,7 @@ describe('cloud backup controller flows', () => {
 
   it('switches Settings from sign-out to OTP sign-in and back without reading or writing copies', async () => {
     const controller = controllerWith();
+    observe(controller);
     controller._setupCloudSettings = ExtensionController.prototype._setupCloudSettings;
     const service = controller._cloudService;
     let authChanged;
@@ -486,6 +525,7 @@ describe('cloud backup controller flows', () => {
     document.querySelector('dialog input').value = '123456';
     await click('Verify code');
     await runAction.mock.results[1].value;
+    expect(controller.analyticsService.trackPrivateBackupAdoption.mock.calls).toEqual([['sign_in_clicked']]);
     expect(action('signin').hidden).toBe(true);
     for (const name of ['signout', 'save', 'restore']) expect(action(name).hidden).toBe(false);
     expect(action('signout').classList.contains('btn--ghost')).toBe(true);

@@ -434,7 +434,7 @@ describe('Netlify static asset cache policy', () => {
     const legacyBuildTag = '20260722-4';
     const buildTag = '20260816-1';
     const welcomeBuildTag = '20260906-9';
-    const appBuildTag = '20261118-1';
+    const appBuildTag = '20261125-1';
     const storageBuildTag = '20260812-1';
     const releaseVersion = JSON.parse(readProjectFile('package.json')).version;
     const indexHtml = readProjectFile('index.html');
@@ -448,8 +448,8 @@ describe('Netlify static asset cache policy', () => {
 
     expect(indexHtml).toContain('href="css/app.css?v=20261115-1"');
     expect(indexHtml).toContain(`href="css/notion-markdown.css?v=${welcomeBuildTag}"`);
-    expect(indexHtml).toContain(`src="js/main.js?v=${releaseVersion}&search=2&errors=2&maps=1&backups=2"`);
-    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${releaseVersion}&search=2&errors=2&maps=1`);
+    expect(indexHtml).toContain(`src="js/main.js?v=${releaseVersion}&search=2&errors=2&maps=1&backups=3"`);
+    expect(mainJs).toContain(`./controllers/ExtensionController.js?v=${releaseVersion}&search=2&errors=2&maps=1&backups=3`);
     expect(indexHtml).toContain(`href="css/vault-empty-state.css?v=${welcomeBuildTag}"`);
     expect(controllerJs).toContain(`../ui/VaultEmptyState.js?v=${welcomeBuildTag}`);
     expect(controllerJs).toContain(`../services/AnalyticsService.js?v=${appBuildTag}`);

@@ -72,6 +72,16 @@ A dismissed dialog counts as cancelled only while the operation can still be sto
 
 Each attempt receives a new random ID. These events use a temporary analytics identity and exclude Owlbear and Supabase account IDs, room and backup IDs, email, OTP, backup names, URLs, payloads and raw error messages.
 
+The [production board](https://eu.mixpanel.com/project/3974227/view/4469963/app/boards#id=11665130) also counts unique consenting GMs at three independent stages of adoption. Its Insights cards count unique users over the selected period for `private_backup_flow` with `operation = adoption`, `environment = production` and `deploy_context = production`.
+
+| Step | Counted when |
+| --- | --- |
+| `settings_option_viewed` | At least half the Private backup heading is in view in foreground Settings for an eligible GM. |
+| `sign_in_clicked` | The GM activates the Sign in button in Settings. |
+| `backup_saved` | The service confirms a new or replacement save, including confirmation of a previously uncertain write. A GM with an existing session can reach this stage directly. |
+
+Only adoption events use a stable, feature-specific SHA-256 pseudonym derived from the Owlbear user ID. The same GM can return and count once per stage over the period. The report starts at rollout and cannot reconstruct earlier views or clicks.
+
 ### Previous release checks
 
 The shared picker was exercised with two named copies in the local browser fixture, at 600×700 in dark mode and 360×640 in light mode. The checks covered name entry, choosing an existing name, search, keyboard selection, cancel, and the review of the selected copy.
