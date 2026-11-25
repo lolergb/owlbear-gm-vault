@@ -5,6 +5,7 @@
  */
 
 import { isNotionUrl } from '../utils/helpers.js';
+import { fetchPublicConfig } from '../utils/publicConfig.js';
 import { log, logError, logWarn } from '../utils/logger.js?v=20260722-4';
 
 /**
@@ -216,14 +217,8 @@ export class NotionService {
     }
 
     try {
-      const response = await fetch('/.netlify/functions/get-default-token', {
-        method: 'GET',
-        cache: 'no-store'
-      });
-      if (response.ok) {
-        const data = await response.json();
-        this._defaultAccessAvailable = data.available === true;
-      }
+      const data = await fetchPublicConfig('get-default-token');
+      this._defaultAccessAvailable = data.available === true;
     } catch (e) {
       logWarn('No se pudo comprobar el acceso demo de Notion:', e);
     }

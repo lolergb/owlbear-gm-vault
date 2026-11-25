@@ -8,6 +8,7 @@
 
 import { BUILD_VERSION } from '../utils/buildVersion.js';
 import { BUILD_REF } from '../utils/buildRef.js';
+import { fetchPublicConfig } from '../utils/publicConfig.js';
 import { log, logWarn } from '../utils/logger.js?v=20260722-4';
 import { buildPageAddedMetadata } from '../utils/pageAnalytics.js?v=20260816-1';
 import { normalizeContentOrigin } from '../utils/activationAnalytics.js?v=20260816-1';
@@ -291,49 +292,46 @@ export class AnalyticsService {
         return;
       }
 
-      const response = await fetch('/.netlify/functions/get-mixpanel-token');
-      if (response.ok) {
-        const data = await response.json();
-        const serverEnvironment = this._normalizeEnum(
-          data.environment,
-          ['beta', 'production']
-        );
-        const serverDeployContext = this._normalizeEnum(
-          data.deployContext,
-          ['production', 'deploy-preview', 'branch-deploy', 'dev']
-        );
-        if (serverEnvironment !== 'unknown') {
-          this.environment = serverEnvironment;
-          this.isBeta = serverEnvironment === 'beta';
-        }
-        if (serverDeployContext !== 'unknown') {
-          this.deployContext = serverDeployContext;
-        }
-        if (data.enabled && data.token) {
-          this.mixpanelToken = data.token;
-          this.mixpanelEnabled = true;
+      const data = await fetchPublicConfig('get-mixpanel-token');
+      const serverEnvironment = this._normalizeEnum(
+        data.environment,
+        ['beta', 'production']
+      );
+      const serverDeployContext = this._normalizeEnum(
+        data.deployContext,
+        ['production', 'deploy-preview', 'branch-deploy', 'dev']
+      );
+      if (serverEnvironment !== 'unknown') {
+        this.environment = serverEnvironment;
+        this.isBeta = serverEnvironment === 'beta';
+      }
+      if (serverDeployContext !== 'unknown') {
+        this.deployContext = serverDeployContext;
+      }
+      if (data.enabled && data.token) {
+        this.mixpanelToken = data.token;
+        this.mixpanelEnabled = true;
 
-          // Generar distinct ID
-          try {
-            if (this.OBR && this.OBR.player) {
-              this.mixpanelDistinctId = await this.OBR.player.getId();
-            }
-          } catch (e) {
-            // Fallback a ID random
-            this.mixpanelDistinctId = localStorage.getItem('mixpanel_distinct_id');
-            if (!this.mixpanelDistinctId) {
-              this.mixpanelDistinctId = 'anon_' + Math.random().toString(36).substring(2, 15);
-              localStorage.setItem('mixpanel_distinct_id', this.mixpanelDistinctId);
-            }
+        // Generar distinct ID
+        try {
+          if (this.OBR && this.OBR.player) {
+            this.mixpanelDistinctId = await this.OBR.player.getId();
           }
+        } catch (e) {
+          // Fallback a ID random
+          this.mixpanelDistinctId = localStorage.getItem('mixpanel_distinct_id');
+          if (!this.mixpanelDistinctId) {
+            this.mixpanelDistinctId = 'anon_' + Math.random().toString(36).substring(2, 15);
+            localStorage.setItem('mixpanel_distinct_id', this.mixpanelDistinctId);
+          }
+        }
 
-          log('📊 Mixpanel analytics habilitado');
-          
-          // Auxiliary extension pages (such as the image viewer) share the
-          // same analytics client but must not inflate extension_opened.
-          if (trackExtensionOpened) {
-            this.trackExtensionOpened();
-          }
+        log('📊 Mixpanel analytics habilitado');
+
+        // Auxiliary extension pages (such as the image viewer) share the
+        // same analytics client but must not inflate extension_opened.
+        if (trackExtensionOpened) {
+          this.trackExtensionOpened();
         }
       }
     } catch (e) {

@@ -30,5 +30,8 @@ jobs:
       - name: Run complete test suite
         run: npm test -- --runInBand
 
+      - name: Verify production build and cacheable assets
+        run: npm run test:build
+
       - name: Verify PostgreSQL backup isolation
         run: npm run test:cloud-db

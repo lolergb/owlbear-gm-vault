@@ -1,5 +1,7 @@
 # Dependencias
 node_modules/
+dist/
+.build/
 
 # Archivos del sistema
 .DS_Store
