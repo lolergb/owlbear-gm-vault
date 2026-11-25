@@ -1,3 +1,5 @@
+import { BUILD_ENVIRONMENT } from '../config/buildEnvironment.js';
+
 const STORAGE_KEY_PREFIX = 'gm_vault_beta_banner_2_1_';
 const MAX_VIEWS = 3;
 
@@ -15,6 +17,7 @@ export async function isBetaApplication({
   fetchFn = globalThis.fetch
 } = {}) {
   if (isBetaHostname(locationRef?.hostname)) return true;
+  if (BUILD_ENVIRONMENT !== null) return BUILD_ENVIRONMENT.isBeta;
 
   try {
     const response = await fetchFn('/manifest.json', { cache: 'no-store' });

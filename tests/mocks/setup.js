@@ -70,4 +70,5 @@ global.console = {
 beforeEach(() => {
   jest.clearAllMocks();
   localStorageMock.clear();
+  sessionStorage.clear();
 });

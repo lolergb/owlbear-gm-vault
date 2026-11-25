@@ -44,6 +44,12 @@
 
 # Cache headers para assets estáticos
 [[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Access-Control-Allow-Origin = "https://www.owlbear.rodeo"
+
+[[headers]]
   for = "/img/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
@@ -82,8 +88,8 @@
     Content-Security-Policy = "default-src 'none'; script-src 'self'; frame-ancestors https://owlbear-gm-vault.netlify.app https://www.owlbear.rodeo https://owlbear.rodeo; base-uri 'none'; form-action 'none'"
 
 [build]
-  command = "node scripts/write-build-ref.mjs"
-  publish = "."
+  command = "npm run build"
+  publish = "dist"
   functions = "netlify/functions"
 
 # Configuración de Deploy Previews (para Pull Requests)

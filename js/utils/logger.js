@@ -5,6 +5,8 @@
  * y solo para usuarios GM (no jugadores).
  */
 
+import { BUILD_ENVIRONMENT } from '../config/buildEnvironment.js';
+
 // Estado del modo debug
 let DEBUG_MODE = false;
 
@@ -60,6 +62,10 @@ export async function getUserRole() {
  * Inicializa el modo debug desde Netlify
  */
 export async function initDebugMode() {
+  if (BUILD_ENVIRONMENT !== null) {
+    DEBUG_MODE = BUILD_ENVIRONMENT.debug === true;
+    return;
+  }
   try {
     // Solo intentar si estamos en Netlify
     if (window.location.origin.includes('netlify.app') || window.location.origin.includes('netlify.com')) {
